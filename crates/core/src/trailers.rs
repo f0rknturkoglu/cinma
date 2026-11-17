@@ -9,6 +9,9 @@ use crate::{Core, CoreError};
 
 const YTDLP_MACOS_URL: &str =
     "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos";
+const YTDLP_SUMS_URL: &str =
+    "https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS";
+const YTDLP_ASSET: &str = "yt-dlp_macos";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct YtdlpStatus {
@@ -148,6 +151,17 @@ impl Core {
                 .bytes()
                 .await
                 .map_err(|e| CoreError::Invalid(e.to_string()))?;
+            // Verify against the release's published checksums before installing.
+            let sums = client
+                .get(YTDLP_SUMS_URL)
+                .send()
+                .await
+                .and_then(reqwest::Response::error_for_status)
+                .map_err(|e| CoreError::Invalid(format!("yt-dlp checksums: {e}")))?
+                .text()
+                .await
+                .map_err(|e| CoreError::Invalid(format!("yt-dlp checksums: {e}")))?;
+            verify_sha256(&bytes, &sums, YTDLP_ASSET)?;
             let tmp = dest.with_extension("tmp");
             std::fs::write(&tmp, &bytes)?;
             #[cfg(unix)]
@@ -159,6 +173,29 @@ impl Core {
             Ok(dest.to_string_lossy().into_owned())
         })
         .await
+    }
+}
+
+/// Checks `bytes` against the `<hex>  <name>` line for `name` in a
+/// `SHA2-256SUMS` file.
+fn verify_sha256(bytes: &[u8], sums: &str, name: &str) -> Result<(), CoreError> {
+    let expected = sums
+        .lines()
+        .find_map(|line| {
+            let mut parts = line.split_whitespace();
+            let hash = parts.next()?;
+            let file = parts.next()?.trim_start_matches('*');
+            (file == name).then(|| hash.to_ascii_lowercase())
+        })
+        .ok_or_else(|| CoreError::Invalid(format!("no checksum listed for {name}")))?;
+    let digest = ring::digest::digest(&ring::digest::SHA256, bytes);
+    let actual: String = digest.as_ref().iter().map(|b| format!("{b:02x}")).collect();
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(CoreError::Invalid(format!(
+            "{name} checksum mismatch; not installed (try again)"
+        )))
     }
 }
 
@@ -180,4 +217,20 @@ fn pick_best_stream_url(info: &YtdlpInfo) -> Option<String> {
             mp4_bonus + h
         })
         .and_then(|f| f.url.clone())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::verify_sha256;
+
+    #[test]
+    fn checksum_must_match_the_listed_asset() {
+        // sha256("abc")
+        let sums = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  yt-dlp_macos\n\
+                    0000000000000000000000000000000000000000000000000000000000000000  yt-dlp.exe\n";
+        assert!(verify_sha256(b"abc", sums, "yt-dlp_macos").is_ok());
+        assert!(verify_sha256(b"abd", sums, "yt-dlp_macos").is_err());
+        assert!(verify_sha256(b"abc", sums, "yt-dlp_linux").is_err());
+    }
 }
