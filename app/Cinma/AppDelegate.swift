@@ -1,11 +1,11 @@
 import AppKit
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
     private var home: HomeViewController?
     private var core: CinmaCore?
-    private weak var browse: SliceViewController?
+    private var shell: MainShellViewController?
     private var pendingLinks: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let home = HomeViewController()
         let window = MainWindow.make(content: home)
+        window.delegate = self
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
         self.home = home
@@ -35,6 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        ImagePipeline.shared.clearMemoryCache()
     }
 
     /// Opens the Rust core off the main thread (it touches disk).
@@ -71,11 +76,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showBrowse() {
         guard let core, let window else { return }
-        let browse = SliceViewController(core: core) { [weak self] request in
+        if let shell {
+            MainWindow.setContent(shell, in: window)
+            shell.handleLibraryChanged()
+            return
+        }
+        let shell = MainShellViewController(core: core) { [weak self] request in
             self?.showPlayer(request)
         }
-        self.browse = browse
-        MainWindow.setContent(browse, in: window)
+        self.shell = shell
+        MainWindow.setContent(shell, in: window)
     }
 
     private func rebuildMenu() {
@@ -85,15 +95,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handle(_ event: CoreEventKind) {
         switch event {
-        case .addonsChanged: browse?.refreshAddons()
+        case .addonsChanged: shell?.handleAddonsChanged()
         case .keyBindingsChanged: rebuildMenu()
+        case .profileChanged: shell?.handleProfileChanged()
+        case .libraryChanged: shell?.handleLibraryChanged()
         }
     }
 
     // MARK: - Commands
 
     @objc func openFile(_ sender: Any?) {
-        browse?.openFile()
+        shell?.openFile()
     }
 
     // MARK: - Deep links (stremio://…)
@@ -111,21 +123,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch invocation.command {
         case "addon.install":
             guard let manifest = invocation.argument else { return }
-            if browse == nil { showBrowse() }
-            browse?.showStatus(String(localized: "Checking addon…"))
+            if shell == nil { showBrowse() }
+            shell?.showStatus(String(localized: "Checking addon…"))
             Task {
                 do {
                     let preview = try await core.inspectAddon(url: manifest)
                     guard await confirmAddonInstall(preview) else {
-                        browse?.showStatus(String(localized: "Addon installation cancelled"))
+                        shell?.showStatus(String(localized: "Addon installation cancelled"))
                         return
                     }
-                    browse?.showStatus(String(localized: "Installing addon…"))
+                    shell?.showStatus(String(localized: "Installing addon…"))
                     let addon = try await core.installAddon(url: preview.transportUrl)
-                    browse?.showStatus(String(localized: "Installed \(addon.name) \(addon.version)"))
+                    shell?.showStatus(String(localized: "Installed \(addon.name) \(addon.version)"))
                     DevAutomation.log("deep link installed \(addon.id)")
                 } catch {
-                    browse?.showStatus(String(localized: "Install failed: \(error.localizedDescription)"))
+                    shell?.showStatus(String(localized: "Install failed: \(error.localizedDescription)"))
                 }
             }
         default:

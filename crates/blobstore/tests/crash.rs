@@ -30,7 +30,9 @@ fn chunk(offset: u64, len: u64) -> Vec<u8> {
 /// Child entry point: only does work when spawned by the parent test.
 #[test]
 fn crash_child() {
-    let Ok(dir) = std::env::var(CHILD_ENV) else { return };
+    let Ok(dir) = std::env::var(CHILD_ENV) else {
+        return;
+    };
     let store = BlobStore::open(Path::new(&dir)).unwrap();
     let blob = store.create(SIZE).unwrap();
     let mut out = std::io::stdout();
@@ -61,7 +63,10 @@ fn verify(dir: &Path, id: &str, at_least: u64) -> u64 {
     let store = BlobStore::open(dir).unwrap();
     let blob = store.open_blob(&BlobId::parse(id).unwrap()).unwrap();
     let available = blob.available();
-    assert!(available.covered() >= at_least, "lost a reported checkpoint");
+    assert!(
+        available.covered() >= at_least,
+        "lost a reported checkpoint"
+    );
     let mut reader = blob.source().open_reader().unwrap();
     let cancel = CancellationToken::new();
     for range in available.iter() {
@@ -71,7 +76,9 @@ fn verify(dir: &Path, id: &str, at_least: u64) -> u64 {
             let mut buf = vec![0u8; len];
             let mut filled = 0;
             while filled < len {
-                filled += reader.read_at(offset + filled as u64, &mut buf[filled..], &cancel).unwrap();
+                filled += reader
+                    .read_at(offset + filled as u64, &mut buf[filled..], &cancel)
+                    .unwrap();
             }
             assert_eq!(buf, chunk(offset, len as u64), "corrupt bytes at {offset}");
             offset += len as u64;
@@ -117,6 +124,9 @@ fn kill_9_mid_write_leaves_a_consistent_blob() {
         child.wait().unwrap();
         let id = id.expect("child reported its blob id");
         let covered = verify(dir.path(), &id, last_ckpt);
-        assert!(!done && covered < SIZE, "child must be killed before finishing (kill_after={kill_after})");
+        assert!(
+            !done && covered < SIZE,
+            "child must be killed before finishing (kill_after={kill_after})"
+        );
     }
 }

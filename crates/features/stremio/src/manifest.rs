@@ -136,7 +136,11 @@ impl Manifest {
                     && self.types.iter().any(|t| t == media_type)
                     && prefix_ok(self.id_prefixes.as_ref())
             }
-            Resource::Full { name, types, id_prefixes } => {
+            Resource::Full {
+                name,
+                types,
+                id_prefixes,
+            } => {
                 name == resource
                     && types
                         .as_ref()
@@ -168,7 +172,11 @@ impl Manifest {
 
     /// Finds a declared catalog matching `(media_type, catalog_id)` if the
     /// addon exposes the `catalog` resource.
-    pub fn supports_catalog(&self, media_type: &str, catalog_id: &str) -> Option<&CatalogDescriptor> {
+    pub fn supports_catalog(
+        &self,
+        media_type: &str,
+        catalog_id: &str,
+    ) -> Option<&CatalogDescriptor> {
         if !self.supports_catalog_resource(media_type) {
             return None;
         }

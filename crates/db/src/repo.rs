@@ -117,7 +117,9 @@ impl Database {
     pub fn get_app_setting(&self, key: &str) -> Result<Option<String>, DbError> {
         Ok(self
             .conn
-            .query_row("SELECT value FROM app_setting WHERE key = ?1", [key], |r| r.get(0))
+            .query_row("SELECT value FROM app_setting WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
             .optional()?)
     }
 
@@ -131,7 +133,8 @@ impl Database {
     }
 
     pub fn delete_app_setting(&self, key: &str) -> Result<(), DbError> {
-        self.conn.execute("DELETE FROM app_setting WHERE key = ?1", [key])?;
+        self.conn
+            .execute("DELETE FROM app_setting WHERE key = ?1", [key])?;
         Ok(())
     }
 
@@ -146,7 +149,11 @@ impl Database {
 
     // ---- profile settings ----
 
-    pub fn get_profile_setting(&self, profile: ProfileId, key: &str) -> Result<Option<String>, DbError> {
+    pub fn get_profile_setting(
+        &self,
+        profile: ProfileId,
+        key: &str,
+    ) -> Result<Option<String>, DbError> {
         Ok(self
             .conn
             .query_row(
@@ -157,7 +164,12 @@ impl Database {
             .optional()?)
     }
 
-    pub fn set_profile_setting(&self, profile: ProfileId, key: &str, value: &str) -> Result<(), DbError> {
+    pub fn set_profile_setting(
+        &self,
+        profile: ProfileId,
+        key: &str,
+        value: &str,
+    ) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO profile_setting (profile_id, key, value) VALUES (?1, ?2, ?3)
              ON CONFLICT(profile_id, key) DO UPDATE SET value = excluded.value",
@@ -169,9 +181,9 @@ impl Database {
     // ---- profiles ----
 
     pub fn profiles(&self) -> Result<Vec<ProfileRow>, DbError> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT id, name, avatar, pin_hash IS NOT NULL FROM profile ORDER BY id")?;
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, name, avatar, pin_hash IS NOT NULL FROM profile ORDER BY id",
+        )?;
         let rows = stmt.query_map([], |r| {
             Ok(ProfileRow {
                 id: r.get(0)?,
@@ -216,19 +228,22 @@ impl Database {
         if trimmed.is_empty() {
             return Err(DbError::Invalid("profile name cannot be empty".into()));
         }
-        self.conn
-            .execute("UPDATE profile SET name = ?2 WHERE id = ?1", params![id, trimmed])?;
+        self.conn.execute(
+            "UPDATE profile SET name = ?2 WHERE id = ?1",
+            params![id, trimmed],
+        )?;
         Ok(())
     }
 
     pub fn delete_profile(&self, id: ProfileId) -> Result<(), DbError> {
-        let count: i64 =
-            self.conn
-                .query_row("SELECT count(*) FROM profile", [], |r| r.get(0))?;
+        let count: i64 = self
+            .conn
+            .query_row("SELECT count(*) FROM profile", [], |r| r.get(0))?;
         if count <= 1 {
             return Err(DbError::Invalid("cannot delete the last profile".into()));
         }
-        self.conn.execute("DELETE FROM profile WHERE id = ?1", [id])?;
+        self.conn
+            .execute("DELETE FROM profile WHERE id = ?1", [id])?;
         Ok(())
     }
 
@@ -281,7 +296,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn set_addon_enabled(&self, profile: ProfileId, id: &str, enabled: bool) -> Result<(), DbError> {
+    pub fn set_addon_enabled(
+        &self,
+        profile: ProfileId,
+        id: &str,
+        enabled: bool,
+    ) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO profile_addon (profile_id, addon_id, enabled) VALUES (?1, ?2, ?3)
              ON CONFLICT(profile_id, addon_id) DO UPDATE SET enabled = excluded.enabled",
@@ -315,13 +335,20 @@ impl Database {
         self.conn.execute(
             "INSERT INTO download (profile_id, kind, title, source_json, priority)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![d.profile_id, d.kind.as_str(), d.title, d.source_json, d.priority],
+            params![
+                d.profile_id,
+                d.kind.as_str(),
+                d.title,
+                d.source_json,
+                d.priority
+            ],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     pub fn download(&self, profile: ProfileId, id: i64) -> Result<Option<DownloadRow>, DbError> {
-        let sql = format!("SELECT {DOWNLOAD_COLUMNS} FROM download WHERE profile_id = ?1 AND id = ?2");
+        let sql =
+            format!("SELECT {DOWNLOAD_COLUMNS} FROM download WHERE profile_id = ?1 AND id = ?2");
         self.conn
             .query_row(&sql, params![profile, id], download_from_row)
             .optional()?
@@ -358,7 +385,12 @@ impl Database {
         Ok(n as usize)
     }
 
-    pub fn set_download_state(&self, id: i64, state: DownloadState, error: Option<&str>) -> Result<(), DbError> {
+    pub fn set_download_state(
+        &self,
+        id: i64,
+        state: DownloadState,
+        error: Option<&str>,
+    ) -> Result<(), DbError> {
         self.conn.execute(
             "UPDATE download SET state = ?2, error = ?3, updated_at = unixepoch() WHERE id = ?1",
             params![id, state.as_str(), error],
@@ -366,7 +398,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn set_download_blob(&self, id: i64, blob_id: &str, bytes_total: Option<u64>) -> Result<(), DbError> {
+    pub fn set_download_blob(
+        &self,
+        id: i64,
+        blob_id: &str,
+        bytes_total: Option<u64>,
+    ) -> Result<(), DbError> {
         self.conn.execute(
             "UPDATE download SET blob_id = ?2, bytes_total = ?3, updated_at = unixepoch() WHERE id = ?1",
             params![id, blob_id, bytes_total.map(|v| v as i64)],
@@ -420,21 +457,36 @@ mod tests {
     fn addons_are_global_but_enabled_per_profile() {
         let mut db = Database::open_in_memory().unwrap();
         let second = db.create_profile("Second").unwrap();
-        db.upsert_addon(1, "a", "https://a/manifest.json", "{}").unwrap();
-        db.upsert_addon(1, "b", "https://b/manifest.json", "{}").unwrap();
+        db.upsert_addon(1, "a", "https://a/manifest.json", "{}")
+            .unwrap();
+        db.upsert_addon(1, "b", "https://b/manifest.json", "{}")
+            .unwrap();
         let p1 = db.addons_for_profile(1).unwrap();
-        assert_eq!(p1.iter().map(|a| (a.id.as_str(), a.position, a.enabled)).collect::<Vec<_>>(),
-                   vec![("a", 0, true), ("b", 1, true)]);
+        assert_eq!(
+            p1.iter()
+                .map(|a| (a.id.as_str(), a.position, a.enabled))
+                .collect::<Vec<_>>(),
+            vec![("a", 0, true), ("b", 1, true)]
+        );
         // Visible to the other profile, but not enabled there.
-        assert!(db.addons_for_profile(second).unwrap().iter().all(|a| !a.enabled));
+        assert!(
+            db.addons_for_profile(second)
+                .unwrap()
+                .iter()
+                .all(|a| !a.enabled)
+        );
         db.set_addon_enabled(second, "b", true).unwrap();
         db.set_addon_enabled(1, "a", false).unwrap();
         assert!(!db.addons_for_profile(1).unwrap()[0].enabled);
         assert!(db.addons_for_profile(second).unwrap()[1].enabled);
         // Refresh keeps position; remove cascades.
-        db.upsert_addon(1, "a", "https://a2/manifest.json", "{\"v\":2}").unwrap();
+        db.upsert_addon(1, "a", "https://a2/manifest.json", "{\"v\":2}")
+            .unwrap();
         let a = &db.addons_for_profile(1).unwrap()[0];
-        assert_eq!((a.position, a.transport_url.as_str()), (0, "https://a2/manifest.json"));
+        assert_eq!(
+            (a.position, a.transport_url.as_str()),
+            (0, "https://a2/manifest.json")
+        );
         db.remove_addon("a").unwrap();
         assert_eq!(db.addons_for_profile(second).unwrap().len(), 1);
     }
@@ -445,10 +497,20 @@ mod tests {
         let other = db.create_profile("Other").unwrap();
         let mine = db.insert_download(&new_dl(1, "mine", 0)).unwrap();
         let theirs = db.insert_download(&new_dl(other, "theirs", 0)).unwrap();
-        assert_eq!(db.downloads(1).unwrap().iter().map(|d| d.id).collect::<Vec<_>>(), vec![mine]);
+        assert_eq!(
+            db.downloads(1)
+                .unwrap()
+                .iter()
+                .map(|d| d.id)
+                .collect::<Vec<_>>(),
+            vec![mine]
+        );
         assert!(db.download(1, theirs).unwrap().is_none());
         db.delete_download(1, theirs).unwrap();
-        assert!(db.download(other, theirs).unwrap().is_some(), "can't delete across profiles");
+        assert!(
+            db.download(other, theirs).unwrap().is_some(),
+            "can't delete across profiles"
+        );
         db.set_profile_setting(1, "lang", "tr").unwrap();
         assert_eq!(db.get_profile_setting(other, "lang").unwrap(), None);
     }
@@ -458,15 +520,27 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let low = db.insert_download(&new_dl(1, "low", 0)).unwrap();
         let high = db.insert_download(&new_dl(1, "high", 5)).unwrap();
-        let next: Vec<i64> = db.next_queued_downloads(10).unwrap().iter().map(|d| d.id).collect();
+        let next: Vec<i64> = db
+            .next_queued_downloads(10)
+            .unwrap()
+            .iter()
+            .map(|d| d.id)
+            .collect();
         assert_eq!(next, vec![high, low]);
-        db.set_download_state(high, DownloadState::Active, None).unwrap();
+        db.set_download_state(high, DownloadState::Active, None)
+            .unwrap();
         db.set_download_blob(high, "blob1", Some(100)).unwrap();
         db.set_download_progress(high, 40).unwrap();
         let row = db.download(1, high).unwrap().unwrap();
-        assert_eq!((row.state, row.bytes_done, row.bytes_total), (DownloadState::Active, 40, Some(100)));
+        assert_eq!(
+            (row.state, row.bytes_done, row.bytes_total),
+            (DownloadState::Active, 40, Some(100))
+        );
         assert_eq!(db.requeue_active_downloads().unwrap(), 1);
-        assert_eq!(db.download(1, high).unwrap().unwrap().state, DownloadState::Queued);
+        assert_eq!(
+            db.download(1, high).unwrap().unwrap().state,
+            DownloadState::Queued
+        );
     }
 
     #[test]

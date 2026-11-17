@@ -17,7 +17,10 @@ pub struct Playback {
 impl Core {
     /// Creates the player (loads libmpv on first use). Blocking — call off
     /// the main thread.
-    pub fn create_playback(self: &Arc<Self>, events: Arc<dyn PlayerEvents>) -> Result<Playback, CoreError> {
+    pub fn create_playback(
+        self: &Arc<Self>,
+        events: Arc<dyn PlayerEvents>,
+    ) -> Result<Playback, CoreError> {
         Ok(Playback {
             core: Arc::clone(self),
             player: Player::new(events)?,
@@ -46,7 +49,9 @@ impl Playback {
             self.player.load_url(url)?;
             Ok(())
         } else {
-            Err(CoreError::Invalid("stream has neither infoHash nor url".into()))
+            Err(CoreError::Invalid(
+                "stream has neither infoHash nor url".into(),
+            ))
         }
     }
 
@@ -58,7 +63,12 @@ impl Playback {
     /// back to idle.
     pub async fn stop(&self) -> Result<(), CoreError> {
         self.player.shutdown();
-        let engine = self.core.torrents.lock().map_err(|_| CoreError::Poisoned)?.clone();
+        let engine = self
+            .core
+            .torrents
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .clone();
         if let Some(engine) = engine {
             self.core
                 .spawn(async move {

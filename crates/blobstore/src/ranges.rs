@@ -33,7 +33,10 @@ impl RangeSet {
     /// End of the contiguous run containing `offset`, if `offset` is present.
     pub fn run_end(&self, offset: u64) -> Option<u64> {
         let i = self.ranges.partition_point(|&(_, e)| e <= offset);
-        self.ranges.get(i).filter(|&&(s, _)| s <= offset).map(|&(_, e)| e)
+        self.ranges
+            .get(i)
+            .filter(|&&(s, _)| s <= offset)
+            .map(|&(_, e)| e)
     }
 
     pub fn contains_range(&self, range: Range<u64>) -> bool {
@@ -125,7 +128,9 @@ mod tests {
     fn validity() {
         assert!(set(&[(0, 10)]).is_valid_for(10));
         assert!(!set(&[(0, 11)]).is_valid_for(10));
-        let bad = RangeSet { ranges: vec![(5, 10), (0, 3)] };
+        let bad = RangeSet {
+            ranges: vec![(5, 10), (0, 3)],
+        };
         assert!(!bad.is_valid_for(100));
     }
 }

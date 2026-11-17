@@ -104,7 +104,9 @@ impl Core {
     }
 
     fn active_profile_locked(&self, db: &cinma_db::Database) -> Result<ProfileId, CoreError> {
-        let stored = db.get_app_setting(ACTIVE_PROFILE_KEY)?.and_then(|v| v.parse().ok());
+        let stored = db
+            .get_app_setting(ACTIVE_PROFILE_KEY)?
+            .and_then(|v| v.parse().ok());
         match stored {
             Some(id) if db.profile_exists(id)? => Ok(id),
             _ => Ok(1),
@@ -133,13 +135,10 @@ impl Core {
         poster: Option<String>,
     ) -> Result<(), CoreError> {
         let profile = self.active_profile()?;
-        self.db.lock().map_err(|_| CoreError::Poisoned)?.add_library_item(
-            profile,
-            &meta_id,
-            &media_type,
-            &name,
-            poster.as_deref(),
-        )?;
+        self.db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .add_library_item(profile, &meta_id, &media_type, &name, poster.as_deref())?;
         self.emit(CoreEvent::LibraryChanged);
         Ok(())
     }
@@ -163,7 +162,10 @@ impl Core {
         Ok(db.continue_watching(profile, limit)?)
     }
 
-    pub fn get_watch_progress(&self, video_id: &str) -> Result<Option<WatchProgressRow>, CoreError> {
+    pub fn get_watch_progress(
+        &self,
+        video_id: &str,
+    ) -> Result<Option<WatchProgressRow>, CoreError> {
         let profile = self.active_profile()?;
         let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
         Ok(db.get_watch_progress(profile, video_id)?)

@@ -40,8 +40,12 @@ pub trait SourceReader: Send {
     /// Reads up to `buf.len()` bytes at `offset`, blocking until at least one
     /// byte is available. Returns `Ok(0)` only at end of source and
     /// `ErrorKind::Interrupted` once `cancel` fires.
-    fn read_at(&mut self, offset: u64, buf: &mut [u8], cancel: &CancellationToken)
-    -> io::Result<usize>;
+    fn read_at(
+        &mut self,
+        offset: u64,
+        buf: &mut [u8],
+        cancel: &CancellationToken,
+    ) -> io::Result<usize>;
 }
 
 pub fn cancelled_error() -> io::Error {
@@ -135,7 +139,9 @@ mod tests {
         let source = MemorySource::new(bytes(1000), 1000);
         let mut reader = source.open_reader().unwrap();
         let mut buf = [0u8; 10];
-        let n = reader.read_at(500, &mut buf, &CancellationToken::new()).unwrap();
+        let n = reader
+            .read_at(500, &mut buf, &CancellationToken::new())
+            .unwrap();
         assert_eq!(n, 10);
         assert_eq!(buf[0], (500 % 251) as u8);
     }
@@ -145,8 +151,18 @@ mod tests {
         let source = MemorySource::new(bytes(100), 100);
         let mut reader = source.open_reader().unwrap();
         let mut buf = [0u8; 64];
-        assert_eq!(reader.read_at(80, &mut buf, &CancellationToken::new()).unwrap(), 20);
-        assert_eq!(reader.read_at(100, &mut buf, &CancellationToken::new()).unwrap(), 0);
+        assert_eq!(
+            reader
+                .read_at(80, &mut buf, &CancellationToken::new())
+                .unwrap(),
+            20
+        );
+        assert_eq!(
+            reader
+                .read_at(100, &mut buf, &CancellationToken::new())
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -159,7 +175,10 @@ mod tests {
             tx.send(reader.read_at(0, &mut buf, &CancellationToken::new()))
                 .unwrap();
         });
-        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err(), "must block");
+        assert!(
+            rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "must block"
+        );
         source.set_available(4);
         assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap(), 4);
         handle.join().unwrap();
@@ -176,9 +195,15 @@ mod tests {
             let mut buf = [0u8; 8];
             tx.send(reader.read_at(0, &mut buf, &cancel2)).unwrap();
         });
-        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err(), "must block");
+        assert!(
+            rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "must block"
+        );
         cancel.cancel();
-        let err = rx.recv_timeout(Duration::from_secs(1)).unwrap().unwrap_err();
+        let err = rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::Interrupted);
         handle.join().unwrap();
     }

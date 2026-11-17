@@ -13,7 +13,9 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use cinma_blobstore::{Blob, BlobId, BlobStore, CancellationToken};
-use cinma_db::{Database, DbError, DownloadKind, DownloadRow, DownloadState, NewDownload, ProfileId};
+use cinma_db::{
+    Database, DbError, DownloadKind, DownloadRow, DownloadState, NewDownload, ProfileId,
+};
 use tokio::runtime::Handle;
 
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
@@ -101,7 +103,9 @@ impl Queue {
         runtime: Handle,
         max_active: usize,
     ) -> Result<Self, QueueError> {
-        db.lock().map_err(|_| QueueError::Poisoned)?.requeue_active_downloads()?;
+        db.lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .requeue_active_downloads()?;
         Ok(Self {
             inner: Arc::new(Inner {
                 db,
@@ -116,18 +120,36 @@ impl Queue {
         })
     }
 
-    pub fn register_engine(&self, kind: DownloadKind, engine: Arc<dyn DownloadEngine>) -> Result<(), QueueError> {
-        self.inner.engines.lock().map_err(|_| QueueError::Poisoned)?.insert(kind, engine);
+    pub fn register_engine(
+        &self,
+        kind: DownloadKind,
+        engine: Arc<dyn DownloadEngine>,
+    ) -> Result<(), QueueError> {
+        self.inner
+            .engines
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .insert(kind, engine);
         self.schedule()
     }
 
     pub fn set_change_listener(&self, listener: Option<ChangeListener>) -> Result<(), QueueError> {
-        *self.inner.on_change.lock().map_err(|_| QueueError::Poisoned)? = listener;
+        *self
+            .inner
+            .on_change
+            .lock()
+            .map_err(|_| QueueError::Poisoned)? = listener;
         Ok(())
     }
 
     pub fn add(&self, download: &NewDownload) -> Result<i64, QueueError> {
-        if !self.inner.engines.lock().map_err(|_| QueueError::Poisoned)?.contains_key(&download.kind) {
+        if !self
+            .inner
+            .engines
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .contains_key(&download.kind)
+        {
             return Err(QueueError::NoEngine(download.kind));
         }
         let id = self.db()?.insert_download(download)?;
@@ -138,7 +160,8 @@ impl Queue {
 
     pub fn pause(&self, profile: ProfileId, id: i64) -> Result<(), QueueError> {
         self.require(profile, id)?;
-        self.db()?.set_download_state(id, DownloadState::Paused, None)?;
+        self.db()?
+            .set_download_state(id, DownloadState::Paused, None)?;
         self.stop_job(id)?;
         self.changed(id);
         self.schedule()
@@ -147,7 +170,8 @@ impl Queue {
     pub fn resume(&self, profile: ProfileId, id: i64) -> Result<(), QueueError> {
         let row = self.require(profile, id)?;
         if matches!(row.state, DownloadState::Paused | DownloadState::Failed) {
-            self.db()?.set_download_state(id, DownloadState::Queued, None)?;
+            self.db()?
+                .set_download_state(id, DownloadState::Queued, None)?;
             self.changed(id);
         }
         self.schedule()
@@ -174,7 +198,9 @@ impl Queue {
     }
 
     fn require(&self, profile: ProfileId, id: i64) -> Result<DownloadRow, QueueError> {
-        self.db()?.download(profile, id)?.ok_or(QueueError::NotFound(id))
+        self.db()?
+            .download(profile, id)?
+            .ok_or(QueueError::NotFound(id))
     }
 
     fn db(&self) -> Result<std::sync::MutexGuard<'_, Database>, QueueError> {
@@ -188,7 +214,13 @@ impl Queue {
     }
 
     fn stop_job(&self, id: i64) -> Result<(), QueueError> {
-        if let Some((_, cancel)) = self.inner.running.lock().map_err(|_| QueueError::Poisoned)?.remove(&id) {
+        if let Some((_, cancel)) = self
+            .inner
+            .running
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .remove(&id)
+        {
             cancel.cancel();
         }
         Ok(())
@@ -206,12 +238,21 @@ impl Queue {
 
     fn start_ready(&self) -> Result<Vec<i64>, QueueError> {
         let mut started = Vec::new();
-        let mut running = self.inner.running.lock().map_err(|_| QueueError::Poisoned)?;
+        let mut running = self
+            .inner
+            .running
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?;
         let free = self.inner.max_active.saturating_sub(running.len());
         if free == 0 {
             return Ok(started);
         }
-        let engines = self.inner.engines.lock().map_err(|_| QueueError::Poisoned)?.clone();
+        let engines = self
+            .inner
+            .engines
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .clone();
         let candidates = self.db()?.next_queued_downloads(free + running.len())?;
         for row in candidates {
             if running.contains_key(&row.id) {
@@ -220,10 +261,16 @@ impl Queue {
             if running.len() >= self.inner.max_active {
                 break;
             }
-            let Some(engine) = engines.get(&row.kind).cloned() else { continue };
-            self.db()?.set_download_state(row.id, DownloadState::Active, None)?;
+            let Some(engine) = engines.get(&row.kind).cloned() else {
+                continue;
+            };
+            self.db()?
+                .set_download_state(row.id, DownloadState::Active, None)?;
             let cancel = CancellationToken::new();
-            let generation = self.inner.next_generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let generation = self
+                .inner
+                .next_generation
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             running.insert(row.id, (generation, cancel.clone()));
             let id = row.id;
             let job = Job {
@@ -242,7 +289,13 @@ impl Queue {
         Ok(started)
     }
 
-    fn finish(&self, id: i64, generation: u64, cancel: &CancellationToken, result: Result<(), String>) {
+    fn finish(
+        &self,
+        id: i64,
+        generation: u64,
+        cancel: &CancellationToken,
+        result: Result<(), String>,
+    ) {
         // Only remove our own entry: after pause+resume a newer job for the
         // same download may already be running.
         let was_running = self

@@ -16,21 +16,33 @@ fn parses_torrent_streams() {
     let streams = parse_streams(TORRENTIO_STREAMS.as_bytes()).unwrap();
     assert_eq!(streams.len(), 3);
     let s = &streams[0];
-    assert_eq!(s.info_hash.as_deref(), Some("0123456789abcdef0123456789abcdef01234567"));
+    assert_eq!(
+        s.info_hash.as_deref(),
+        Some("0123456789abcdef0123456789abcdef01234567")
+    );
     assert_eq!(s.file_idx, Some(2));
-    assert_eq!(s.trackers(), vec!["udp://tracker.example.org:1337/announce".to_owned()]);
+    assert_eq!(
+        s.trackers(),
+        vec!["udp://tracker.example.org:1337/announce".to_owned()]
+    );
     let hints = s.behavior_hints.as_ref().unwrap();
-    assert_eq!(hints.filename.as_deref(), Some("Example.Movie.2024.2160p.WEB-DL.DV.HDR.mkv"));
+    assert_eq!(
+        hints.filename.as_deref(),
+        Some("Example.Movie.2024.2160p.WEB-DL.DV.HDR.mkv")
+    );
     assert_eq!(hints.video_size, Some(15_032_385_536));
     assert_eq!(hints.binge_group.as_deref(), Some("example|2160p|DV"));
     assert!(streams[1].file_idx.is_none());
-    assert_eq!(streams[2].url.as_deref(), Some("https://cdn.example.org/video.mp4"));
+    assert_eq!(
+        streams[2].url.as_deref(),
+        Some("https://cdn.example.org/video.mp4")
+    );
 }
 
 #[test]
 fn tolerates_unknown_and_missing_fields() {
-    let streams = parse_streams(br#"{"streams":[{"infoHash":"aa","extra":1}],"cacheMaxAge":5}"#)
-        .unwrap();
+    let streams =
+        parse_streams(br#"{"streams":[{"infoHash":"aa","extra":1}],"cacheMaxAge":5}"#).unwrap();
     assert_eq!(streams[0].info_hash.as_deref(), Some("aa"));
     assert!(parse_streams(b"{}").unwrap().is_empty());
     assert!(parse_streams(b"not json").is_err());
@@ -110,7 +122,10 @@ fn parses_series_meta_with_videos_and_trailers() {
 fn normalizes_urls() {
     let (manifest, base) =
         normalize_manifest_url("stremio://addon.example.org/cfg=a|b/manifest.json").unwrap();
-    assert_eq!(manifest.as_str(), "https://addon.example.org/cfg=a|b/manifest.json");
+    assert_eq!(
+        manifest.as_str(),
+        "https://addon.example.org/cfg=a|b/manifest.json"
+    );
     assert_eq!(base.as_str(), "https://addon.example.org/cfg=a|b");
     assert!(normalize_manifest_url("https://example.org/foo").is_err());
     assert!(normalize_manifest_url("ftp://example.org/manifest.json").is_err());
@@ -128,7 +143,9 @@ fn builds_stream_meta_and_catalog_urls() {
         "https://a.example/sub/meta/series/tt0944947.json"
     );
     assert_eq!(
-        catalog_url(&base, "movie", "top", &CatalogQuery::default()).unwrap().as_str(),
+        catalog_url(&base, "movie", "top", &CatalogQuery::default())
+            .unwrap()
+            .as_str(),
         "https://a.example/sub/catalog/movie/top.json"
     );
     assert_eq!(

@@ -34,7 +34,11 @@ async fn start_seeder(dir: &std::path::Path, data: &[u8]) -> (Arc<Session>, Stri
     std::fs::write(&path, data).unwrap();
     let torrent = create_torrent(
         &path,
-        CreateTorrentOptions { name: None, trackers: vec![], piece_length: Some(256 * 1024) },
+        CreateTorrentOptions {
+            name: None,
+            trackers: vec![],
+            piece_length: Some(256 * 1024),
+        },
         &BlockingSpawner::new(2),
     )
     .await
@@ -124,7 +128,9 @@ fn streams_head_tail_and_middle_from_local_seeder() {
             let mut buf = vec![0u8; 4096];
             let mut filled = 0;
             while filled < buf.len() {
-                let n = reader.read_at(offset + filled as u64, &mut buf[filled..], &cancel).unwrap();
+                let n = reader
+                    .read_at(offset + filled as u64, &mut buf[filled..], &cancel)
+                    .unwrap();
                 assert!(n > 0, "unexpected EOF at {offset}");
                 filled += n;
             }
@@ -144,5 +150,8 @@ fn streams_head_tail_and_middle_from_local_seeder() {
         engine.release_all().await;
         seeder.stop().await;
     });
-    assert!(!dir.path().join("leech").join("downloads").exists(), "streamed data is cleared on release");
+    assert!(
+        !dir.path().join("leech").join("downloads").exists(),
+        "streamed data is cleared on release"
+    );
 }

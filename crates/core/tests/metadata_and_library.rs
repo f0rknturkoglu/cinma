@@ -118,8 +118,13 @@ fn tmdb_primary_caches_and_populates_calendar_then_falls_back_to_addon() {
     assert_eq!(*hits.lock().unwrap(), hits_after_first);
 
     // Add series to library -> calendar returns its upcoming episode.
-    core.add_to_library("tt0944947".into(), "series".into(), "Kuzey Hattı".into(), None)
-        .unwrap();
+    core.add_to_library(
+        "tt0944947".into(),
+        "series".into(),
+        "Kuzey Hattı".into(),
+        None,
+    )
+    .unwrap();
     let cal = rt.block_on(core.calendar_entries()).unwrap();
     assert_eq!(cal.len(), 1);
     assert_eq!(cal[0].episode_name, "Sinyal Kulesi");
@@ -171,7 +176,9 @@ fn profiles_and_watch_progress_work_and_auto_mark_watched() {
     assert!(core.get_watch_progress("tt1:1:1").unwrap().unwrap().watched);
 
     // Switching profile isolates continue watching & library.
-    let p2 = core.create_profile("Misafir".into(), Some("M".into())).unwrap();
+    let p2 = core
+        .create_profile("Misafir".into(), Some("M".into()))
+        .unwrap();
     core.set_active_profile(p2).unwrap();
     assert_eq!(core.active_profile().unwrap(), p2);
     assert!(core.library_items().unwrap().is_empty());

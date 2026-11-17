@@ -81,12 +81,20 @@ impl Core {
     /// Installed addons in user order, with the active profile's enabled flag.
     pub fn addons(&self) -> Result<Vec<InstalledAddon>, CoreError> {
         let profile = self.active_profile()?;
-        let rows = self.db.lock().map_err(|_| CoreError::Poisoned)?.addons_for_profile(profile)?;
+        let rows = self
+            .db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .addons_for_profile(profile)?;
         rows.into_iter()
             .map(|row| {
                 let manifest = serde_json::from_str(&row.manifest_json)
                     .map_err(|e| CoreError::Invalid(format!("stored manifest {}: {e}", row.id)))?;
-                Ok(InstalledAddon { transport_url: row.transport_url, manifest, enabled: row.enabled })
+                Ok(InstalledAddon {
+                    transport_url: row.transport_url,
+                    manifest,
+                    enabled: row.enabled,
+                })
             })
             .collect()
     }
@@ -111,26 +119,38 @@ impl Core {
         let manifest_json = serde_json::to_string(&preview.manifest)
             .map_err(|e| CoreError::Invalid(e.to_string()))?;
         let profile = self.active_profile()?;
-        self.db.lock().map_err(|_| CoreError::Poisoned)?.upsert_addon(
-            profile,
-            &preview.manifest.id,
-            &preview.transport_url,
-            &manifest_json,
-        )?;
+        self.db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .upsert_addon(
+                profile,
+                &preview.manifest.id,
+                &preview.transport_url,
+                &manifest_json,
+            )?;
         self.emit(CoreEvent::AddonsChanged);
-        Ok(InstalledAddon { enabled: true, ..preview })
+        Ok(InstalledAddon {
+            enabled: true,
+            ..preview
+        })
     }
 
     pub fn set_addon_enabled(&self, id: &str, enabled: bool) -> Result<(), CoreError> {
         let profile = self.active_profile()?;
-        self.db.lock().map_err(|_| CoreError::Poisoned)?.set_addon_enabled(profile, id, enabled)?;
+        self.db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .set_addon_enabled(profile, id, enabled)?;
         self.emit(CoreEvent::AddonsChanged);
         Ok(())
     }
 
     /// Uninstalls for every profile.
     pub fn remove_addon(&self, id: &str) -> Result<(), CoreError> {
-        self.db.lock().map_err(|_| CoreError::Poisoned)?.remove_addon(id)?;
+        self.db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .remove_addon(id)?;
         self.emit(CoreEvent::AddonsChanged);
         Ok(())
     }
@@ -231,10 +251,13 @@ impl Core {
             .into_iter()
             .filter(|c| {
                 c.catalog.is_browsable()
-                    && media_type.as_deref().is_none_or(|t| c.catalog.media_type == t)
+                    && media_type
+                        .as_deref()
+                        .is_none_or(|t| c.catalog.media_type == t)
             })
             .collect();
-        self.fetch_catalog_fanout(targets, CatalogQuery::default(), listener).await
+        self.fetch_catalog_fanout(targets, CatalogQuery::default(), listener)
+            .await
     }
 
     /// Searches every searchable catalog across enabled addons in parallel,
@@ -254,12 +277,18 @@ impl Core {
             .into_iter()
             .filter(|c| {
                 c.catalog.is_searchable()
-                    && media_type.as_deref().is_none_or(|t| c.catalog.media_type == t)
+                    && media_type
+                        .as_deref()
+                        .is_none_or(|t| c.catalog.media_type == t)
             })
             .collect();
         self.fetch_catalog_fanout(
             targets,
-            CatalogQuery { search: Some(trimmed), genre: None, skip: None },
+            CatalogQuery {
+                search: Some(trimmed),
+                genre: None,
+                skip: None,
+            },
             listener,
         )
         .await
@@ -295,7 +324,9 @@ impl Core {
             let mut results = Vec::new();
             let mut errors = Vec::new();
             while let Some(joined) = tasks.join_next().await {
-                let Ok((index, target, result)) = joined else { continue };
+                let Ok((index, target, result)) = joined else {
+                    continue;
+                };
                 let catalog_name = target.catalog.display_name().to_owned();
                 match result {
                     Ok(resp) => {
@@ -376,16 +407,27 @@ impl Core {
             for (index, addon) in addons.into_iter().enumerate() {
                 let (http, media_type, id) = (http.clone(), media_type.clone(), id.clone());
                 tasks.spawn(async move {
-                    let result = http.fetch_meta(&addon.transport_url, &media_type, &id).await;
+                    let result = http
+                        .fetch_meta(&addon.transport_url, &media_type, &id)
+                        .await;
                     (index, addon.manifest.id, addon.manifest.name, result)
                 });
             }
             let mut found = Vec::new();
             let mut errors = Vec::new();
             while let Some(joined) = tasks.join_next().await {
-                let Ok((index, addon_id, addon_name, result)) = joined else { continue };
+                let Ok((index, addon_id, addon_name, result)) = joined else {
+                    continue;
+                };
                 match result {
-                    Ok(Some(meta)) => found.push((index, MetaResult { addon_id, addon_name, meta })),
+                    Ok(Some(meta)) => found.push((
+                        index,
+                        MetaResult {
+                            addon_id,
+                            addon_name,
+                            meta,
+                        },
+                    )),
                     Ok(None) => {}
                     Err(e) => errors.push(format!("{addon_name}: {e}")),
                 }
@@ -397,7 +439,9 @@ impl Core {
             if !errors.is_empty() {
                 return Err(CoreError::Invalid(errors.join("; ")));
             }
-            Err(CoreError::Invalid(format!("meta not found for {media_type} {id}")))
+            Err(CoreError::Invalid(format!(
+                "meta not found for {media_type} {id}"
+            )))
         })
         .await
     }
@@ -436,14 +480,18 @@ impl Core {
             for (index, addon) in addons.into_iter().enumerate() {
                 let (http, media_type, id) = (http.clone(), media_type.clone(), id.clone());
                 tasks.spawn(async move {
-                    let result = http.fetch_streams(&addon.transport_url, &media_type, &id).await;
+                    let result = http
+                        .fetch_streams(&addon.transport_url, &media_type, &id)
+                        .await;
                     (index, addon.manifest.id, addon.manifest.name, result)
                 });
             }
             let mut results = Vec::new();
             let mut errors = Vec::new();
             while let Some(joined) = tasks.join_next().await {
-                let Ok((index, addon_id, addon_name, result)) = joined else { continue };
+                let Ok((index, addon_id, addon_name, result)) = joined else {
+                    continue;
+                };
                 match result {
                     Ok(streams) => {
                         let candidates: Vec<StreamCandidate> = streams

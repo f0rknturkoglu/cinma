@@ -19,13 +19,17 @@ fn detect_uncached() -> MachineCapabilities {
         .args(["-n", "machdep.cpu.brand_string", "hw.model"])
         .output();
     let Ok(output) = output else {
-        return MachineCapabilities { hardware_av1: false };
+        return MachineCapabilities {
+            hardware_av1: false,
+        };
     };
     let text = String::from_utf8_lossy(&output.stdout);
     let mut lines = text.lines();
     let brand = lines.next().unwrap_or("");
     let model = lines.next().unwrap_or("");
-    MachineCapabilities { hardware_av1: parse_hardware_av1(brand, model) }
+    MachineCapabilities {
+        hardware_av1: parse_hardware_av1(brand, model),
+    }
 }
 
 /// Determines hardware AV1 decode capability from `machdep.cpu.brand_string`

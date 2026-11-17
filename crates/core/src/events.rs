@@ -23,7 +23,10 @@ pub trait CoreEventListener: Send + Sync {
 
 impl Core {
     pub fn subscribe(&self, listener: Arc<dyn CoreEventListener>) -> Result<(), CoreError> {
-        self.listeners.lock().map_err(|_| CoreError::Poisoned)?.push(listener);
+        self.listeners
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .push(listener);
         Ok(())
     }
 

@@ -28,8 +28,13 @@ fn opengl() -> Option<&'static libloading::Library> {
         .as_ref()
 }
 
-pub(crate) unsafe extern "C" fn get_proc_address(_ctx: *mut c_void, name: *const c_char) -> *mut c_void {
-    let Some(lib) = opengl() else { return std::ptr::null_mut() };
+pub(crate) unsafe extern "C" fn get_proc_address(
+    _ctx: *mut c_void,
+    name: *const c_char,
+) -> *mut c_void {
+    let Some(lib) = opengl() else {
+        return std::ptr::null_mut();
+    };
     // SAFETY: mpv passes a NUL-terminated symbol name.
     let name = unsafe { CStr::from_ptr(name) };
     // SAFETY: we only read the symbol's address.

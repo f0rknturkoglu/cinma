@@ -4,7 +4,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use cinma_core::{CommandContext, Core, CoreError, CoreEvent, EndReason, Feature, PlayerEvent, PlayerEvents};
+use cinma_core::{
+    CommandContext, Core, CoreError, CoreEvent, EndReason, Feature, PlayerEvent, PlayerEvents,
+};
 
 uniffi::setup_scaffolding!();
 
@@ -112,7 +114,9 @@ impl cinma_core::CoreEventListener for EventAdapter {
 }
 
 fn feature(name: &str) -> Result<Feature, CinmaError> {
-    Feature::from_name(name).ok_or_else(|| CinmaError::Invalid { message: format!("unknown feature {name}") })
+    Feature::from_name(name).ok_or_else(|| CinmaError::Invalid {
+        message: format!("unknown feature {name}"),
+    })
 }
 
 #[derive(uniffi::Record)]
@@ -125,7 +129,12 @@ pub struct ProfileInfo {
 
 impl From<cinma_core::ProfileRow> for ProfileInfo {
     fn from(p: cinma_core::ProfileRow) -> Self {
-        Self { id: p.id, name: p.name, avatar: p.avatar, has_pin: p.has_pin }
+        Self {
+            id: p.id,
+            name: p.name,
+            avatar: p.avatar,
+            has_pin: p.has_pin,
+        }
     }
 }
 
@@ -259,7 +268,11 @@ pub struct YtdlpStatusInfo {
 
 impl From<cinma_core::YtdlpStatus> for YtdlpStatusInfo {
     fn from(s: cinma_core::YtdlpStatus) -> Self {
-        Self { available: s.available, path: s.path, managed: s.managed }
+        Self {
+            available: s.available,
+            path: s.path,
+            managed: s.managed,
+        }
     }
 }
 
@@ -676,7 +689,11 @@ pub struct ScoreReasonInfo {
 
 impl From<cinma_core::ScoreReason> for ScoreReasonInfo {
     fn from(r: cinma_core::ScoreReason) -> Self {
-        Self { code: r.code, detail: r.detail, points: r.points }
+        Self {
+            code: r.code,
+            detail: r.detail,
+            points: r.points,
+        }
     }
 }
 
@@ -790,13 +807,29 @@ pub enum PlaybackEndReason {
 pub enum PlaybackEvent {
     FileLoaded,
     PlaybackRestart,
-    Position { seconds: f64 },
-    Duration { seconds: f64 },
-    Paused { paused: bool },
-    Buffering { buffering: bool },
-    VideoGamma { gamma: String },
-    Metric { name: String, millis: f64 },
-    EndFile { reason: PlaybackEndReason, error: Option<String> },
+    Position {
+        seconds: f64,
+    },
+    Duration {
+        seconds: f64,
+    },
+    Paused {
+        paused: bool,
+    },
+    Buffering {
+        buffering: bool,
+    },
+    VideoGamma {
+        gamma: String,
+    },
+    Metric {
+        name: String,
+        millis: f64,
+    },
+    EndFile {
+        reason: PlaybackEndReason,
+        error: Option<String>,
+    },
     Shutdown,
 }
 
@@ -810,7 +843,10 @@ impl From<PlayerEvent> for PlaybackEvent {
             PlayerEvent::Paused(paused) => Self::Paused { paused },
             PlayerEvent::Buffering(buffering) => Self::Buffering { buffering },
             PlayerEvent::VideoGamma(gamma) => Self::VideoGamma { gamma },
-            PlayerEvent::Metric { name, millis } => Self::Metric { name: name.to_owned(), millis },
+            PlayerEvent::Metric { name, millis } => Self::Metric {
+                name: name.to_owned(),
+                millis,
+            },
             PlayerEvent::EndFile { reason, error } => Self::EndFile {
                 reason: match reason {
                     EndReason::Eof => PlaybackEndReason::Eof,
@@ -923,7 +959,12 @@ impl CinmaCore {
     }
 
     pub fn library_items(&self) -> Result<Vec<LibraryItemInfo>, CinmaError> {
-        Ok(self.inner.library_items()?.into_iter().map(Into::into).collect())
+        Ok(self
+            .inner
+            .library_items()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
 
     pub fn is_in_library(&self, meta_id: String, media_type: String) -> Result<bool, CinmaError> {
@@ -937,10 +978,16 @@ impl CinmaCore {
         name: String,
         poster: Option<String>,
     ) -> Result<(), CinmaError> {
-        Ok(self.inner.add_to_library(meta_id, media_type, name, poster)?)
+        Ok(self
+            .inner
+            .add_to_library(meta_id, media_type, name, poster)?)
     }
 
-    pub fn remove_from_library(&self, meta_id: String, media_type: String) -> Result<(), CinmaError> {
+    pub fn remove_from_library(
+        &self,
+        meta_id: String,
+        media_type: String,
+    ) -> Result<(), CinmaError> {
         Ok(self.inner.remove_from_library(&meta_id, &media_type)?)
     }
 
@@ -953,7 +1000,10 @@ impl CinmaCore {
             .collect())
     }
 
-    pub fn get_watch_progress(&self, video_id: String) -> Result<Option<WatchProgressInfo>, CinmaError> {
+    pub fn get_watch_progress(
+        &self,
+        video_id: String,
+    ) -> Result<Option<WatchProgressInfo>, CinmaError> {
         Ok(self.inner.get_watch_progress(&video_id)?.map(Into::into))
     }
 
@@ -967,17 +1017,19 @@ impl CinmaCore {
     }
 
     pub fn save_watch_progress(&self, input: WatchProgressInputFfi) -> Result<(), CinmaError> {
-        Ok(self.inner.save_watch_progress(cinma_core::WatchProgressInput {
-            video_id: input.video_id,
-            meta_id: input.meta_id,
-            media_type: input.media_type,
-            title: input.title,
-            artwork: input.artwork,
-            season: input.season,
-            episode: input.episode,
-            position_s: input.position_s,
-            duration_s: input.duration_s,
-        })?)
+        Ok(self
+            .inner
+            .save_watch_progress(cinma_core::WatchProgressInput {
+                video_id: input.video_id,
+                meta_id: input.meta_id,
+                media_type: input.media_type,
+                title: input.title,
+                artwork: input.artwork,
+                season: input.season,
+                episode: input.episode,
+                position_s: input.position_s,
+                duration_s: input.duration_s,
+            })?)
     }
 
     pub fn set_watched(
@@ -988,7 +1040,9 @@ impl CinmaCore {
         title: String,
         watched: bool,
     ) -> Result<(), CinmaError> {
-        Ok(self.inner.set_watched(video_id, meta_id, media_type, title, watched)?)
+        Ok(self
+            .inner
+            .set_watched(video_id, meta_id, media_type, title, watched)?)
     }
 
     pub fn has_tmdb_key(&self) -> Result<bool, CinmaError> {
@@ -1044,7 +1098,11 @@ impl CinmaCore {
             .collect())
     }
 
-    pub async fn rich_meta(&self, media_type: String, id: String) -> Result<RichMetaInfo, CinmaError> {
+    pub async fn rich_meta(
+        &self,
+        media_type: String,
+        id: String,
+    ) -> Result<RichMetaInfo, CinmaError> {
         Ok(self.inner.rich_meta(media_type, id).await?.into())
     }
 
@@ -1095,14 +1153,23 @@ impl CinmaCore {
             .inner
             .key_bindings()?
             .into_iter()
-            .map(|(spec, key)| CommandInfo { id: spec.id.to_owned(), context: spec.context.name().to_owned(), key })
+            .map(|(spec, key)| CommandInfo {
+                id: spec.id.to_owned(),
+                context: spec.context.name().to_owned(),
+                key,
+            })
             .collect())
     }
 
     /// Command bound to `combo` in `context` ("global" | "player").
-    pub fn resolve_key(&self, context: String, combo: String) -> Result<Option<String>, CinmaError> {
-        let context = CommandContext::from_name(&context)
-            .ok_or_else(|| CinmaError::Invalid { message: format!("unknown context {context}") })?;
+    pub fn resolve_key(
+        &self,
+        context: String,
+        combo: String,
+    ) -> Result<Option<String>, CinmaError> {
+        let context = CommandContext::from_name(&context).ok_or_else(|| CinmaError::Invalid {
+            message: format!("unknown context {context}"),
+        })?;
         Ok(self.inner.resolve_key(context, &combo)?.map(str::to_owned))
     }
 
@@ -1121,7 +1188,10 @@ impl CinmaCore {
     }
 
     pub async fn set_feature_enabled(&self, name: String, enabled: bool) -> Result<(), CinmaError> {
-        Ok(self.inner.set_feature_enabled(feature(&name)?, enabled).await?)
+        Ok(self
+            .inner
+            .set_feature_enabled(feature(&name)?, enabled)
+            .await?)
     }
 
     pub fn catalogs(&self) -> Result<Vec<CatalogInfo>, CinmaError> {
@@ -1164,7 +1234,11 @@ impl CinmaCore {
     ) -> Result<Vec<CatalogPageInfo>, CinmaError> {
         Ok(self
             .inner
-            .search_catalogs(query, media_type, Some(Arc::new(CatalogBatchAdapter(observer))))
+            .search_catalogs(
+                query,
+                media_type,
+                Some(Arc::new(CatalogBatchAdapter(observer))),
+            )
             .await?
             .into_iter()
             .map(Into::into)
@@ -1176,7 +1250,11 @@ impl CinmaCore {
     }
 
     /// `media_type`: "movie" | "series"; `id`: e.g. "tt1254207" or "tt0944947:1:1".
-    pub async fn streams(&self, media_type: String, id: String) -> Result<Vec<StreamInfo>, CinmaError> {
+    pub async fn streams(
+        &self,
+        media_type: String,
+        id: String,
+    ) -> Result<Vec<StreamInfo>, CinmaError> {
         Ok(self
             .inner
             .streams(media_type, id)
@@ -1214,9 +1292,14 @@ impl CinmaCore {
         let candidates = streams
             .into_iter()
             .map(|s| {
-                let stream: cinma_stremio::Stream = serde_json::from_str(&s.raw)
-                    .map_err(|e| CinmaError::Invalid { message: e.to_string() })?;
-                Ok(cinma_core::StreamCandidate { addon_name: s.addon_name, stream })
+                let stream: cinma_stremio::Stream =
+                    serde_json::from_str(&s.raw).map_err(|e| CinmaError::Invalid {
+                        message: e.to_string(),
+                    })?;
+                Ok(cinma_core::StreamCandidate {
+                    addon_name: s.addon_name,
+                    stream,
+                })
             })
             .collect::<Result<Vec<_>, CinmaError>>()?;
         Ok(self.inner.rank_streams(candidates, prefs).into())
@@ -1224,8 +1307,13 @@ impl CinmaCore {
 
     /// Creates a player. Blocking (loads libmpv on first use) — call off the
     /// main thread, then attach a video layer with `render_init`.
-    pub fn create_playback(&self, observer: Arc<dyn PlaybackObserver>) -> Result<Arc<PlaybackSession>, CinmaError> {
-        let inner = self.inner.create_playback(Arc::new(ObserverAdapter(observer)))?;
+    pub fn create_playback(
+        &self,
+        observer: Arc<dyn PlaybackObserver>,
+    ) -> Result<Arc<PlaybackSession>, CinmaError> {
+        let inner = self
+            .inner
+            .create_playback(Arc::new(ObserverAdapter(observer)))?;
         Ok(Arc::new(PlaybackSession { inner }))
     }
 }
@@ -1238,38 +1326,64 @@ pub struct PlaybackSession {
 #[uniffi::export]
 impl PlaybackSession {
     pub async fn play(&self, stream: StreamInfo) -> Result<(), CinmaError> {
-        let stream: cinma_stremio::Stream = serde_json::from_str(&stream.raw)
-            .map_err(|e| CinmaError::Invalid { message: e.to_string() })?;
+        let stream: cinma_stremio::Stream =
+            serde_json::from_str(&stream.raw).map_err(|e| CinmaError::Invalid {
+                message: e.to_string(),
+            })?;
         Ok(self.inner.play(stream).await?)
     }
 
     /// Plays a local file or URL directly (debug / render tests).
     pub fn play_url(&self, url: String) -> Result<(), CinmaError> {
-        Ok(self.inner.player().load_url(&url).map_err(CoreError::from)?)
+        Ok(self
+            .inner
+            .player()
+            .load_url(&url)
+            .map_err(CoreError::from)?)
     }
 
     pub fn toggle_pause(&self) -> Result<(), CinmaError> {
-        Ok(self.inner.player().toggle_pause().map_err(CoreError::from)?)
+        Ok(self
+            .inner
+            .player()
+            .toggle_pause()
+            .map_err(CoreError::from)?)
     }
 
     pub fn seek_absolute(&self, seconds: f64) -> Result<(), CinmaError> {
-        Ok(self.inner.player().seek_absolute(seconds).map_err(CoreError::from)?)
+        Ok(self
+            .inner
+            .player()
+            .seek_absolute(seconds)
+            .map_err(CoreError::from)?)
     }
 
     pub fn seek_relative(&self, seconds: f64) -> Result<(), CinmaError> {
-        Ok(self.inner.player().seek_relative(seconds).map_err(CoreError::from)?)
+        Ok(self
+            .inner
+            .player()
+            .seek_relative(seconds)
+            .map_err(CoreError::from)?)
     }
 
     /// Creates the OpenGL render context. Call with the video layer's CGL
     /// context current (e.g. inside `CAOpenGLLayer.draw`).
     pub fn render_init(&self, observer: Arc<dyn RenderObserver>) -> Result<(), CinmaError> {
         let callback: cinma_core::UpdateCallback = Arc::new(move || observer.needs_display());
-        Ok(self.inner.player().render_init(callback).map_err(CoreError::from)?)
+        Ok(self
+            .inner
+            .player()
+            .render_init(callback)
+            .map_err(CoreError::from)?)
     }
 
     /// Draws the current frame into `fbo`. CGL context must be current.
     pub fn render(&self, fbo: i32, width: i32, height: i32) -> Result<(), CinmaError> {
-        Ok(self.inner.player().render(fbo, width, height).map_err(CoreError::from)?)
+        Ok(self
+            .inner
+            .player()
+            .render(fbo, width, height)
+            .map_err(CoreError::from)?)
     }
 
     /// Frees the render context. CGL context must be current. Call before `stop`.

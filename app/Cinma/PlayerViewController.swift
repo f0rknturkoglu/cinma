@@ -22,8 +22,8 @@ private final class PlayerRootView: NSView {
     }
 }
 
-/// Phase 1 player: mpv renders into `videoLayer` (render API, ADR 0004);
-/// a minimal control bar sits on top. Full player UI is Phase 4.
+/// Cinema player view matching mockup M2: floating Liquid Glass top title &
+/// stream pills + bottom glass scrub bar + throttled watch-progress saving.
 @MainActor
 final class PlayerViewController: NSViewController {
     private let core: CinmaCore
@@ -41,9 +41,16 @@ final class PlayerViewController: NSViewController {
     private var duration: Double = 0
     private var position: Double = 0
     private var closing = false
+    private var appliedResume = false
+    private var lastSavedAt: ContinuousClock.Instant?
     private var shutdownWaiter: CheckedContinuation<Void, Never>?
     private var pendingSeeks = DevAutomation.autoSeeks
     private var closeRequestedAt: ContinuousClock.Instant?
+
+    private var metadata: PlaybackMetadata? {
+        if case .stream(_, let meta) = request { return meta }
+        return nil
+    }
 
     init(core: CinmaCore, request: PlayRequest, onClose: @escaping () -> Void) {
         self.core = core
@@ -66,60 +73,170 @@ final class PlayerViewController: NSViewController {
         videoView.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(videoView)
 
-        let bar = NSVisualEffectView()
-        bar.material = .hudWindow
-        bar.blendingMode = .withinWindow
-        bar.state = .active
-        bar.wantsLayer = true
-        bar.layer?.cornerRadius = 14
+        // Top-left floating glass title pill (mockup M2)
+        let titlePill = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 22)
+        titlePill.translatesAutoresizingMaskIntoConstraints = false
+
+        let backBtn = NSButton(
+            image: NSImage(systemSymbolName: "chevron.left", accessibilityDescription: String(localized: "Close")) ?? NSImage(),
+            target: self,
+            action: #selector(close)
+        )
+        backBtn.isBordered = false
+        backBtn.contentTintColor = CinemaTheme.textPrimary
+        backBtn.wantsLayer = true
+        backBtn.layer?.cornerRadius = 16
+        backBtn.layer?.backgroundColor = NSColor(white: 1, alpha: 0.10).cgColor
+        backBtn.translatesAutoresizingMaskIntoConstraints = false
+        backBtn.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        backBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
+
+        let (titleText, subText, summaryText) = displayTitles()
+        let titleField = NSTextField(labelWithString: titleText)
+        titleField.font = .systemFont(ofSize: 13.5, weight: .bold)
+        titleField.textColor = CinemaTheme.textPrimary
+        let subField = NSTextField(labelWithString: subText ?? "")
+        subField.font = .systemFont(ofSize: 11.5, weight: .regular)
+        subField.textColor = CinemaTheme.textSecondary
+        subField.isHidden = subText == nil
+
+        let titleCol = NSStackView(views: [titleField, subField])
+        titleCol.orientation = .vertical
+        titleCol.alignment = .leading
+        titleCol.spacing = 1
+
+        let topLeftStack = NSStackView(views: [backBtn, titleCol])
+        topLeftStack.orientation = .horizontal
+        topLeftStack.alignment = .centerY
+        topLeftStack.spacing = 10
+        topLeftStack.translatesAutoresizingMaskIntoConstraints = false
+        titlePill.addSubview(topLeftStack)
+
+        // Top-right stream info pill
+        let infoPill = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 17)
+        infoPill.translatesAutoresizingMaskIntoConstraints = false
+        infoPill.isHidden = summaryText == nil
+        let dot = NSView()
+        dot.wantsLayer = true
+        dot.layer?.cornerRadius = 4
+        dot.layer?.backgroundColor = CinemaTheme.green.cgColor
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        dot.widthAnchor.constraint(equalToConstant: 8).isActive = true
+        dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
+
+        let infoField = NSTextField(labelWithString: summaryText ?? "")
+        infoField.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        infoField.textColor = CinemaTheme.textPrimary
+        let infoStack = NSStackView(views: [dot, infoField])
+        infoStack.orientation = .horizontal
+        infoStack.alignment = .centerY
+        infoStack.spacing = 8
+        infoStack.translatesAutoresizingMaskIntoConstraints = false
+        infoPill.addSubview(infoStack)
+
+        // Bottom floating glass control bar
+        let bar = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 22)
         bar.translatesAutoresizingMaskIntoConstraints = false
 
-        playButton.bezelStyle = .accessoryBarAction
-        playButton.isBordered = false
+        let back10 = NSButton(
+            image: NSImage(systemSymbolName: "gobackward.10", accessibilityDescription: String(localized: "Seek back 10s")) ?? NSImage(),
+            target: self,
+            action: #selector(seekBack10)
+        )
+        let fwd10 = NSButton(
+            image: NSImage(systemSymbolName: "goforward.10", accessibilityDescription: String(localized: "Seek forward 10s")) ?? NSImage(),
+            target: self,
+            action: #selector(seekForward10)
+        )
+        for btn in [back10, playButton, fwd10] {
+            btn.isBordered = false
+            btn.contentTintColor = CinemaTheme.textPrimary
+        }
+
         playButton.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: String(localized: "Pause"))
         playButton.target = self
         playButton.action = #selector(togglePause)
-        let closeButton = NSButton(
-            image: NSImage(systemSymbolName: "xmark", accessibilityDescription: String(localized: "Close")) ?? NSImage(),
-            target: self, action: #selector(close)
-        )
-        closeButton.isBordered = false
+
         slider.isContinuous = false
+        slider.trackFillColor = CinemaTheme.accent
         slider.target = self
         slider.action = #selector(seek)
-        timeLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        timeLabel.textColor = .white
 
-        let controls = NSStackView(views: [playButton, slider, timeLabel, closeButton])
-        controls.spacing = 12
-        controls.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
-        controls.translatesAutoresizingMaskIntoConstraints = false
-        bar.addSubview(controls)
+        timeLabel.font = .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold)
+        timeLabel.textColor = CinemaTheme.textPrimary
 
-        statusLabel.textColor = .white
+        let transportRow = NSStackView(views: [back10, playButton, fwd10, timeLabel, NSView()])
+        transportRow.orientation = .horizontal
+        transportRow.alignment = .centerY
+        transportRow.spacing = 12
+
+        let barStack = NSStackView(views: [slider, transportRow])
+        barStack.orientation = .vertical
+        barStack.alignment = .leading
+        barStack.spacing = 10
+        barStack.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(barStack)
+
+        statusLabel.textColor = CinemaTheme.textPrimary
         statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.lineBreakMode = .byTruncatingTail
 
+        root.addSubview(titlePill)
+        root.addSubview(infoPill)
         root.addSubview(bar)
         root.addSubview(statusLabel)
+
         NSLayoutConstraint.activate([
             videoView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             videoView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             videoView.topAnchor.constraint(equalTo: root.topAnchor),
             videoView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            controls.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
-            controls.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
-            controls.topAnchor.constraint(equalTo: bar.topAnchor),
-            controls.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
-            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
-            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
+
+            topLeftStack.topAnchor.constraint(equalTo: titlePill.topAnchor, constant: 6),
+            topLeftStack.bottomAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: -6),
+            topLeftStack.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor, constant: 6),
+            topLeftStack.trailingAnchor.constraint(equalTo: titlePill.trailingAnchor, constant: -16),
+            titlePill.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
+            titlePill.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 88),
+
+            infoStack.topAnchor.constraint(equalTo: infoPill.topAnchor, constant: 8),
+            infoStack.bottomAnchor.constraint(equalTo: infoPill.bottomAnchor, constant: -8),
+            infoStack.leadingAnchor.constraint(equalTo: infoPill.leadingAnchor, constant: 14),
+            infoStack.trailingAnchor.constraint(equalTo: infoPill.trailingAnchor, constant: -14),
+            infoPill.centerYAnchor.constraint(equalTo: titlePill.centerYAnchor),
+            infoPill.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+
+            barStack.topAnchor.constraint(equalTo: bar.topAnchor, constant: 14),
+            barStack.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -14),
+            barStack.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 20),
+            barStack.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -20),
+            slider.widthAnchor.constraint(equalTo: barStack.widthAnchor),
+            transportRow.widthAnchor.constraint(equalTo: barStack.widthAnchor),
+
+            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
+            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
             bar.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -24),
-            statusLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
-            statusLabel.topAnchor.constraint(equalTo: root.topAnchor, constant: 40),
-            statusLabel.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -24),
+
+            statusLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            statusLabel.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -14),
         ])
         view = root
+    }
+
+    private func displayTitles() -> (String, String?, String?) {
+        switch request {
+        case .stream(let s, let meta):
+            return (
+                meta?.title ?? s.addonName,
+                meta?.subtitle,
+                meta?.streamSummary ?? s.name
+            )
+        case .file(let url):
+            return (url.lastPathComponent, nil, String(localized: "Local File"))
+        case .trailer(_, let title):
+            return (title, nil, String(localized: "Trailer"))
+        }
     }
 
     override func viewDidAppear() {
@@ -156,15 +273,16 @@ final class PlayerViewController: NSViewController {
                     }
                 }
                 let proceed = await MainActor.run { () -> Bool in
-                    if case .stream(let s) = request, s.infoHash != nil {
+                    if case .stream(let s, _) = request, s.infoHash != nil {
                         self.statusLabel.stringValue = String(localized: "Connecting to peers…")
                     }
                     return !self.closing
                 }
                 guard proceed else { return }
                 switch request {
-                case .stream(let stream): try await session.play(stream: stream)
+                case .stream(let stream, _): try await session.play(stream: stream)
                 case .file(let url): try session.playUrl(url: url.path)
+                case .trailer(let url, _): try session.playUrl(url: url)
                 }
             } catch {
                 await MainActor.run {
@@ -178,12 +296,17 @@ final class PlayerViewController: NSViewController {
         switch event {
         case .fileLoaded:
             statusLabel.stringValue = ""
+            if !appliedResume, let resume = metadata?.resumePosition, resume > 10 {
+                appliedResume = true
+                try? session?.seekAbsolute(seconds: resume)
+            }
         case .playbackRestart:
             if statusLabel.stringValue == String(localized: "Buffering…") { statusLabel.stringValue = "" }
         case .position(let seconds):
             position = seconds
             if NSEvent.pressedMouseButtons == 0 { slider.doubleValue = seconds }
             updateTime()
+            saveProgressIfNeeded(force: false)
         case .duration(let seconds):
             duration = seconds
             slider.maxValue = max(seconds, 1)
@@ -192,6 +315,7 @@ final class PlayerViewController: NSViewController {
             let name = paused ? "play.fill" : "pause.fill"
             let label = paused ? String(localized: "Play") : String(localized: "Pause")
             playButton.image = NSImage(systemSymbolName: name, accessibilityDescription: label)
+            if paused { saveProgressIfNeeded(force: true) }
         case .buffering(let buffering):
             statusLabel.stringValue = buffering ? String(localized: "Buffering…") : ""
         case .videoGamma(let gamma):
@@ -210,7 +334,8 @@ final class PlayerViewController: NSViewController {
             continueAutomation()
         case .endFile(let reason, let error):
             if case .error = reason {
-                statusLabel.stringValue = String(localized: "Playback error: \(error ?? "unknown")")
+                let msg = error ?? "unknown"
+                statusLabel.stringValue = String(localized: "Playback error: \(msg)")
             }
         case .shutdown:
             if let start = closeRequestedAt {
@@ -219,6 +344,25 @@ final class PlayerViewController: NSViewController {
             shutdownWaiter?.resume()
             shutdownWaiter = nil
         }
+    }
+
+    private func saveProgressIfNeeded(force: Bool) {
+        guard let meta = metadata, duration > 0, position >= 0 else { return }
+        if !force, let last = lastSavedAt, last.duration(to: .now) < .seconds(10) {
+            return
+        }
+        lastSavedAt = .now
+        try? core.saveWatchProgress(input: WatchProgressInputFfi(
+            videoId: meta.videoId,
+            metaId: meta.metaId,
+            mediaType: meta.mediaType,
+            title: meta.title,
+            artwork: meta.artwork,
+            season: meta.season,
+            episode: meta.episode,
+            positionS: position,
+            durationS: duration
+        ))
     }
 
     /// Drives CINMA_AUTOSEEK / CINMA_AUTOQUIT (see DevAutomation).
@@ -264,8 +408,8 @@ final class PlayerViewController: NSViewController {
         else { return false }
         switch command {
         case "player.toggle_pause": togglePause()
-        case "player.seek_back": try? session?.seekRelative(seconds: -10)
-        case "player.seek_forward": try? session?.seekRelative(seconds: 10)
+        case "player.seek_back": seekBack10()
+        case "player.seek_forward": seekForward10()
         case "player.close": close()
         default: return false   // global commands go through the menu
         }
@@ -276,14 +420,27 @@ final class PlayerViewController: NSViewController {
         try? session?.togglePause()
     }
 
+    @objc private func seekBack10() {
+        try? session?.seekRelative(seconds: -10)
+        saveProgressIfNeeded(force: true)
+    }
+
+    @objc private func seekForward10() {
+        try? session?.seekRelative(seconds: 10)
+        saveProgressIfNeeded(force: true)
+    }
+
     @objc private func seek() {
+        position = slider.doubleValue
         try? session?.seekAbsolute(seconds: slider.doubleValue)
+        saveProgressIfNeeded(force: true)
     }
 
     @objc private func close() {
         guard !closing else { return }
         closing = true
         closeRequestedAt = .now
+        saveProgressIfNeeded(force: true)
         statusLabel.stringValue = ""
         guard let session else {
             onClose()

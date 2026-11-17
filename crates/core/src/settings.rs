@@ -58,7 +58,11 @@ impl Core {
     /// Persists the toggle. Turning a feature off tears it down immediately:
     /// for `Torrent` that stops the session, so a torrent that is playing
     /// stops receiving data (its reads fail and mpv ends the file).
-    pub async fn set_feature_enabled(self: &Arc<Self>, feature: Feature, enabled: bool) -> Result<(), CoreError> {
+    pub async fn set_feature_enabled(
+        self: &Arc<Self>,
+        feature: Feature,
+        enabled: bool,
+    ) -> Result<(), CoreError> {
         {
             let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
             db.set_app_setting(&feature.key(), if enabled { "1" } else { "0" })?;
@@ -66,7 +70,11 @@ impl Core {
         if !enabled {
             match feature {
                 Feature::Torrent => {
-                    let engine = self.torrents.lock().map_err(|_| CoreError::Poisoned)?.take();
+                    let engine = self
+                        .torrents
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .take();
                     if let Some(engine) = engine {
                         self.spawn(async move {
                             cinma_torrent::TorrentEngine::release_all(&*engine).await;

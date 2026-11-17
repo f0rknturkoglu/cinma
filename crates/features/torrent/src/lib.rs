@@ -30,7 +30,9 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 const METADATA_TIMEOUT: Duration = Duration::from_secs(90);
 const WARMUP_TAIL_WINDOW: u64 = 64 * 1024;
 const WARMUP_TIMEOUT: Duration = Duration::from_secs(8);
-const VIDEO_EXTENSIONS: &[&str] = &["mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv"];
+const VIDEO_EXTENSIONS: &[&str] = &[
+    "mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv",
+];
 const FALLBACK_TRACKERS: &[&str] = &[
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.stealth.si:80/announce",
@@ -192,7 +194,9 @@ impl RqbitEngine {
                         let files = handle.with_metadata(|m| {
                             m.file_infos
                                 .iter()
-                                .map(|f| (f.relative_filename.to_string_lossy().into_owned(), f.len))
+                                .map(|f| {
+                                    (f.relative_filename.to_string_lossy().into_owned(), f.len)
+                                })
                                 .collect::<Vec<_>>()
                         })?;
                         pick_video_file(&files).ok_or(TorrentError::NoFiles)?
@@ -229,7 +233,11 @@ impl RqbitEngine {
             }
         };
         if already_managed {
-            let mut only: HashSet<usize> = handle.only_files().unwrap_or_default().into_iter().collect();
+            let mut only: HashSet<usize> = handle
+                .only_files()
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
             if only.insert(file_idx) {
                 session.update_only_files(&handle, &only).await?;
             }
@@ -245,10 +253,16 @@ impl RqbitEngine {
                 info.map(|f| f.relative_filename.to_string_lossy().into_owned()),
             )
         })?;
-        let len = len.ok_or(TorrentError::FileIndex { index: file_idx, count })?;
-        let warmup = Arc::new(std::sync::Mutex::new(Some(
-            spawn_head_tail_warmup(&self.runtime, Arc::clone(&handle), file_idx, len),
-        )));
+        let len = len.ok_or(TorrentError::FileIndex {
+            index: file_idx,
+            count,
+        })?;
+        let warmup = Arc::new(std::sync::Mutex::new(Some(spawn_head_tail_warmup(
+            &self.runtime,
+            Arc::clone(&handle),
+            file_idx,
+            len,
+        ))));
         Ok(Arc::new(TorrentSource {
             handle,
             file_idx,
@@ -270,7 +284,10 @@ impl RqbitEngine {
             if let Err(e) = tokio::fs::remove_dir_all(&downloads).await
                 && e.kind() != io::ErrorKind::NotFound
             {
-                eprintln!("[cinma] torrent: could not clear {}: {e}", downloads.display());
+                eprintln!(
+                    "[cinma] torrent: could not clear {}: {e}",
+                    downloads.display()
+                );
             }
         }
     }
@@ -422,7 +439,12 @@ impl ByteSource for TorrentSource {
     }
 
     fn describe(&self) -> String {
-        format!("torrent {} #{} {}", self.handle.info_hash().as_string(), self.file_idx, self.name)
+        format!(
+            "torrent {} #{} {}",
+            self.handle.info_hash().as_string(),
+            self.file_idx,
+            self.name
+        )
     }
 }
 
@@ -445,13 +467,19 @@ impl SourceReader for TorrentReader {
         // Once the player seeks into the middle of the file, cancel the head/tail
         // warmup streams so they don't compete with the active seek cursor.
         const HEAD_TAIL_GUARD: u64 = 4 * 1024 * 1024;
-        if offset > HEAD_TAIL_GUARD && offset < self.len.saturating_sub(HEAD_TAIL_GUARD)
+        if offset > HEAD_TAIL_GUARD
+            && offset < self.len.saturating_sub(HEAD_TAIL_GUARD)
             && let Ok(mut guard) = self.warmup.lock()
             && let Some(handle) = guard.take()
         {
             handle.abort();
         }
-        let Self { stream, position, runtime, .. } = self;
+        let Self {
+            stream,
+            position,
+            runtime,
+            ..
+        } = self;
         let result = runtime.block_on(async {
             tokio::select! {
                 biased;
@@ -493,7 +521,10 @@ mod tests {
     #[test]
     fn magnet_encodes_trackers() {
         let m = magnet_uri("ab", &["udp://t.example:1337/announce".into()]);
-        assert_eq!(m, "magnet:?xt=urn:btih:ab&tr=udp%3A%2F%2Ft.example%3A1337%2Fannounce");
+        assert_eq!(
+            m,
+            "magnet:?xt=urn:btih:ab&tr=udp%3A%2F%2Ft.example%3A1337%2Fannounce"
+        );
     }
 
     #[test]
@@ -505,7 +536,10 @@ mod tests {
             ("readme.txt".to_owned(), 1),
         ];
         assert_eq!(pick_video_file(&files), Some(1));
-        assert_eq!(pick_video_file(&[("a.bin".into(), 3), ("b.bin".into(), 7)]), Some(1));
+        assert_eq!(
+            pick_video_file(&[("a.bin".into(), 3), ("b.bin".into(), 7)]),
+            Some(1)
+        );
         assert_eq!(pick_video_file(&[]), None);
     }
 }

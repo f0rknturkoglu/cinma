@@ -128,14 +128,22 @@ fn tmdb_find_movie_tv_season_and_trending() {
         .build()
         .unwrap();
 
-    let found = rt.block_on(client.find_by_imdb("k", "tt0133093", "tr-TR")).unwrap().unwrap();
+    let found = rt
+        .block_on(client.find_by_imdb("k", "tt0133093", "tr-TR"))
+        .unwrap()
+        .unwrap();
     assert_eq!(found.tmdb_id, 603);
     assert_eq!(found.media_type, "movie");
 
-    let movie = rt.block_on(client.movie_details("k", 603, "tr-TR")).unwrap();
+    let movie = rt
+        .block_on(client.movie_details("k", 603, "tr-TR"))
+        .unwrap();
     assert_eq!(movie.meta.id, "tt0133093");
     assert_eq!(movie.meta.name, "Matrix");
-    assert_eq!(movie.meta.logo.as_deref(), Some("https://image.tmdb.org/t/p/w500/logo-tr.png"));
+    assert_eq!(
+        movie.meta.logo.as_deref(),
+        Some("https://image.tmdb.org/t/p/w500/logo-tr.png")
+    );
     assert_eq!(movie.meta.trailers[0].source, "vKQi3bBA1y8");
     assert_eq!(movie.id_map.tmdb_id, Some(603));
 
@@ -145,7 +153,9 @@ fn tmdb_find_movie_tv_season_and_trending() {
     assert_eq!(tv.id_map.tvdb_id, Some(121361));
     assert_eq!(tv.next_episode.unwrap().air_date, "2026-12-01");
 
-    let eps = rt.block_on(client.tv_season("k", 1399, "tt0944947", 1, "tr-TR")).unwrap();
+    let eps = rt
+        .block_on(client.tv_season("k", 1399, "tt0944947", 1, "tr-TR"))
+        .unwrap();
     assert_eq!(eps[0].id, "tt0944947:1:1");
     assert_eq!(eps[0].title.as_deref(), Some("Kış Geliyor"));
 

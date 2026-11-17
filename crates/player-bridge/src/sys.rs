@@ -95,7 +95,8 @@ pub const RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
 pub const RENDER_PARAM_OPENGL_FBO: c_int = 3;
 pub const RENDER_PARAM_FLIP_Y: c_int = 4;
 
-pub type GetProcAddressFn = unsafe extern "C" fn(ctx: *mut c_void, name: *const c_char) -> *mut c_void;
+pub type GetProcAddressFn =
+    unsafe extern "C" fn(ctx: *mut c_void, name: *const c_char) -> *mut c_void;
 pub type UpdateFn = unsafe extern "C" fn(ctx: *mut c_void);
 
 #[repr(C)]
@@ -112,26 +113,35 @@ pub struct mpv_opengl_fbo {
     pub internal_format: c_int,
 }
 
-pub type OpenFn =
-    unsafe extern "C" fn(user_data: *mut c_void, uri: *mut c_char, info: *mut mpv_stream_cb_info) -> c_int;
+pub type OpenFn = unsafe extern "C" fn(
+    user_data: *mut c_void,
+    uri: *mut c_char,
+    info: *mut mpv_stream_cb_info,
+) -> c_int;
 
 pub struct Api {
     _lib: libloading::Library,
     pub create: unsafe extern "C" fn() -> *mut mpv_handle,
     pub initialize: unsafe extern "C" fn(*mut mpv_handle) -> c_int,
-    pub set_option_string: unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int,
+    pub set_option_string:
+        unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int,
     pub command_async: unsafe extern "C" fn(*mut mpv_handle, u64, *mut *const c_char) -> c_int,
     pub observe_property: unsafe extern "C" fn(*mut mpv_handle, u64, *const c_char, c_int) -> c_int,
     pub request_log_messages: unsafe extern "C" fn(*mut mpv_handle, *const c_char) -> c_int,
     pub wait_event: unsafe extern "C" fn(*mut mpv_handle, f64) -> *mut mpv_event,
     pub terminate_destroy: unsafe extern "C" fn(*mut mpv_handle),
     pub error_string: unsafe extern "C" fn(c_int) -> *const c_char,
-    pub stream_cb_add_ro: unsafe extern "C" fn(*mut mpv_handle, *const c_char, *mut c_void, OpenFn) -> c_int,
-    pub render_context_create:
-        unsafe extern "C" fn(*mut *mut mpv_render_context, *mut mpv_handle, *mut mpv_render_param) -> c_int,
+    pub stream_cb_add_ro:
+        unsafe extern "C" fn(*mut mpv_handle, *const c_char, *mut c_void, OpenFn) -> c_int,
+    pub render_context_create: unsafe extern "C" fn(
+        *mut *mut mpv_render_context,
+        *mut mpv_handle,
+        *mut mpv_render_param,
+    ) -> c_int,
     pub render_context_set_update_callback:
         unsafe extern "C" fn(*mut mpv_render_context, Option<UpdateFn>, *mut c_void),
-    pub render_context_render: unsafe extern "C" fn(*mut mpv_render_context, *mut mpv_render_param) -> c_int,
+    pub render_context_render:
+        unsafe extern "C" fn(*mut mpv_render_context, *mut mpv_render_param) -> c_int,
     pub render_context_free: unsafe extern "C" fn(*mut mpv_render_context),
 }
 
@@ -179,7 +189,8 @@ fn resolve(lib: libloading::Library) -> Result<Api, libloading::Error> {
             error_string: *lib.get(b"mpv_error_string\0")?,
             stream_cb_add_ro: *lib.get(b"mpv_stream_cb_add_ro\0")?,
             render_context_create: *lib.get(b"mpv_render_context_create\0")?,
-            render_context_set_update_callback: *lib.get(b"mpv_render_context_set_update_callback\0")?,
+            render_context_set_update_callback: *lib
+                .get(b"mpv_render_context_set_update_callback\0")?,
             render_context_render: *lib.get(b"mpv_render_context_render\0")?,
             render_context_free: *lib.get(b"mpv_render_context_free\0")?,
             _lib: lib,

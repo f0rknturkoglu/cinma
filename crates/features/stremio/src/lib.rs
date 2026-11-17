@@ -13,9 +13,7 @@ use serde::{Deserialize, Deserializer};
 
 pub use catalog::{CatalogQuery, CatalogResponse, MetaPreview, parse_catalog};
 pub use client::{AddonClient, catalog_url, meta_url, normalize_manifest_url, stream_url};
-pub use manifest::{
-    CatalogDescriptor, CatalogExtra, Manifest, ManifestBehaviorHints, Resource,
-};
+pub use manifest::{CatalogDescriptor, CatalogExtra, Manifest, ManifestBehaviorHints, Resource};
 pub use meta::{Meta, MetaBehaviorHints, MetaLink, MetaTrailer, MetaVideo, parse_meta};
 pub use stream::{BehaviorHints, Stream, parse_streams};
 
@@ -55,8 +53,10 @@ where
         Num(serde_json::Number),
     }
 
-    Ok(Option::<StringOrNum>::deserialize(deserializer)?.and_then(|v| match v {
-        StringOrNum::Str(s) => (!s.trim().is_empty()).then_some(s),
-        StringOrNum::Num(n) => Some(n.to_string()),
-    }))
+    Ok(
+        Option::<StringOrNum>::deserialize(deserializer)?.and_then(|v| match v {
+            StringOrNum::Str(s) => (!s.trim().is_empty()).then_some(s),
+            StringOrNum::Num(n) => Some(n.to_string()),
+        }),
+    )
 }

@@ -75,7 +75,11 @@ impl Core {
                 };
             }
         }
-        YtdlpStatus { available: false, path: None, managed: false }
+        YtdlpStatus {
+            available: false,
+            path: None,
+            managed: false,
+        }
     }
 
     /// Runs a short-lived `yt-dlp -J` child process that exits once the

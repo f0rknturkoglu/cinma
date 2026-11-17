@@ -80,7 +80,8 @@ impl Database {
         kind: MediaKind,
         imdb_id: &str,
     ) -> Result<Option<IdMapEntry>, DbError> {
-        let sql = format!("SELECT {ID_MAP_COLS} FROM id_map WHERE media_kind = ?1 AND imdb_id = ?2");
+        let sql =
+            format!("SELECT {ID_MAP_COLS} FROM id_map WHERE media_kind = ?1 AND imdb_id = ?2");
         self.conn
             .query_row(&sql, params![kind.as_str(), imdb_id], id_map_from_row)
             .optional()?
@@ -93,7 +94,8 @@ impl Database {
         kind: MediaKind,
         tmdb_id: i64,
     ) -> Result<Option<IdMapEntry>, DbError> {
-        let sql = format!("SELECT {ID_MAP_COLS} FROM id_map WHERE media_kind = ?1 AND tmdb_id = ?2");
+        let sql =
+            format!("SELECT {ID_MAP_COLS} FROM id_map WHERE media_kind = ?1 AND tmdb_id = ?2");
         self.conn
             .query_row(&sql, params![kind.as_str(), tmdb_id], id_map_from_row)
             .optional()?

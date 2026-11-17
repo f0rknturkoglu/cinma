@@ -36,7 +36,15 @@ mod tests {
     #[test]
     fn empty_blob_head_tail_then_cursor() {
         let order = fetch_order(100 * MB, &RangeSet::new(), 50 * MB);
-        assert_eq!(order, vec![0..4 * MB, 96 * MB..100 * MB, 50 * MB..96 * MB, 4 * MB..50 * MB]);
+        assert_eq!(
+            order,
+            vec![
+                0..4 * MB,
+                96 * MB..100 * MB,
+                50 * MB..96 * MB,
+                4 * MB..50 * MB
+            ]
+        );
     }
 
     #[test]
@@ -45,7 +53,15 @@ mod tests {
         have.insert(0..4 * MB);
         have.insert(60 * MB..70 * MB);
         let order = fetch_order(100 * MB, &have, 50 * MB);
-        assert_eq!(order, vec![96 * MB..100 * MB, 50 * MB..60 * MB, 70 * MB..96 * MB, 4 * MB..50 * MB]);
+        assert_eq!(
+            order,
+            vec![
+                96 * MB..100 * MB,
+                50 * MB..60 * MB,
+                70 * MB..96 * MB,
+                4 * MB..50 * MB
+            ]
+        );
     }
 
     #[test]

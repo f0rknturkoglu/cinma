@@ -104,7 +104,11 @@ pub fn rank_streams(
     for (addon_name, stream) in candidates {
         let parsed = parse_stream(&stream);
         if let Some(reason) = filter_reason(&stream, &parsed, prefs) {
-            filtered.push(FilteredOutStream { addon_name, stream, reason });
+            filtered.push(FilteredOutStream {
+                addon_name,
+                stream,
+                reason,
+            });
             continue;
         }
         let (score, reasons) = score_stream(&stream, &parsed, prefs, caps);
@@ -122,7 +126,14 @@ pub fn rank_streams(
         .enumerate()
         .map(|(index, (addon_name, stream, parsed, score, reasons))| {
             let tier = assign_tier(index, score, top_score);
-            RankedStream { addon_name, stream, parsed, score, tier, reasons }
+            RankedStream {
+                addon_name,
+                stream,
+                parsed,
+                score,
+                tier,
+                reasons,
+            }
         })
         .collect();
 
@@ -167,7 +178,11 @@ fn score_stream(
     let mut reasons = Vec::new();
     let mut push = |code: &str, detail: Option<String>, points: i32| {
         if points != 0 {
-            reasons.push(ScoreReason { code: code.to_owned(), detail, points });
+            reasons.push(ScoreReason {
+                code: code.to_owned(),
+                detail,
+                points,
+            });
         }
     };
 
@@ -178,7 +193,11 @@ fn score_stream(
         Resolution::Sd480 => 60,
         Resolution::Unknown => 100,
     };
-    push("resolution", Some(parsed.resolution.label().to_owned()), res_pts);
+    push(
+        "resolution",
+        Some(parsed.resolution.label().to_owned()),
+        res_pts,
+    );
 
     let src_pts = match parsed.source {
         SourceQuality::Remux => 140,
@@ -301,8 +320,19 @@ fn assign_tier(index: usize, score: i32, top_score: i32) -> StreamTier {
 
 fn is_reputable_group(group: &str) -> bool {
     const KNOWN: [&str; 13] = [
-        "framestor", "flux", "ntb", "playbd", "ctrlhd", "don", "hone", "tepes", "sparks", "qxr",
-        "tigole", "deflate", "cmrg",
+        "framestor",
+        "flux",
+        "ntb",
+        "playbd",
+        "ctrlhd",
+        "don",
+        "hone",
+        "tepes",
+        "sparks",
+        "qxr",
+        "tigole",
+        "deflate",
+        "cmrg",
     ];
     KNOWN.contains(&group.to_ascii_lowercase().as_str())
 }

@@ -37,15 +37,25 @@ pub enum PlayerEvent {
     FileLoaded,
     /// First frame after a load or seek is on screen.
     PlaybackRestart,
-    Position { seconds: f64 },
-    Duration { seconds: f64 },
+    Position {
+        seconds: f64,
+    },
+    Duration {
+        seconds: f64,
+    },
     Paused(bool),
     Buffering(bool),
     /// Transfer function of the current video (`pq`, `hlg`, `bt.1886`, …).
     VideoGamma(String),
     /// Timing measurement (`ttff`, `seek`) in milliseconds.
-    Metric { name: &'static str, millis: f64 },
-    EndFile { reason: EndReason, error: Option<String> },
+    Metric {
+        name: &'static str,
+        millis: f64,
+    },
+    EndFile {
+        reason: EndReason,
+        error: Option<String>,
+    },
     Shutdown,
 }
 
@@ -117,7 +127,10 @@ impl Player {
             .name("mpv-events".into())
             .spawn(move || event_loop(api, handle, registry, timing, events))
             .map_err(|e| PlayerError::Mpv(e.to_string()))?;
-        *player.events_thread.lock().unwrap_or_else(|e| e.into_inner()) = Some(thread);
+        *player
+            .events_thread
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(thread);
         Ok(player)
     }
 
@@ -172,7 +185,9 @@ impl Player {
             (PROP_VIDEO_GAMMA, c"video-params/gamma", sys::FORMAT_STRING),
         ] {
             // SAFETY: valid handle, static C string.
-            self.check(unsafe { (self.api.observe_property)(self.handle.0, id, name.as_ptr(), format) })?;
+            self.check(unsafe {
+                (self.api.observe_property)(self.handle.0, id, name.as_ptr(), format)
+            })?;
         }
         Ok(())
     }
@@ -181,7 +196,8 @@ impl Player {
         let (n, v) = (cstring(name)?, cstring(value)?);
         // SAFETY: valid handle and NUL-terminated strings.
         let rc = unsafe { (self.api.set_option_string)(self.handle.0, n.as_ptr(), v.as_ptr()) };
-        self.check(rc).map_err(|e| PlayerError::Mpv(format!("option {name}={value}: {e}")))
+        self.check(rc)
+            .map_err(|e| PlayerError::Mpv(format!("option {name}={value}: {e}")))
     }
 
     fn check(&self, rc: c_int) -> Result<(), PlayerError> {
@@ -198,7 +214,10 @@ impl Player {
         if self.shut_down.load(Ordering::SeqCst) {
             return Err(PlayerError::Mpv("player is shut down".into()));
         }
-        let owned = args.iter().map(|a| cstring(a)).collect::<Result<Vec<_>, _>>()?;
+        let owned = args
+            .iter()
+            .map(|a| cstring(a))
+            .collect::<Result<Vec<_>, _>>()?;
         let mut ptrs: Vec<*const c_char> = owned.iter().map(|s| s.as_ptr()).collect();
         ptrs.push(std::ptr::null());
         // SAFETY: valid handle; NULL-terminated argv of C strings (copied by mpv).
@@ -221,7 +240,10 @@ impl Player {
     /// play, before resolving the stream). Otherwise it starts at `loadfile`.
     pub fn begin_load(&self) {
         if let Ok(mut t) = self.timing.lock() {
-            *t = Timing { load_started: Some(Instant::now()), seek_started: None };
+            *t = Timing {
+                load_started: Some(Instant::now()),
+                seek_started: None,
+            };
         }
     }
 
@@ -274,20 +296,32 @@ impl Player {
         };
         let api_type = c"opengl";
         let mut params = [
-            sys::mpv_render_param { kind: sys::RENDER_PARAM_API_TYPE, data: api_type.as_ptr() as *mut c_void },
+            sys::mpv_render_param {
+                kind: sys::RENDER_PARAM_API_TYPE,
+                data: api_type.as_ptr() as *mut c_void,
+            },
             sys::mpv_render_param {
                 kind: sys::RENDER_PARAM_OPENGL_INIT_PARAMS,
                 data: (&raw mut init).cast(),
             },
-            sys::mpv_render_param { kind: sys::RENDER_PARAM_INVALID, data: std::ptr::null_mut() },
+            sys::mpv_render_param {
+                kind: sys::RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
         ];
         let mut ctx: *mut sys::mpv_render_context = std::ptr::null_mut();
         // SAFETY: valid handle; params are a terminated array living across the call.
-        self.check(unsafe { (self.api.render_context_create)(&mut ctx, self.handle.0, params.as_mut_ptr()) })?;
+        self.check(unsafe {
+            (self.api.render_context_create)(&mut ctx, self.handle.0, params.as_mut_ptr())
+        })?;
         let callback = Box::into_raw(Box::new(on_update));
         // SAFETY: ctx is valid; callback stays alive until render_free.
         unsafe {
-            (self.api.render_context_set_update_callback)(ctx, Some(render::on_update), callback.cast());
+            (self.api.render_context_set_update_callback)(
+                ctx,
+                Some(render::on_update),
+                callback.cast(),
+            );
         }
         *guard = Some(render::Renderer { ctx, callback });
         Ok(())
@@ -297,13 +331,29 @@ impl Player {
     /// Call from the layer's draw method with its CGL context current.
     pub fn render(&self, fbo: i32, width: i32, height: i32) -> Result<(), PlayerError> {
         let guard = self.renderer.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(renderer) = guard.as_ref() else { return Ok(()) };
-        let mut target = sys::mpv_opengl_fbo { fbo, w: width, h: height, internal_format: 0 };
+        let Some(renderer) = guard.as_ref() else {
+            return Ok(());
+        };
+        let mut target = sys::mpv_opengl_fbo {
+            fbo,
+            w: width,
+            h: height,
+            internal_format: 0,
+        };
         let mut flip: c_int = 1;
         let mut params = [
-            sys::mpv_render_param { kind: sys::RENDER_PARAM_OPENGL_FBO, data: (&raw mut target).cast() },
-            sys::mpv_render_param { kind: sys::RENDER_PARAM_FLIP_Y, data: (&raw mut flip).cast() },
-            sys::mpv_render_param { kind: sys::RENDER_PARAM_INVALID, data: std::ptr::null_mut() },
+            sys::mpv_render_param {
+                kind: sys::RENDER_PARAM_OPENGL_FBO,
+                data: (&raw mut target).cast(),
+            },
+            sys::mpv_render_param {
+                kind: sys::RENDER_PARAM_FLIP_Y,
+                data: (&raw mut flip).cast(),
+            },
+            sys::mpv_render_param {
+                kind: sys::RENDER_PARAM_INVALID,
+                data: std::ptr::null_mut(),
+            },
         ];
         // SAFETY: renderer.ctx is live (guarded); params outlive the call.
         self.check(unsafe { (self.api.render_context_render)(renderer.ctx, params.as_mut_ptr()) })
@@ -312,7 +362,11 @@ impl Player {
     /// Frees the render context. Must run with the CGL context current and
     /// before [`Player::shutdown`].
     pub fn render_free(&self) {
-        let renderer = self.renderer.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let renderer = self
+            .renderer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         if let Some(renderer) = renderer {
             // SAFETY: ctx is live; after free mpv no longer calls the callback.
             unsafe {
@@ -437,7 +491,9 @@ fn event_loop(
                     (PROP_VIDEO_GAMMA, sys::FORMAT_STRING) => {
                         // SAFETY: STRING format => data points to a char*.
                         let value = unsafe { CStr::from_ptr(*(prop.data as *const *const c_char)) };
-                        events.on_event(PlayerEvent::VideoGamma(value.to_string_lossy().into_owned()));
+                        events.on_event(PlayerEvent::VideoGamma(
+                            value.to_string_lossy().into_owned(),
+                        ));
                     }
                     _ => {}
                 }

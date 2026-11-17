@@ -175,12 +175,8 @@ pub fn parse_stream(stream: &Stream) -> ParsedStream {
     let codec = parse_video_codec(&tokens);
     let audio = parse_audio_codec(&tokens, &combined);
     let seeders = parse_seeders(&combined);
-    let release_group = parse_release_group(filename).or_else(|| {
-        title
-            .lines()
-            .next()
-            .and_then(parse_release_group)
-    });
+    let release_group = parse_release_group(filename)
+        .or_else(|| title.lines().next().and_then(parse_release_group));
     let languages = parse_languages(&tokens, &combined);
 
     let is_torrent = stream.info_hash.is_some();
@@ -244,11 +240,14 @@ fn parse_hdr(tokens: &[String], raw: &str) -> HdrInfo {
     let hdr10_plus = lower.contains("hdr10+")
         || lower.contains("hdr10plus")
         || has_token(tokens, &["hdr10plus"]);
-    let hdr10 = hdr10_plus
-        || has_token(tokens, &["hdr10", "hdr"])
-        || lower.contains("hdr10");
+    let hdr10 = hdr10_plus || has_token(tokens, &["hdr10", "hdr"]) || lower.contains("hdr10");
     let hlg = has_token(tokens, &["hlg"]);
-    HdrInfo { dolby_vision, hdr10_plus, hdr10, hlg }
+    HdrInfo {
+        dolby_vision,
+        hdr10_plus,
+        hdr10,
+        hlg,
+    }
 }
 
 fn parse_video_codec(tokens: &[String]) -> VideoCodec {
@@ -273,7 +272,8 @@ fn parse_audio_codec(tokens: &[String], raw: &str) -> AudioCodec {
         AudioCodec::Atmos
     } else if has_token(tokens, &["truehd"]) {
         AudioCodec::TrueHd
-    } else if lower.contains("dts-hd") || lower.contains("dts.hd") || has_token(tokens, &["dtshd"]) {
+    } else if lower.contains("dts-hd") || lower.contains("dts.hd") || has_token(tokens, &["dtshd"])
+    {
         AudioCodec::DtsHdMa
     } else if has_token(tokens, &["dts"]) {
         AudioCodec::Dts
@@ -296,7 +296,19 @@ fn parse_source(tokens: &[String], raw: &str) -> SourceQuality {
     let lower = raw.to_ascii_lowercase();
     if has_token(
         tokens,
-        &["cam", "hdcam", "camrip", "ts", "hdts", "telesync", "tc", "telecine", "hdripcam", "wp", "workprint"],
+        &[
+            "cam",
+            "hdcam",
+            "camrip",
+            "ts",
+            "hdts",
+            "telesync",
+            "tc",
+            "telecine",
+            "hdripcam",
+            "wp",
+            "workprint",
+        ],
     ) || lower.contains("cam-rip")
     {
         SourceQuality::CamTs
@@ -306,7 +318,8 @@ fn parse_source(tokens: &[String], raw: &str) -> SourceQuality {
         || lower.contains("blu-ray")
     {
         SourceQuality::BluRay
-    } else if lower.contains("web-dl") || lower.contains("web.dl") || has_token(tokens, &["webdl"]) {
+    } else if lower.contains("web-dl") || lower.contains("web.dl") || has_token(tokens, &["webdl"])
+    {
         SourceQuality::WebDl
     } else if has_token(tokens, &["webrip", "web"]) {
         SourceQuality::WebRip
@@ -383,7 +396,12 @@ fn parse_release_group(input: &str) -> Option<String> {
     }
     let stem = trimmed
         .rsplit_once('.')
-        .filter(|(_, ext)| matches!(ext.to_ascii_lowercase().as_str(), "mkv" | "mp4" | "avi" | "mov" | "ts" | "m2ts"))
+        .filter(|(_, ext)| {
+            matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "mkv" | "mp4" | "avi" | "mov" | "ts" | "m2ts"
+            )
+        })
         .map_or(trimmed, |(base, _)| base);
 
     let (_, tail) = stem.rsplit_once('-')?;

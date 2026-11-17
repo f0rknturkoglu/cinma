@@ -41,11 +41,19 @@ pub struct CommandSpec {
 }
 
 const fn global(id: &'static str, key: Option<&'static str>) -> CommandSpec {
-    CommandSpec { id, context: CommandContext::Global, default_key: key }
+    CommandSpec {
+        id,
+        context: CommandContext::Global,
+        default_key: key,
+    }
 }
 
 const fn player(id: &'static str, key: &'static str) -> CommandSpec {
-    CommandSpec { id, context: CommandContext::Player, default_key: Some(key) }
+    CommandSpec {
+        id,
+        context: CommandContext::Player,
+        default_key: Some(key),
+    }
 }
 
 /// All commands, in menu order. Only commands with a consumer live here.
@@ -78,14 +86,17 @@ pub fn command(id: &str) -> Option<&'static CommandSpec> {
 
 const MODIFIERS: [&str; 4] = ["cmd", "ctrl", "alt", "shift"];
 const NAMED_KEYS: &[&str] = &[
-    "space", "left", "right", "up", "down", "escape", "return", "tab", "delete",
-    "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+    "space", "left", "right", "up", "down", "escape", "return", "tab", "delete", "f1", "f2", "f3",
+    "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
 ];
 
 /// Canonical key combo: modifiers in a fixed order, then one key.
 /// `"Shift+CMD+Z"` → `"cmd+shift+z"`. `None` if malformed.
 pub fn normalize_combo(input: &str) -> Option<String> {
-    let parts: Vec<String> = input.split('+').map(|p| p.trim().to_ascii_lowercase()).collect();
+    let parts: Vec<String> = input
+        .split('+')
+        .map(|p| p.trim().to_ascii_lowercase())
+        .collect();
     let (key, modifiers) = parts.split_last()?;
     let key = match key.as_str() {
         "esc" => "escape".to_owned(),
@@ -108,7 +119,12 @@ pub fn normalize_combo(input: &str) -> Option<String> {
         }
         seen[index] = true;
     }
-    let mut out: Vec<&str> = MODIFIERS.iter().zip(seen).filter(|(_, s)| *s).map(|(m, _)| *m).collect();
+    let mut out: Vec<&str> = MODIFIERS
+        .iter()
+        .zip(seen)
+        .filter(|(_, s)| *s)
+        .map(|(m, _)| *m)
+        .collect();
     out.push(&key);
     Some(out.join("+"))
 }
@@ -130,7 +146,10 @@ pub fn parse_deep_link(url: &str) -> Option<Invocation> {
     if rest.is_empty() || !rest.ends_with("manifest.json") {
         return None;
     }
-    Some(Invocation { command: "addon.install", argument: Some(format!("https://{rest}")) })
+    Some(Invocation {
+        command: "addon.install",
+        argument: Some(format!("https://{rest}")),
+    })
 }
 
 impl Core {
@@ -157,8 +176,14 @@ impl Core {
     }
 
     /// The command bound to `combo` in `context` (player falls back to global).
-    pub fn resolve_key(&self, context: CommandContext, combo: &str) -> Result<Option<&'static str>, CoreError> {
-        let Some(combo) = normalize_combo(combo) else { return Ok(None) };
+    pub fn resolve_key(
+        &self,
+        context: CommandContext,
+        combo: &str,
+    ) -> Result<Option<&'static str>, CoreError> {
+        let Some(combo) = normalize_combo(combo) else {
+            return Ok(None);
+        };
         let bindings = self.key_bindings()?;
         let find = |ctx: CommandContext| {
             bindings
@@ -167,7 +192,9 @@ impl Core {
                 .map(|(spec, _)| spec.id)
         };
         Ok(match context {
-            CommandContext::Player => find(CommandContext::Player).or_else(|| find(CommandContext::Global)),
+            CommandContext::Player => {
+                find(CommandContext::Player).or_else(|| find(CommandContext::Global))
+            }
             CommandContext::Global => find(CommandContext::Global),
         })
     }
@@ -175,18 +202,24 @@ impl Core {
     /// Rebinds a command (`None` = unbound). Rejects a combo already used in
     /// the same context.
     pub fn set_key_binding(&self, id: &str, combo: Option<&str>) -> Result<(), CoreError> {
-        let spec = command(id).ok_or_else(|| CoreError::Invalid(format!("unknown command {id}")))?;
+        let spec =
+            command(id).ok_or_else(|| CoreError::Invalid(format!("unknown command {id}")))?;
         let combo = match combo {
-            Some(c) => Some(normalize_combo(c).ok_or_else(|| CoreError::Invalid(format!("invalid key combo {c:?}")))?),
+            Some(c) => Some(
+                normalize_combo(c)
+                    .ok_or_else(|| CoreError::Invalid(format!("invalid key combo {c:?}")))?,
+            ),
             None => None,
         };
         if let Some(combo) = &combo
-            && let Some((other, _)) = self
-                .key_bindings()?
-                .into_iter()
-                .find(|(s, k)| s.id != id && s.context == spec.context && k.as_deref() == Some(combo.as_str()))
+            && let Some((other, _)) = self.key_bindings()?.into_iter().find(|(s, k)| {
+                s.id != id && s.context == spec.context && k.as_deref() == Some(combo.as_str())
+            })
         {
-            return Err(CoreError::Invalid(format!("{combo} is already bound to {}", other.id)));
+            return Err(CoreError::Invalid(format!(
+                "{combo} is already bound to {}",
+                other.id
+            )));
         }
         self.db
             .lock()
@@ -197,7 +230,10 @@ impl Core {
     }
 
     pub fn reset_key_binding(&self, id: &str) -> Result<(), CoreError> {
-        self.db.lock().map_err(|_| CoreError::Poisoned)?.delete_app_setting(&binding_key(id))?;
+        self.db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .delete_app_setting(&binding_key(id))?;
         self.emit(CoreEvent::KeyBindingsChanged);
         Ok(())
     }
@@ -210,8 +246,14 @@ mod tests {
 
     #[test]
     fn combos_normalize() {
-        assert_eq!(normalize_combo("Shift+CMD+Z").as_deref(), Some("cmd+shift+z"));
-        assert_eq!(normalize_combo("option+command+h").as_deref(), Some("cmd+alt+h"));
+        assert_eq!(
+            normalize_combo("Shift+CMD+Z").as_deref(),
+            Some("cmd+shift+z")
+        );
+        assert_eq!(
+            normalize_combo("option+command+h").as_deref(),
+            Some("cmd+alt+h")
+        );
         assert_eq!(normalize_combo("Esc").as_deref(), Some("escape"));
         assert_eq!(normalize_combo("space").as_deref(), Some("space"));
         assert_eq!(normalize_combo("cmd+cmd+a"), None);
@@ -224,9 +266,19 @@ mod tests {
     fn default_bindings_are_unique_per_context_and_valid() {
         for (i, a) in COMMANDS.iter().enumerate() {
             if let Some(key) = a.default_key {
-                assert_eq!(normalize_combo(key).as_deref(), Some(key), "{} not canonical", a.id);
+                assert_eq!(
+                    normalize_combo(key).as_deref(),
+                    Some(key),
+                    "{} not canonical",
+                    a.id
+                );
                 for b in &COMMANDS[i + 1..] {
-                    assert!(!(a.context == b.context && a.default_key == b.default_key), "{} vs {}", a.id, b.id);
+                    assert!(
+                        !(a.context == b.context && a.default_key == b.default_key),
+                        "{} vs {}",
+                        a.id,
+                        b.id
+                    );
                 }
             }
             assert!(COMMANDS.iter().filter(|c| c.id == a.id).count() == 1);
@@ -237,23 +289,52 @@ mod tests {
     fn rebinding_persists_resolves_and_rejects_conflicts() {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::open(dir.path()).unwrap();
-        assert_eq!(core.resolve_key(CommandContext::Player, "space").unwrap(), Some("player.toggle_pause"));
-        assert_eq!(core.resolve_key(CommandContext::Player, "cmd+q").unwrap(), Some("app.quit"), "falls back to global");
-        assert_eq!(core.resolve_key(CommandContext::Global, "space").unwrap(), None);
+        assert_eq!(
+            core.resolve_key(CommandContext::Player, "space").unwrap(),
+            Some("player.toggle_pause")
+        );
+        assert_eq!(
+            core.resolve_key(CommandContext::Player, "cmd+q").unwrap(),
+            Some("app.quit"),
+            "falls back to global"
+        );
+        assert_eq!(
+            core.resolve_key(CommandContext::Global, "space").unwrap(),
+            None
+        );
 
-        core.set_key_binding("player.toggle_pause", Some("K")).unwrap();
-        assert_eq!(core.resolve_key(CommandContext::Player, "k").unwrap(), Some("player.toggle_pause"));
-        assert_eq!(core.resolve_key(CommandContext::Player, "space").unwrap(), None);
-        assert!(core.set_key_binding("player.close", Some("k")).is_err(), "conflict in same context");
+        core.set_key_binding("player.toggle_pause", Some("K"))
+            .unwrap();
+        assert_eq!(
+            core.resolve_key(CommandContext::Player, "k").unwrap(),
+            Some("player.toggle_pause")
+        );
+        assert_eq!(
+            core.resolve_key(CommandContext::Player, "space").unwrap(),
+            None
+        );
+        assert!(
+            core.set_key_binding("player.close", Some("k")).is_err(),
+            "conflict in same context"
+        );
         assert!(core.set_key_binding("nope", Some("k")).is_err());
 
         core.set_key_binding("app.quit", None).unwrap();
-        assert_eq!(core.resolve_key(CommandContext::Global, "cmd+q").unwrap(), None);
+        assert_eq!(
+            core.resolve_key(CommandContext::Global, "cmd+q").unwrap(),
+            None
+        );
         drop(core);
         let core = Core::open(dir.path()).unwrap();
-        assert_eq!(core.resolve_key(CommandContext::Player, "k").unwrap(), Some("player.toggle_pause"));
+        assert_eq!(
+            core.resolve_key(CommandContext::Player, "k").unwrap(),
+            Some("player.toggle_pause")
+        );
         core.reset_key_binding("app.quit").unwrap();
-        assert_eq!(core.resolve_key(CommandContext::Global, "cmd+q").unwrap(), Some("app.quit"));
+        assert_eq!(
+            core.resolve_key(CommandContext::Global, "cmd+q").unwrap(),
+            Some("app.quit")
+        );
     }
 
     #[test]

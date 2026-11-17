@@ -119,10 +119,16 @@ impl TmdbClient {
         )?;
         let resp: TmdbFindResponse = self.get_json(url).await?;
         if let Some(m) = resp.movie_results.first() {
-            return Ok(Some(ResolvedIds { tmdb_id: m.id, media_type: "movie".into() }));
+            return Ok(Some(ResolvedIds {
+                tmdb_id: m.id,
+                media_type: "movie".into(),
+            }));
         }
         if let Some(t) = resp.tv_results.first() {
-            return Ok(Some(ResolvedIds { tmdb_id: t.id, media_type: "series".into() }));
+            return Ok(Some(ResolvedIds {
+                tmdb_id: t.id,
+                media_type: "series".into(),
+            }));
         }
         Ok(None)
     }
@@ -143,7 +149,11 @@ impl TmdbClient {
             &[("api_key", api_key), ("language", language)],
         )?;
         let resp: TmdbListResponse = self.get_json(url).await?;
-        Ok(resp.results.into_iter().filter_map(|r| r.into_preview(media_type)).collect())
+        Ok(resp
+            .results
+            .into_iter()
+            .filter_map(|r| r.into_preview(media_type))
+            .collect())
     }
 
     pub async fn search(
@@ -238,7 +248,10 @@ impl TmdbClient {
             logo,
             description: raw.overview.filter(|s| !s.is_empty()),
             release_info,
-            imdb_rating: raw.vote_average.filter(|v| *v > 0.0).map(|v| format!("{v:.1}")),
+            imdb_rating: raw
+                .vote_average
+                .filter(|v| *v > 0.0)
+                .map(|v| format!("{v:.1}")),
             runtime: raw.runtime.filter(|r| *r > 0).map(|r| format!("{r} min")),
             country: None,
             awards: None,
@@ -265,7 +278,12 @@ impl TmdbClient {
             season: None,
             episode: None,
         };
-        Ok(RichMeta { meta, id_map, season_numbers: Vec::new(), next_episode: None })
+        Ok(RichMeta {
+            meta,
+            id_map,
+            season_numbers: Vec::new(),
+            next_episode: None,
+        })
     }
 
     pub async fn tv_details(
@@ -347,7 +365,10 @@ impl TmdbClient {
             logo,
             description: raw.overview.filter(|s| !s.is_empty()),
             release_info,
-            imdb_rating: raw.vote_average.filter(|v| *v > 0.0).map(|v| format!("{v:.1}")),
+            imdb_rating: raw
+                .vote_average
+                .filter(|v| *v > 0.0)
+                .map(|v| format!("{v:.1}")),
             runtime,
             country: None,
             awards: None,
@@ -374,7 +395,12 @@ impl TmdbClient {
             season: None,
             episode: None,
         };
-        Ok(RichMeta { meta, id_map, season_numbers, next_episode })
+        Ok(RichMeta {
+            meta,
+            id_map,
+            season_numbers,
+            next_episode,
+        })
     }
 
     pub async fn tv_season(
@@ -425,7 +451,9 @@ fn pick_logo(images: Option<&TmdbImages>, lang_short: &str) -> Option<String> {
 }
 
 fn extract_trailers(videos: Option<&TmdbVideos>) -> Vec<MetaTrailer> {
-    let Some(videos) = videos else { return Vec::new() };
+    let Some(videos) = videos else {
+        return Vec::new();
+    };
     videos
         .results
         .iter()
@@ -506,7 +534,10 @@ impl TmdbListItem {
             logo: None,
             description: self.overview.filter(|s| !s.is_empty()),
             release_info,
-            imdb_rating: self.vote_average.filter(|v| *v > 0.0).map(|v| format!("{v:.1}")),
+            imdb_rating: self
+                .vote_average
+                .filter(|v| *v > 0.0)
+                .map(|v| format!("{v:.1}")),
             genres: Vec::new(),
             runtime: None,
         })

@@ -22,7 +22,9 @@ pub fn normalize_manifest_url(input: &str) -> Result<(Url, Url), AddonError> {
     }
     let path = manifest.path();
     let Some(base_path) = path.strip_suffix("manifest.json") else {
-        return Err(AddonError::InvalidUrl(format!("{trimmed}: must end in manifest.json")));
+        return Err(AddonError::InvalidUrl(format!(
+            "{trimmed}: must end in manifest.json"
+        )));
     };
     let mut base = manifest.clone();
     base.set_path(base_path.trim_end_matches('/'));
@@ -119,7 +121,11 @@ impl AddonClient {
         query: &CatalogQuery,
     ) -> Result<CatalogResponse, AddonError> {
         let (_, base) = normalize_manifest_url(transport_url)?;
-        parse_catalog(&self.get(catalog_url(&base, media_type, catalog_id, query)?).await?)
+        parse_catalog(
+            &self
+                .get(catalog_url(&base, media_type, catalog_id, query)?)
+                .await?,
+        )
     }
 
     pub async fn fetch_meta(

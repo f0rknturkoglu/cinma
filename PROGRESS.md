@@ -1,15 +1,26 @@
 # PROGRESS
 
-## Status: Phases 0–2 done and accepted. Phase 3 in progress (steps 0, 2, 5 complete; awaiting owner measurement & schema/mockup decisions for steps 1, 3, 4, 6, 11).
+## Status: Phases 0–2 done and accepted. Phase 3 complete (awaiting owner acceptance & real-swarm re-measurement before Phase 4).
 
-## Phase 3 — Browsing & stream selection (in progress)
+## Phase 3 — Browsing & stream selection (awaiting acceptance)
 
-### Done so far in Phase 3
-- **Deep-link confirmation** (`AppDelegate.handleLink`): `stremio://` links now inspect the manifest via `Core::inspect_addon` (without persisting) and ask confirmation in an `NSAlert` showing addon name, description, and URL (en + tr).
+### Done in Phase 3
+- **Deep-link confirmation** (`AppDelegate.handleLink`): `stremio://` links inspect the manifest via `Core::inspect_addon` (without persisting) and ask confirmation in an `NSAlert` showing addon name, description, and URL (`en` + `tr`).
+- **Torrent streaming & demuxer tuning** (`cinma-torrent`, `cinma-player`): tuned `librqbit` `SessionOptions` (`peer_limit: Some(80)`, `connect_timeout: 4s`, `read_write_timeout: 8s`, `max_request_window: Some(16)`), fallback trackers when not `local_only`, `AddTorrent::from_bytes` + `seen_peers` reuse on `list_only`, background `spawn_head_tail_warmup`, and trimmed mpv `demuxer-max-bytes` (`24MiB`) / `demuxer-max-back-bytes` (`8MiB`).
 - **Addon protocol (`cinma-stremio`, `cinma-core`, `cinma-ffi`)**: added `catalog` (with `search`, `genre`, `skip` extras), `meta` (movies, series, episodes, trailers, links), catalog listing/browsing/search fan-out, and per-addon incremental batch observers (`StreamBatchObserver`, `CatalogBatchObserver`) tested against offline Cinemeta/Torrentio-shaped JSON fixtures.
-- **Stream ranker (`cinma-ranker`)**: parse → filter (CAM/TS, fakes, safety levels, max resolution, min seeders) → score (resolution, source, HDR/DV fallback, codec with M3+ hardware AV1 detection via `sysctl`, audio, seeders/debrid, preferred languages, reputable release groups) → tier → explainable `ScoreReason` breakdown, wired into `Core` and `FFI`.
-- **Proposed ADR 0010**: schema design for Migrations `0003` (`id_map`, `meta_cache`) and `0004` (`library_item`, `watch_progress`), Keychain storage for TMDB key, and `yt-dlp` binary lookup/update policy.
-- **Checkpoint measurements** (`tools/measure.sh`, Release, 3 runs): median first frame **174.3 ms** (< 250 ms), idle footprint **24.0 MB** (≤ 40 MB), idle CPU **0.00 %**. 72 Rust tests pass, `cargo clippy` clean, Release `xcodebuild` clean.
+- **ADR 0010 & Schema 0003/0004 (`cinma-db`)**: accepted `docs/adr/0010-metadata-and-library-schema.md`; added migrations `0003_metadata.sql` (`id_map`, `meta_cache`) and `0004_library_and_progress.sql` (`library_item`, `watch_progress`), profile CRUD (`create_profile_with_avatar`, `rename_profile`, `delete_profile`), and `reorder_addons`.
+- **Metadata, Keychain, Library/Progress & `yt-dlp` (`cinma-metadata`, `cinma-core`, `cinma-ffi`)**: TMDB v3 primary client with Keychain API key storage (`app.cinma.mac` / `CINMA_TMDB_API_KEY`) and SQLite `meta_cache` + Stremio fallback; Continue Watching & auto-watched (`>= 0.90` of `duration_s`); short-lived `yt-dlp -J` trailer extraction and user-triggered install/update.
+- **Stream ranker (`cinma-ranker`)**: parse → filter (`Strict`/`Standard`/`Permissive`) → score (resolution, source, HDR/DV fallback, codec with M3+ hardware AV1 detection via `sysctl`, audio, seeders/debrid, preferred languages, reputable release groups) → tier (`Best`/`Recommended`/`Good`/`Fallback`) → explainable `ScoreReason` breakdown, wired into `Core` and `FFI`.
+- **Native macOS Browsing & Stream Selection UI (`app/Cinma/`)**:
+  - `DesignSystem.swift` & `ImagePipeline.swift`: Cinema Dark (`#0B0B0D`, `#E8A33D`, `#5CC98A`) + native `NSGlassEffectView` (macOS 26+ with `NSVisualEffectView` & Reduce Transparency/Motion fallbacks), ImageIO downsampling, 64 MB `NSCache` (cleared on window close), 150 MB LRU disk cache.
+  - `MainShellViewController.swift`, `HomeBrowserViewController.swift`, `DiscoverViewController.swift`, `TitleDetailViewController.swift`, `LibraryCalendarViewControllers.swift`, `PosterCards.swift`, `SheetsAndSettings.swift`, `PlayerViewController.swift`: SQLite-first Home launch (Continue Watching + `cached_trending` before network), rotating Hero, Discover (catalogs/genres/skip pagination/incremental search), Title Detail (seasons/episodes, `yt-dlp` trailer, ranked stream picker with quality/tier/language explanations), Library, Calendar, Addon Manager, Profile Switcher, Onboarding, Settings, and floating Liquid Glass player HUD with resume/progress tracking.
+  - `Localizable.xcstrings`: 129 `en` + `tr` strings; legacy `SliceViewController.swift` removed.
+- **Verification & measurements**:
+  - `cargo clippy --all-targets -- -D warnings`: pass (0 warnings).
+  - `cargo test`: **78 Rust tests pass** (0 failed, 0 ignored) across workspace crates (`blobstore` 19, `core` 13, `db` 16, `metadata` 1, `player` 3, `queue` 7, `ranker` 6, `stremio` 9, `torrent` 4).
+  - Release `xcodebuild`: clean build (only pre-existing `VideoLayer.swift:12` `@unchecked Sendable` warning).
+  - `tools/measure.sh` (Release, 5 runs): median first frame **170.2 ms** (< 250 ms), idle `phys_footprint` **29.0 MB** (≤ 40 MB), idle CPU **0.00 %**.
+  - Smoke playback (`sdr_h264_1080p.mkv` in fresh `CINMA_DATA_DIR`): clean exit, `CINMA_FIRST_FRAME_MS=155.4`, `CINMA_TTFF_MS=253.0`.
 
 ## Phase 2 — Core solid ✅ (accepted 2026-11-17)
 

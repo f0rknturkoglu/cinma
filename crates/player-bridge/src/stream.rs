@@ -34,11 +34,18 @@ impl Registry {
     }
 
     pub fn clear(&self) {
-        self.sources.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.sources
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     fn get(&self, uri: &str) -> Option<Arc<dyn ByteSource>> {
-        let id: u64 = uri.strip_prefix(PROTOCOL)?.strip_prefix("://")?.parse().ok()?;
+        let id: u64 = uri
+            .strip_prefix(PROTOCOL)?
+            .strip_prefix("://")?
+            .parse()
+            .ok()?;
         self.sources
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -85,7 +92,10 @@ pub unsafe extern "C" fn open_fn(
         let cookie = Box::new(Cookie {
             size: source.size(),
             cancel: CancellationToken::new(),
-            state: Mutex::new(ReaderState { reader, position: 0 }),
+            state: Mutex::new(ReaderState {
+                reader,
+                position: 0,
+            }),
         });
         let info = unsafe { &mut *info };
         info.cookie = Box::into_raw(cookie).cast();
@@ -111,7 +121,9 @@ unsafe extern "C" fn read_fn(cookie_ptr: *mut c_void, buf: *mut c_char, nbytes: 
         if cookie.cancel.is_cancelled() {
             return -1;
         }
-        let Ok(mut state) = cookie.state.lock() else { return -1 };
+        let Ok(mut state) = cookie.state.lock() else {
+            return -1;
+        };
         if state.position >= cookie.size {
             return 0;
         }
@@ -140,7 +152,9 @@ unsafe extern "C" fn seek_fn(cookie_ptr: *mut c_void, offset: i64) -> i64 {
         if offset < 0 || cookie.cancel.is_cancelled() {
             return sys::ERROR_GENERIC;
         }
-        let Ok(mut state) = cookie.state.lock() else { return sys::ERROR_GENERIC };
+        let Ok(mut state) = cookie.state.lock() else {
+            return sys::ERROR_GENERIC;
+        };
         state.position = offset as u64;
         offset
     }));
@@ -185,7 +199,11 @@ mod tests {
         };
         let uri = CString::new(uri).unwrap();
         let rc = unsafe {
-            open_fn(Arc::as_ptr(registry) as *mut c_void, uri.as_ptr() as *mut c_char, &mut info)
+            open_fn(
+                Arc::as_ptr(registry) as *mut c_void,
+                uri.as_ptr() as *mut c_char,
+                &mut info,
+            )
         };
         (rc, info)
     }
@@ -203,7 +221,11 @@ mod tests {
             let mut buf = [0 as c_char; 32];
             assert_eq!(info.read_fn.unwrap()(info.cookie, buf.as_mut_ptr(), 32), 10);
             assert_eq!(buf[0] as u8, 90);
-            assert_eq!(info.read_fn.unwrap()(info.cookie, buf.as_mut_ptr(), 32), 0, "EOF");
+            assert_eq!(
+                info.read_fn.unwrap()(info.cookie, buf.as_mut_ptr(), 32),
+                0,
+                "EOF"
+            );
             info.close_fn.unwrap()(info.cookie);
         }
     }
@@ -228,12 +250,19 @@ mod tests {
             unsafe { read(cookie as *mut c_void, buf.as_mut_ptr(), 8) }
         });
         std::thread::sleep(Duration::from_millis(50));
-        assert!(!reader.is_finished(), "read must block until data or cancel");
+        assert!(
+            !reader.is_finished(),
+            "read must block until data or cancel"
+        );
         unsafe { info.cancel_fn.unwrap()(info.cookie) };
         assert_eq!(reader.join().unwrap(), -1);
         unsafe {
             let mut buf = [0 as c_char; 8];
-            assert_eq!(info.read_fn.unwrap()(info.cookie, buf.as_mut_ptr(), 8), -1, "stays cancelled");
+            assert_eq!(
+                info.read_fn.unwrap()(info.cookie, buf.as_mut_ptr(), 8),
+                -1,
+                "stays cancelled"
+            );
             info.close_fn.unwrap()(info.cookie);
         }
     }

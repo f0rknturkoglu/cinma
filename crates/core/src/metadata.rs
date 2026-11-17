@@ -66,16 +66,26 @@ impl Core {
     pub fn set_tmdb_key(&self, key: Option<String>) -> Result<(), CoreError> {
         let trimmed = key.map(|k| k.trim().to_owned()).filter(|k| !k.is_empty());
         keychain::set_tmdb_api_key(trimmed.as_deref())?;
-        *self.tmdb_key_override.lock().map_err(|_| CoreError::Poisoned)? = None;
+        *self
+            .tmdb_key_override
+            .lock()
+            .map_err(|_| CoreError::Poisoned)? = None;
         Ok(())
     }
 
     /// Test helper: sets a TMDB key and base URL in memory without touching
     /// the macOS Keychain.
-    pub fn configure_tmdb_for_test(&self, base_url: &str, api_key: Option<String>) -> Result<(), CoreError> {
+    pub fn configure_tmdb_for_test(
+        &self,
+        base_url: &str,
+        api_key: Option<String>,
+    ) -> Result<(), CoreError> {
         *self.tmdb.lock().map_err(|_| CoreError::Poisoned)? =
             Some(TmdbClient::with_base_url(base_url)?);
-        *self.tmdb_key_override.lock().map_err(|_| CoreError::Poisoned)? = Some(api_key);
+        *self
+            .tmdb_key_override
+            .lock()
+            .map_err(|_| CoreError::Poisoned)? = Some(api_key);
         Ok(())
     }
 
@@ -108,7 +118,10 @@ impl Core {
 
     /// Trending items: TMDB when a key is present, otherwise the first browsable
     /// Stremio catalog for `media_type`.
-    pub async fn trending(self: &Arc<Self>, media_type: String) -> Result<Vec<MetaPreview>, CoreError> {
+    pub async fn trending(
+        self: &Arc<Self>,
+        media_type: String,
+    ) -> Result<Vec<MetaPreview>, CoreError> {
         let lang = self.metadata_language()?;
         let cache_key = format!("trending:{media_type}:{lang}");
         let now = now_unix();
@@ -132,13 +145,11 @@ impl Core {
                 .await
             {
                 if let Ok(json) = serde_json::to_string(&items) {
-                    let _ = self.db.lock().map_err(|_| CoreError::Poisoned)?.put_meta_cache(
-                        &cache_key,
-                        "tmdb",
-                        &json,
-                        now + LIST_TTL_SECS,
-                        now,
-                    );
+                    let _ = self
+                        .db
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .put_meta_cache(&cache_key, "tmdb", &json, now + LIST_TTL_SECS, now);
                 }
                 return Ok(items);
             }
@@ -152,16 +163,19 @@ impl Core {
                 .find(|c| c.catalog.is_browsable() && c.catalog.media_type == media_type);
             if let Some(cat) = first {
                 let page = self
-                    .catalog(cat.addon_id, cat.catalog.media_type, cat.catalog.id, CatalogQuery::default())
+                    .catalog(
+                        cat.addon_id,
+                        cat.catalog.media_type,
+                        cat.catalog.id,
+                        CatalogQuery::default(),
+                    )
                     .await?;
                 if let Ok(json) = serde_json::to_string(&page.items) {
-                    let _ = self.db.lock().map_err(|_| CoreError::Poisoned)?.put_meta_cache(
-                        &cache_key,
-                        "addon",
-                        &json,
-                        now + LIST_TTL_SECS,
-                        now,
-                    );
+                    let _ = self
+                        .db
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .put_meta_cache(&cache_key, "addon", &json, now + LIST_TTL_SECS, now);
                 }
                 return Ok(page.items);
             }
@@ -218,7 +232,10 @@ impl Core {
         }
 
         if let Some(api_key) = self.tmdb_key()? {
-            if let Ok(mut rich) = self.fetch_tmdb_rich(&api_key, &media_type, &id, &lang).await {
+            if let Ok(mut rich) = self
+                .fetch_tmdb_rich(&api_key, &media_type, &id, &lang)
+                .await
+            {
                 if rich.meta.media_type == "series"
                     && let Some(&first_season) = rich.season_numbers.first()
                 {
@@ -229,7 +246,9 @@ impl Core {
                         let l = lang.clone();
                         if let Ok(eps) = self
                             .spawn(async move {
-                                Ok(client.tv_season(&key, tmdb_id, &base_id, first_season, &l).await?)
+                                Ok(client
+                                    .tv_season(&key, tmdb_id, &base_id, first_season, &l)
+                                    .await?)
                             })
                             .await
                         {
@@ -265,13 +284,17 @@ impl Core {
             next_episode: None,
         };
         if let Ok(json) = serde_json::to_string(&cached) {
-            let _ = self.db.lock().map_err(|_| CoreError::Poisoned)?.put_meta_cache(
-                &cache_key,
-                &addon_res.addon_name,
-                &json,
-                now + LIST_TTL_SECS,
-                now,
-            );
+            let _ = self
+                .db
+                .lock()
+                .map_err(|_| CoreError::Poisoned)?
+                .put_meta_cache(
+                    &cache_key,
+                    &addon_res.addon_name,
+                    &json,
+                    now + LIST_TTL_SECS,
+                    now,
+                );
         }
         Ok(RichMetaResult {
             source: addon_res.addon_name,
@@ -302,22 +325,25 @@ impl Core {
         }
 
         if let Some(api_key) = self.tmdb_key()? {
-            if let Some((tmdb_id, base_stream_id)) = self.resolve_tmdb_and_base(&api_key, &media_type, &meta_id, &lang).await? {
+            if let Some((tmdb_id, base_stream_id)) = self
+                .resolve_tmdb_and_base(&api_key, &media_type, &meta_id, &lang)
+                .await?
+            {
                 let client = self.tmdb_client()?;
                 let l = lang.clone();
                 let eps = self
                     .spawn(async move {
-                        Ok(client.tv_season(&api_key, tmdb_id, &base_stream_id, season, &l).await?)
+                        Ok(client
+                            .tv_season(&api_key, tmdb_id, &base_stream_id, season, &l)
+                            .await?)
                     })
                     .await?;
                 if let Ok(json) = serde_json::to_string(&eps) {
-                    let _ = self.db.lock().map_err(|_| CoreError::Poisoned)?.put_meta_cache(
-                        &cache_key,
-                        "tmdb",
-                        &json,
-                        now + SEASON_TTL_SECS,
-                        now,
-                    );
+                    let _ = self
+                        .db
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .put_meta_cache(&cache_key, "tmdb", &json, now + SEASON_TTL_SECS, now);
                 }
                 return Ok(eps);
             }
@@ -363,7 +389,9 @@ impl Core {
             .resolve_tmdb_and_base(api_key, media_type, id, lang)
             .await?
         else {
-            return Err(CoreError::Invalid(format!("cannot resolve TMDB ID for {id}")));
+            return Err(CoreError::Invalid(format!(
+                "cannot resolve TMDB ID for {id}"
+            )));
         };
         let client = self.tmdb_client()?;
         let key = api_key.to_owned();
@@ -464,7 +492,12 @@ impl Core {
         }
         // Also cache under canonical IMDb ID if requested via `tmdb:<id>`.
         if let Some(ref imdb) = rich.id_map.imdb_id {
-            let alt_key = format!("meta:{}:{}:{}", rich.meta.media_type, imdb, cache_key.rsplit(':').next().unwrap_or("tr-TR"));
+            let alt_key = format!(
+                "meta:{}:{}:{}",
+                rich.meta.media_type,
+                imdb,
+                cache_key.rsplit(':').next().unwrap_or("tr-TR")
+            );
             if alt_key != cache_key
                 && let Ok(json) = serde_json::to_string(&payload)
             {

@@ -28,6 +28,7 @@ pub use addons::{
 };
 pub use cinma_db::{LibraryItemRow, ProfileRow, WatchProgressRow};
 pub use cinma_metadata::UpcomingEpisode;
+pub use cinma_player::{EndReason, PlayerEvent, PlayerEvents, UpdateCallback};
 pub use cinma_ranker::{
     FilterReason, FilteredOutStream, MachineCapabilities, ParsedStream, RankResult, RankedStream,
     RankerPreferences, Resolution, SafetyLevel, ScoreReason, StreamTier,
@@ -39,10 +40,9 @@ pub use commands::{
 pub use events::{CoreEvent, CoreEventListener};
 pub use library::WatchProgressInput;
 pub use metadata::RichMetaResult;
+pub use playback::Playback;
 pub use settings::Feature;
 pub use trailers::YtdlpStatus;
-pub use cinma_player::{EndReason, PlayerEvent, PlayerEvents, UpdateCallback};
-pub use playback::Playback;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -115,7 +115,9 @@ impl Core {
     /// The profile whose data the UI shows (profile picker: Phase 3).
     pub fn active_profile(&self) -> Result<ProfileId, CoreError> {
         let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
-        let stored = db.get_app_setting(ACTIVE_PROFILE_KEY)?.and_then(|v| v.parse().ok());
+        let stored = db
+            .get_app_setting(ACTIVE_PROFILE_KEY)?
+            .and_then(|v| v.parse().ok());
         match stored {
             Some(id) if db.profile_exists(id)? => Ok(id),
             _ => Ok(1),
@@ -205,16 +207,32 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::open(dir.path()).unwrap();
         for feature in Feature::ALL {
-            assert!(core.feature_enabled(feature).unwrap(), "{feature:?} defaults on");
+            assert!(
+                core.feature_enabled(feature).unwrap(),
+                "{feature:?} defaults on"
+            );
         }
-        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-        rt.block_on(core.set_feature_enabled(Feature::Torrent, false)).unwrap();
-        rt.block_on(core.set_feature_enabled(Feature::Addons, false)).unwrap();
-        assert!(matches!(core.torrents(), Err(CoreError::FeatureDisabled("torrent"))));
-        assert!(matches!(core.http(), Err(CoreError::FeatureDisabled("addons"))));
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        rt.block_on(core.set_feature_enabled(Feature::Torrent, false))
+            .unwrap();
+        rt.block_on(core.set_feature_enabled(Feature::Addons, false))
+            .unwrap();
+        assert!(matches!(
+            core.torrents(),
+            Err(CoreError::FeatureDisabled("torrent"))
+        ));
+        assert!(matches!(
+            core.http(),
+            Err(CoreError::FeatureDisabled("addons"))
+        ));
         let streams = rt.block_on(core.streams("movie".into(), "tt1".into()));
         assert!(matches!(streams, Err(CoreError::FeatureDisabled("addons"))));
-        assert!(core.runtime.get().is_none(), "no runtime for disabled features");
+        assert!(
+            core.runtime.get().is_none(),
+            "no runtime for disabled features"
+        );
         assert!(core.torrents.lock().unwrap().is_none());
         // Persisted across reopen.
         drop(core);
@@ -229,8 +247,11 @@ mod tests {
         let engine = core.torrents().unwrap();
         assert!(core.torrents.lock().unwrap().is_some());
         drop(engine);
-        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
-        rt.block_on(core.set_feature_enabled(Feature::Torrent, false)).unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        rt.block_on(core.set_feature_enabled(Feature::Torrent, false))
+            .unwrap();
         assert!(core.torrents.lock().unwrap().is_none());
     }
 

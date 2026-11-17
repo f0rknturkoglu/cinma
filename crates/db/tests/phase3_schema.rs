@@ -36,22 +36,40 @@ fn id_map_merges_by_imdb_and_tmdb() {
     })
     .unwrap();
 
-    let by_imdb = db.find_id_map_by_imdb(MediaKind::Movie, "tt0133093").unwrap().unwrap();
+    let by_imdb = db
+        .find_id_map_by_imdb(MediaKind::Movie, "tt0133093")
+        .unwrap()
+        .unwrap();
     assert_eq!(by_imdb.tmdb_id, Some(603));
     assert_eq!(by_imdb.trakt_id, Some(481));
-    assert!(db.find_id_map_by_tmdb(MediaKind::Movie, 603).unwrap().is_some());
+    assert!(
+        db.find_id_map_by_tmdb(MediaKind::Movie, 603)
+            .unwrap()
+            .is_some()
+    );
 }
 
 #[test]
 fn meta_cache_respects_expiry_and_prunes() {
     let db = Database::open_in_memory().unwrap();
-    db.put_meta_cache("tmdb:movie:603:tr-TR", "tmdb", r#"{"title":"Matrix"}"#, 1000, 500)
-        .unwrap();
+    db.put_meta_cache(
+        "tmdb:movie:603:tr-TR",
+        "tmdb",
+        r#"{"title":"Matrix"}"#,
+        1000,
+        500,
+    )
+    .unwrap();
     assert_eq!(
-        db.get_meta_cache("tmdb:movie:603:tr-TR", 999).unwrap().as_deref(),
+        db.get_meta_cache("tmdb:movie:603:tr-TR", 999)
+            .unwrap()
+            .as_deref(),
         Some(r#"{"title":"Matrix"}"#)
     );
-    assert_eq!(db.get_meta_cache("tmdb:movie:603:tr-TR", 1000).unwrap(), None);
+    assert_eq!(
+        db.get_meta_cache("tmdb:movie:603:tr-TR", 1000).unwrap(),
+        None
+    );
     assert_eq!(db.prune_expired_meta_cache(1000).unwrap(), 1);
 }
 
@@ -61,8 +79,14 @@ fn library_and_progress_are_profile_isolated() {
     let p2 = db.create_profile_with_avatar("Misafir", Some("M")).unwrap();
     assert_eq!(db.profiles().unwrap().len(), 2);
 
-    db.add_library_item(1, "tt0944947", "series", "Game of Thrones", Some("https://img/p.jpg"))
-        .unwrap();
+    db.add_library_item(
+        1,
+        "tt0944947",
+        "series",
+        "Game of Thrones",
+        Some("https://img/p.jpg"),
+    )
+    .unwrap();
     assert!(db.is_in_library(1, "tt0944947", "series").unwrap());
     assert!(!db.is_in_library(p2, "tt0944947", "series").unwrap());
     assert_eq!(db.library_items(1).unwrap().len(), 1);
@@ -106,8 +130,10 @@ fn library_and_progress_are_profile_isolated() {
     assert!(db.continue_watching(p2, 10).unwrap().is_empty());
 
     // Addon reorder test.
-    db.upsert_addon(1, "a", "https://a/manifest.json", "{}").unwrap();
-    db.upsert_addon(1, "b", "https://b/manifest.json", "{}").unwrap();
+    db.upsert_addon(1, "a", "https://a/manifest.json", "{}")
+        .unwrap();
+    db.upsert_addon(1, "b", "https://b/manifest.json", "{}")
+        .unwrap();
     db.reorder_addons(&["b".into(), "a".into()]).unwrap();
     let ordered = db.addons_for_profile(1).unwrap();
     assert_eq!(ordered[0].id, "b");

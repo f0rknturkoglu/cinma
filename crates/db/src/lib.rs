@@ -97,7 +97,12 @@ fn migrate_to(conn: &mut Connection, target: u32) -> Result<(), DbError> {
             supported: SCHEMA_VERSION,
         });
     }
-    for (index, sql) in MIGRATIONS.iter().enumerate().take(target as usize).skip(current as usize) {
+    for (index, sql) in MIGRATIONS
+        .iter()
+        .enumerate()
+        .take(target as usize)
+        .skip(current as usize)
+    {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
         tx.pragma_update(None, "user_version", index as u32 + 1)?;
@@ -208,7 +213,12 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         migrate_to(&mut conn, 1).unwrap();
         migrate_to(&mut conn, SCHEMA_VERSION).unwrap();
-        assert!(Database::raw(conn).addons_for_profile(1).unwrap().is_empty());
+        assert!(
+            Database::raw(conn)
+                .addons_for_profile(1)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

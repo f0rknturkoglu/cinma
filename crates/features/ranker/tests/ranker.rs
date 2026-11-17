@@ -28,7 +28,10 @@ fn detects_hardware_av1_only_on_m3_and_newer() {
     assert!(parse_hardware_av1("Apple M3", "Mac15,3"));
     assert!(parse_hardware_av1("Apple M4 Pro", "Mac16,8"));
     assert!(parse_hardware_av1("Apple M5", "Mac17,1"));
-    assert!(!parse_hardware_av1("Intel(R) Core(TM) i9", "MacBookPro16,1"));
+    assert!(!parse_hardware_av1(
+        "Intel(R) Core(TM) i9",
+        "MacBookPro16,1"
+    ));
 }
 
 #[test]
@@ -36,7 +39,9 @@ fn parses_torrentio_remux_dv_hdr10_atmos() {
     let s = torrent_stream(
         "Torrentio\n4k DV | HDR",
         "Dune.Part.Two.2024.2160p.UHD.BluRay.REMUX.DV.HDR10+.HEVC.TrueHD.7.1.Atmos-FraMeSToR.mkv\n👤 184 💾 62.4 GB ⚙️ 1337x\n🇬🇧 / 🇹🇷",
-        Some("Dune.Part.Two.2024.2160p.UHD.BluRay.REMUX.DV.HDR10+.HEVC.TrueHD.7.1.Atmos-FraMeSToR.mkv"),
+        Some(
+            "Dune.Part.Two.2024.2160p.UHD.BluRay.REMUX.DV.HDR10+.HEVC.TrueHD.7.1.Atmos-FraMeSToR.mkv",
+        ),
         Some(67_001_489_817),
     );
     let p = parse_stream(&s);
@@ -61,8 +66,7 @@ fn parses_webdl_ddp_size_from_description_and_turkish_tags() {
     let s = Stream {
         name: Some("MediaFusion | 1080p".into()),
         description: Some(
-            "Inception.2010.1080p.WEB-DL.DDP5.1.H.264.DUAL.TUR-FLUX\n👥 42 💾 4.5 GB"
-                .into(),
+            "Inception.2010.1080p.WEB-DL.DDP5.1.H.264.DUAL.TUR-FLUX\n👥 42 💾 4.5 GB".into(),
         ),
         info_hash: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into()),
         ..Default::default()
@@ -117,7 +121,10 @@ fn filters_cam_ts_fakes_and_respects_safety_levels() {
 
     let strict = rank_streams(
         vec![("A".into(), cam.clone()), ("A".into(), zero_seed)],
-        &RankerPreferences { safety_level: SafetyLevel::Strict, ..Default::default() },
+        &RankerPreferences {
+            safety_level: SafetyLevel::Strict,
+            ..Default::default()
+        },
         &MachineCapabilities { hardware_av1: true },
     );
     assert!(strict.ranked.is_empty());
@@ -125,7 +132,10 @@ fn filters_cam_ts_fakes_and_respects_safety_levels() {
 
     let permissive = rank_streams(
         vec![("A".into(), cam), ("A".into(), exe)],
-        &RankerPreferences { safety_level: SafetyLevel::Permissive, ..Default::default() },
+        &RankerPreferences {
+            safety_level: SafetyLevel::Permissive,
+            ..Default::default()
+        },
         &MachineCapabilities { hardware_av1: true },
     );
     assert_eq!(permissive.ranked.len(), 1);
@@ -151,11 +161,18 @@ fn av1_scores_higher_on_m3_plus_than_on_m1() {
     let m1 = rank_streams(
         vec![("T".into(), av1.clone()), ("T".into(), x264.clone())],
         &RankerPreferences::default(),
-        &MachineCapabilities { hardware_av1: false },
+        &MachineCapabilities {
+            hardware_av1: false,
+        },
     );
     // On M1/M2 without HW AV1, x264 outscores software AV1.
     assert_eq!(m1.ranked[0].parsed.codec, VideoCodec::H264);
-    assert!(m1.ranked[1].reasons.iter().any(|r| r.code == "codec.av1_sw" && r.points < 0));
+    assert!(
+        m1.ranked[1]
+            .reasons
+            .iter()
+            .any(|r| r.code == "codec.av1_sw" && r.points < 0)
+    );
 
     let m4 = rank_streams(
         vec![("T".into(), av1), ("T".into(), x264)],
@@ -170,7 +187,9 @@ fn av1_scores_higher_on_m3_plus_than_on_m1() {
 fn ranks_and_explains_tiers_and_debrid_direct_streams() {
     let best_debrid = Stream {
         name: Some("Torrentio [RD+]\n4k HDR".into()),
-        title: Some("Film.2024.2160p.BluRay.REMUX.DV.HDR10.HEVC.Atmos-FraMeSToR.mkv\n💾 50 GB\n🇹🇷".into()),
+        title: Some(
+            "Film.2024.2160p.BluRay.REMUX.DV.HDR10.HEVC.Atmos-FraMeSToR.mkv\n💾 50 GB\n🇹🇷".into(),
+        ),
         url: Some("https://rd.example/file.mkv".into()),
         ..Default::default()
     };
@@ -204,8 +223,18 @@ fn ranks_and_explains_tiers_and_debrid_direct_streams() {
     assert_eq!(res.ranked.len(), 3);
     assert_eq!(res.ranked[0].tier, StreamTier::Best);
     assert!(res.ranked[0].parsed.cached_debrid);
-    assert!(res.ranked[0].reasons.iter().any(|r| r.code == "language" && r.detail.as_deref() == Some("tr")));
-    assert!(res.ranked[0].reasons.iter().any(|r| r.code == "release_group"));
+    assert!(
+        res.ranked[0]
+            .reasons
+            .iter()
+            .any(|r| r.code == "language" && r.detail.as_deref() == Some("tr"))
+    );
+    assert!(
+        res.ranked[0]
+            .reasons
+            .iter()
+            .any(|r| r.code == "release_group")
+    );
     assert_eq!(res.ranked[1].tier, StreamTier::Good);
     assert_eq!(res.ranked[2].tier, StreamTier::Fallback);
 }

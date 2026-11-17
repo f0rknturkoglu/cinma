@@ -66,7 +66,9 @@ impl MockServer {
             }
         });
 
-        Self { base_url: format!("http://{addr}") }
+        Self {
+            base_url: format!("http://{addr}"),
+        }
     }
 }
 
@@ -128,7 +130,8 @@ fn inspect_addon_does_not_persist_and_catalog_meta_search_work() {
         MockRoute {
             status: 200,
             delay: Duration::from_millis(80),
-            body: r#"{"metas":[{"id":"tt0234215","type":"movie","name":"The Matrix Reloaded"}]}"#.into(),
+            body: r#"{"metas":[{"id":"tt0234215","type":"movie","name":"The Matrix Reloaded"}]}"#
+                .into(),
         },
     );
     routes.insert(
@@ -136,7 +139,8 @@ fn inspect_addon_does_not_persist_and_catalog_meta_search_work() {
         MockRoute {
             status: 200,
             delay: Duration::ZERO,
-            body: r#"{"metas":[{"id":"tt0234215","type":"movie","name":"The Matrix Reloaded"}]}"#.into(),
+            body: r#"{"metas":[{"id":"tt0234215","type":"movie","name":"The Matrix Reloaded"}]}"#
+                .into(),
         },
     );
     routes.insert(
@@ -200,7 +204,9 @@ fn inspect_addon_does_not_persist_and_catalog_meta_search_work() {
     assert_eq!(filtered.items[0].name, "Interstellar");
 
     // browse_catalogs skips search-only catalogs.
-    let browsed = rt.block_on(core.browse_catalogs(Some("movie".into()), None)).unwrap();
+    let browsed = rt
+        .block_on(core.browse_catalogs(Some("movie".into()), None))
+        .unwrap();
     assert_eq!(browsed.len(), 1);
     assert_eq!(browsed[0].catalog_id, "top");
 
@@ -230,7 +236,9 @@ fn inspect_addon_does_not_persist_and_catalog_meta_search_work() {
     assert_eq!(batches[1].catalog_id, "top");
 
     // meta() fetches full metadata.
-    let meta = rt.block_on(core.meta("movie".into(), "tt0133093".into())).unwrap();
+    let meta = rt
+        .block_on(core.meta("movie".into(), "tt0133093".into()))
+        .unwrap();
     assert_eq!(meta.meta.name, "The Matrix");
     assert_eq!(meta.meta.trailers[0].source, "vKQi3bBA1y8");
 }
@@ -267,7 +275,8 @@ fn streams_streaming_emits_partial_batches_before_slow_addon_and_preserves_order
         MockRoute {
             status: 200,
             delay: Duration::ZERO,
-            body: r#"{"streams":[{"name":"Fast 1080p","url":"https://fast.example/v.mp4"}]}"#.into(),
+            body: r#"{"streams":[{"name":"Fast 1080p","url":"https://fast.example/v.mp4"}]}"#
+                .into(),
         },
     );
 
@@ -279,8 +288,10 @@ fn streams_streaming_emits_partial_batches_before_slow_addon_and_preserves_order
         .build()
         .unwrap();
 
-    rt.block_on(core.install_addon(format!("{}/slow/manifest.json", server.base_url))).unwrap();
-    rt.block_on(core.install_addon(format!("{}/fast/manifest.json", server.base_url))).unwrap();
+    rt.block_on(core.install_addon(format!("{}/slow/manifest.json", server.base_url)))
+        .unwrap();
+    rt.block_on(core.install_addon(format!("{}/fast/manifest.json", server.base_url)))
+        .unwrap();
 
     struct StreamRecorder(Mutex<Vec<StreamBatch>>);
     impl StreamBatchListener for StreamRecorder {
@@ -313,9 +324,13 @@ fn disabled_addons_feature_rejects_catalog_and_meta_queries() {
         .enable_all()
         .build()
         .unwrap();
-    rt.block_on(core.set_feature_enabled(Feature::Addons, false)).unwrap();
+    rt.block_on(core.set_feature_enabled(Feature::Addons, false))
+        .unwrap();
 
-    assert!(matches!(core.catalogs(), Err(CoreError::FeatureDisabled("addons"))));
+    assert!(matches!(
+        core.catalogs(),
+        Err(CoreError::FeatureDisabled("addons"))
+    ));
     assert!(matches!(
         rt.block_on(core.meta("movie".into(), "tt1".into())),
         Err(CoreError::FeatureDisabled("addons"))

@@ -206,11 +206,7 @@ impl Database {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    pub fn remove_watch_progress(
-        &self,
-        profile: ProfileId,
-        video_id: &str,
-    ) -> Result<(), DbError> {
+    pub fn remove_watch_progress(&self, profile: ProfileId, video_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM watch_progress WHERE profile_id = ?1 AND video_id = ?2",
             params![profile, video_id],

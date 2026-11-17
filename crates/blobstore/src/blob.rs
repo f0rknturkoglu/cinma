@@ -38,7 +38,10 @@ impl BlobId {
         if !s.is_empty() && s.len() <= 64 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
             Ok(Self(s.to_ascii_lowercase()))
         } else {
-            Err(io::Error::new(io::ErrorKind::InvalidInput, format!("invalid blob id {s:?}")))
+            Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("invalid blob id {s:?}"),
+            ))
         }
     }
 
@@ -48,7 +51,10 @@ impl BlobId {
 
     fn generate() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
         let count = COUNTER.fetch_add(1, Ordering::Relaxed);
         Self(format!("{nanos:x}{:08x}{count:04x}", std::process::id()))
     }
@@ -139,18 +145,25 @@ impl Blob {
     /// Makes everything marked so far durable. Returns the durable byte count,
     /// which is what may be recorded elsewhere (e.g. a download row).
     pub fn checkpoint(&self) -> io::Result<u64> {
-        let removed = self.checkpoint_lock.lock().map_err(|_| io::Error::other("poisoned"))?;
+        let removed = self
+            .checkpoint_lock
+            .lock()
+            .map_err(|_| io::Error::other("poisoned"))?;
         if *removed {
             return Err(io::Error::new(io::ErrorKind::NotFound, "blob was removed"));
         }
         // Snapshot first: everything in it was written before being marked.
         let snapshot = self.available();
         self.file.sync_data()?;
-        write_meta_atomically(&self.dir, &self.meta_path, &Meta {
-            version: META_VERSION,
-            size: self.size,
-            ranges: snapshot.clone(),
-        })?;
+        write_meta_atomically(
+            &self.dir,
+            &self.meta_path,
+            &Meta {
+                version: META_VERSION,
+                size: self.size,
+                ranges: snapshot.clone(),
+            },
+        )?;
         Ok(snapshot.covered())
     }
 
@@ -180,7 +193,9 @@ impl ByteSource for BlobSource {
     }
 
     fn open_reader(&self) -> io::Result<Box<dyn SourceReader>> {
-        Ok(Box::new(BlobReader { blob: Arc::clone(&self.0) }))
+        Ok(Box::new(BlobReader {
+            blob: Arc::clone(&self.0),
+        }))
     }
 
     fn describe(&self) -> String {
@@ -193,18 +208,26 @@ struct BlobReader {
 }
 
 impl SourceReader for BlobReader {
-    fn read_at(&mut self, offset: u64, buf: &mut [u8], cancel: &CancellationToken) -> io::Result<usize> {
+    fn read_at(
+        &mut self,
+        offset: u64,
+        buf: &mut [u8],
+        cancel: &CancellationToken,
+    ) -> io::Result<usize> {
         let blob = &self.blob;
         if offset >= blob.size || buf.is_empty() {
             return Ok(0);
         }
         let listener = blob.listener.lock().ok().and_then(|l| l.clone());
         if let Some(listener) = listener {
-            listener.on_read(&blob.id, ReadHint {
-                offset,
-                len: buf.len() as u64,
-                readahead: DEFAULT_READAHEAD,
-            });
+            listener.on_read(
+                &blob.id,
+                ReadHint {
+                    offset,
+                    len: buf.len() as u64,
+                    readahead: DEFAULT_READAHEAD,
+                },
+            );
         }
         let run_end = wait_until(&blob.notify, cancel, || {
             blob.ranges.lock().ok().and_then(|r| r.run_end(offset))
@@ -231,7 +254,10 @@ impl BlobStore {
                 let _ = fs::remove_file(path);
             }
         }
-        Ok(Self { root: root.to_path_buf(), open: Mutex::new(HashMap::new()) })
+        Ok(Self {
+            root: root.to_path_buf(),
+            open: Mutex::new(HashMap::new()),
+        })
     }
 
     fn paths(&self, id: &BlobId) -> (PathBuf, PathBuf) {
@@ -245,7 +271,11 @@ impl BlobStore {
     pub fn create(&self, size: u64) -> io::Result<Arc<Blob>> {
         let id = BlobId::generate();
         let (data_path, meta_path) = self.paths(&id);
-        let file = OpenOptions::new().read(true).write(true).create_new(true).open(&data_path)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&data_path)?;
         file.set_len(size)?;
         let blob = Arc::new(self.make(id.clone(), size, file, meta_path, RangeSet::new()));
         blob.checkpoint()?;
@@ -259,9 +289,13 @@ impl BlobStore {
             return Ok(blob);
         }
         let (data_path, meta_path) = self.paths(id);
-        let meta: Meta = serde_json::from_slice(&fs::read(&meta_path)?).map_err(io::Error::other)?;
+        let meta: Meta =
+            serde_json::from_slice(&fs::read(&meta_path)?).map_err(io::Error::other)?;
         if meta.version != META_VERSION || !meta.ranges.is_valid_for(meta.size) {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "corrupt blob metadata"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "corrupt blob metadata",
+            ));
         }
         let file = OpenOptions::new().read(true).write(true).open(&data_path)?;
         if file.metadata()?.len() != meta.size {
@@ -277,7 +311,10 @@ impl BlobStore {
         // Block concurrent checkpoints and stop later ones from rewriting files.
         let _removed = match &live {
             Some(blob) => {
-                let mut guard = blob.checkpoint_lock.lock().map_err(|_| io::Error::other("poisoned"))?;
+                let mut guard = blob
+                    .checkpoint_lock
+                    .lock()
+                    .map_err(|_| io::Error::other("poisoned"))?;
                 *guard = true;
                 Some(guard)
             }
@@ -308,7 +345,14 @@ impl BlobStore {
         Ok(ids)
     }
 
-    fn make(&self, id: BlobId, size: u64, file: File, meta_path: PathBuf, ranges: RangeSet) -> Blob {
+    fn make(
+        &self,
+        id: BlobId,
+        size: u64,
+        file: File,
+        meta_path: PathBuf,
+        ranges: RangeSet,
+    ) -> Blob {
         Blob {
             id,
             size,
@@ -336,7 +380,9 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn pattern(offset: u64, len: usize) -> Vec<u8> {
-        (0..len as u64).map(|i| ((offset + i) * 31 % 251) as u8).collect()
+        (0..len as u64)
+            .map(|i| ((offset + i) * 31 % 251) as u8)
+            .collect()
     }
 
     #[test]
@@ -347,10 +393,17 @@ mod tests {
         blob.write_available(100, &pattern(100, 50)).unwrap();
         let mut reader = blob.source().open_reader().unwrap();
         let mut buf = [0u8; 80];
-        let n = reader.read_at(120, &mut buf, &CancellationToken::new()).unwrap();
+        let n = reader
+            .read_at(120, &mut buf, &CancellationToken::new())
+            .unwrap();
         assert_eq!(n, 30, "short read up to the end of the available run");
         assert_eq!(&buf[..30], &pattern(120, 30)[..]);
-        assert_eq!(reader.read_at(1000, &mut buf, &CancellationToken::new()).unwrap(), 0);
+        assert_eq!(
+            reader
+                .read_at(1000, &mut buf, &CancellationToken::new())
+                .unwrap(),
+            0
+        );
         assert!(blob.write_at(990, &[0; 20]).is_err());
     }
 
@@ -365,7 +418,12 @@ mod tests {
         let mut reader = blob.source().open_reader().unwrap();
         assert!(reader.read_at(0, &mut [0; 4], &cancel).is_err());
         blob.mark_available(0..10);
-        assert_eq!(reader.read_at(0, &mut [0; 4], &CancellationToken::new()).unwrap(), 4);
+        assert_eq!(
+            reader
+                .read_at(0, &mut [0; 4], &CancellationToken::new())
+                .unwrap(),
+            4
+        );
     }
 
     #[test]
@@ -379,9 +437,17 @@ mod tests {
         let reader_thread = thread::spawn(move || {
             let mut reader = source.open_reader().unwrap();
             let mut buf = [0u8; 8];
-            tx.send(reader.read_at(40, &mut buf, &CancellationToken::new()).map(|n| (n, buf))).unwrap();
+            tx.send(
+                reader
+                    .read_at(40, &mut buf, &CancellationToken::new())
+                    .map(|n| (n, buf)),
+            )
+            .unwrap();
         });
-        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err(), "must block");
+        assert!(
+            rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "must block"
+        );
         blob.write_available(40, &pattern(40, 8)).unwrap();
         let (n, buf) = rx.recv_timeout(Duration::from_secs(1)).unwrap().unwrap();
         assert_eq!((n, &buf[..]), (8, &pattern(40, 8)[..]));
@@ -393,14 +459,25 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let reader_thread = thread::spawn(move || {
             let mut reader = source.open_reader().unwrap();
-            tx.send(reader.read_at(90, &mut [0u8; 4], &cancel2).map_err(|e| e.kind())).unwrap();
+            tx.send(
+                reader
+                    .read_at(90, &mut [0u8; 4], &cancel2)
+                    .map_err(|e| e.kind()),
+            )
+            .unwrap();
         });
-        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err(), "must block");
+        assert!(
+            rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "must block"
+        );
         let started = Instant::now();
         cancel.cancel();
         let result = rx.recv_timeout(Duration::from_secs(1)).unwrap();
         assert_eq!(result, Err(io::ErrorKind::Interrupted));
-        assert!(started.elapsed() < Duration::from_millis(50), "cancel wakes immediately");
+        assert!(
+            started.elapsed() < Duration::from_millis(50),
+            "cancel wakes immediately"
+        );
         reader_thread.join().unwrap();
     }
 
@@ -419,10 +496,17 @@ mod tests {
         let rec = Arc::new(Rec(Mutex::new(Vec::new())));
         blob.set_priority_listener(Some(rec.clone()));
         let mut reader = blob.source().open_reader().unwrap();
-        reader.read_at(10, &mut [0; 5], &CancellationToken::new()).unwrap();
-        reader.read_at(60, &mut [0; 7], &CancellationToken::new()).unwrap();
+        reader
+            .read_at(10, &mut [0; 5], &CancellationToken::new())
+            .unwrap();
+        reader
+            .read_at(60, &mut [0; 7], &CancellationToken::new())
+            .unwrap();
         let hints = rec.0.lock().unwrap().clone();
-        assert_eq!(hints.iter().map(|h| (h.offset, h.len)).collect::<Vec<_>>(), vec![(10, 5), (60, 7)]);
+        assert_eq!(
+            hints.iter().map(|h| (h.offset, h.len)).collect::<Vec<_>>(),
+            vec![(10, 5), (60, 7)]
+        );
     }
 
     #[test]
@@ -440,10 +524,16 @@ mod tests {
         let blob = store.open_blob(&id).unwrap();
         assert_eq!(blob.available().iter().collect::<Vec<_>>(), vec![0..100]);
         assert_eq!(store.ids().unwrap(), vec![id.clone()]);
-        assert!(Arc::ptr_eq(&blob, &store.open_blob(&id).unwrap()), "one live blob per id");
+        assert!(
+            Arc::ptr_eq(&blob, &store.open_blob(&id).unwrap()),
+            "one live blob per id"
+        );
         store.remove(&id).unwrap();
         assert!(store.ids().unwrap().is_empty());
-        assert!(blob.checkpoint().is_err(), "a removed blob can't be checkpointed back");
+        assert!(
+            blob.checkpoint().is_err(),
+            "a removed blob can't be checkpointed back"
+        );
         assert!(store.ids().unwrap().is_empty());
     }
 
