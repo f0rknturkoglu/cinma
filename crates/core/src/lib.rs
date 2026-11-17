@@ -12,12 +12,14 @@ mod integrations;
 mod keychain;
 mod library;
 mod metadata;
+mod phase9;
 mod playback;
 mod security_and_backup;
 mod settings;
 mod subtitles;
 mod trailers;
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, Weak};
@@ -25,11 +27,14 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 use cinma_blobstore::BlobStore;
 use cinma_casting::ActiveCastSession;
 use cinma_db::{Database, DbError, ProfileId};
-use cinma_metadata::TmdbClient;
+use cinma_debrid::DebridClient;
+use cinma_discord::DiscordPresenceClient;
+use cinma_iptv::IptvClient;
+use cinma_metadata::{SkipSegmentClient, TmdbClient};
 use cinma_queue::Queue;
 use cinma_stremio::AddonClient;
 use cinma_torrent::{RqbitEngine, TorrentConfig, TorrentDownloadEngine};
-use cinma_tracking::TrackingClient;
+use cinma_tracking::{PendingOAuthFlow, TrackingClient};
 
 pub use addons::{
     AddonCatalog, CatalogBatch, CatalogBatchListener, CatalogPage, InstalledAddon, MetaResult,
@@ -37,9 +42,10 @@ pub use addons::{
 };
 pub use cinma_casting::{CastDevice, CastKind};
 pub use cinma_db::{
-    DownloadKind, DownloadRow, DownloadState, LibraryItemRow, ProfileRow, WatchProgressRow,
+    DownloadKind, DownloadRow, DownloadState, IptvChannelRow, IptvEpgRow, IptvSourceRow,
+    LibraryItemRow, ProfileRow, WatchProgressRow,
 };
-pub use cinma_metadata::UpcomingEpisode;
+pub use cinma_metadata::{SkipKind, SkipSegment, UpcomingEpisode, WatchProvider};
 pub use cinma_player::{
     Chapter, EndReason, MediaTrack, PlayerConfig, PlayerEvent, PlayerEvents, PlayerStats,
     ThumbnailImage, UpdateCallback,
@@ -49,7 +55,7 @@ pub use cinma_ranker::{
     RankerPreferences, Resolution, SafetyLevel, ScoreReason, StreamTier,
 };
 pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo};
-pub use cinma_subtitles::{PreparedSubtitle, SubtitleCandidate, normalize_lang_code};
+pub use cinma_subtitles::{OsUserQuota, PreparedSubtitle, SubtitleCandidate, normalize_lang_code};
 pub use cinma_tracking::{TraktDeviceCode, TraktRecommendation, letterboxd::LetterboxdEntry};
 pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
@@ -60,6 +66,9 @@ pub use events::{CoreEvent, CoreEventListener};
 pub use integrations::{AdapterStatus, StremioImportResult};
 pub use library::WatchProgressInput;
 pub use metadata::RichMetaResult;
+pub use phase9::{
+    DebridProviderStatus, DiscordPresenceInput, OAuthStartResult, TitleExtras, TraktPullSummary,
+};
 pub use playback::{NextEpisodePrefetch, Playback, VideoFileIdentity};
 pub use settings::Feature;
 pub use subtitles::{PlayerPreferences, SubtitleSearchRequest, SubtitleSettings, VideoOffsets};
@@ -108,6 +117,11 @@ pub struct Core {
     torrent_download_engine: Mutex<Option<Arc<TorrentDownloadEngine>>>,
     active_cast: Mutex<Option<Arc<ActiveCastSession>>>,
     tracking_client: Mutex<Option<TrackingClient>>,
+    skip_client: Mutex<Option<SkipSegmentClient>>,
+    debrid_client: Mutex<Option<DebridClient>>,
+    iptv_client: Mutex<Option<IptvClient>>,
+    discord_client: Mutex<Option<Arc<tokio::sync::Mutex<DiscordPresenceClient>>>>,
+    pending_oauth: Mutex<HashMap<String, PendingOAuthFlow>>,
     listeners: Mutex<Vec<Arc<dyn CoreEventListener>>>,
     /// Lets `&self` methods start background work that needs an `Arc`.
     me: Weak<Core>,
@@ -133,6 +147,11 @@ impl Core {
             torrent_download_engine: Mutex::new(None),
             active_cast: Mutex::new(None),
             tracking_client: Mutex::new(None),
+            skip_client: Mutex::new(None),
+            debrid_client: Mutex::new(None),
+            iptv_client: Mutex::new(None),
+            discord_client: Mutex::new(None),
+            pending_oauth: Mutex::new(HashMap::new()),
             listeners: Mutex::new(Vec::new()),
             me: me.clone(),
             tracking_sync: Mutex::new(integrations::TrackingSyncState::default()),

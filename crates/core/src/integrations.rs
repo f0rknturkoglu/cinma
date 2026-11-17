@@ -762,6 +762,11 @@ impl Core {
 
     pub async fn refresh_anime_id_map(self: &Arc<Self>, url: String) -> Result<usize, CoreError> {
         self.require(Feature::Tracking)?;
+        let url = if url.trim().is_empty() {
+            cinma_tracking::anime_map::DEFAULT_ANIME_LIST_URL.to_owned()
+        } else {
+            url
+        };
         let bytes = self
             .spawn(async move {
                 let resp = reqwest::get(&url)

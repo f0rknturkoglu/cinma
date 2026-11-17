@@ -111,6 +111,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.menuBar = bar
             rebuildMenu()
             showBrowse()
+            NotificationCenter.default.addObserver(
+                forName: .cinmaExternalRoute,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                if let url = note.object as? URL {
+                    Task { @MainActor in self?.handleLink(url) }
+                }
+            }
+            CalendarNotifications.refreshScheduleIfEnabled(core: core)
+            SpotlightLibraryIndexer.indexLibraryIfEnabled(core: core)
             let links = pendingLinks + [DevAutomation.openURL].compactMap { $0 }
             pendingLinks = []
             links.forEach(handleLink)
@@ -146,7 +157,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .addonsChanged: shell?.handleAddonsChanged()
         case .keyBindingsChanged: rebuildMenu()
         case .profileChanged: shell?.handleProfileChanged()
-        case .libraryChanged: shell?.handleLibraryChanged()
+        case .libraryChanged:
+            shell?.handleLibraryChanged()
+            if let core {
+                SpotlightLibraryIndexer.indexLibraryIfEnabled(core: core)
+                CalendarNotifications.refreshScheduleIfEnabled(core: core)
+            }
         case .downloadsChanged:
             menuBar?.syncEnabledState()
             shell?.handleDownloadsChanged()
@@ -176,7 +192,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func handleLink(_ url: URL) {
-        guard let core, let invocation = parseDeepLink(url: url.absoluteString) else { return }
+        guard let core else { return }
+        if url.scheme?.lowercased() == "cinma" {
+            let host = url.host?.lowercased() ?? ""
+            if host == "oauth" {
+                if shell == nil { showBrowse() }
+                shell?.showStatus(String(localized: "Completing sign-in…"))
+                Task {
+                    do {
+                        let provider = try await core.completeTrackingOauthCallback(callbackUrl: url.absoluteString)
+                        shell?.showStatus(String(localized: "Signed in to \(provider.capitalized)"))
+                    } catch {
+                        shell?.showStatus(FriendlyError.explain(error))
+                    }
+                }
+                return
+            }
+            if host == "continue" {
+                reopenMainWindow()
+                shell?.continueMostRecent()
+                return
+            }
+            if host == "open" {
+                let parts = url.pathComponents.filter { $0 != "/" }
+                if parts.count >= 2 {
+                    reopenMainWindow()
+                    shell?.openById(mediaType: parts[0], id: parts[1])
+                }
+                return
+            }
+        }
+        guard let invocation = parseDeepLink(url: url.absoluteString) else { return }
         switch invocation.command {
         case "addon.install":
             guard let manifest = invocation.argument else { return }

@@ -31,6 +31,10 @@ pub struct DiskPolicySettings {
     pub seeding_minutes: u64,
     /// Upload cap in KB/s (`0` = unlimited when seeding is active).
     pub upload_limit_kbps: u32,
+    /// Optional BSD interface name (e.g. `utun3`) for torrent socket binding.
+    pub bind_device_name: Option<String>,
+    /// Refuse torrent traffic if `bind_device_name` is missing or unavailable.
+    pub vpn_kill_switch: bool,
 }
 
 impl Default for DiskPolicySettings {
@@ -46,6 +50,8 @@ impl Default for DiskPolicySettings {
             seeding_ratio: 1.0,
             seeding_minutes: 60,
             upload_limit_kbps: 0,
+            bind_device_name: None,
+            vpn_kill_switch: false,
         }
     }
 }
@@ -68,6 +74,8 @@ impl DiskPolicySettings {
             download_bps: None,
             seeding,
             delete_on_release,
+            bind_device_name: self.bind_device_name.clone(),
+            vpn_kill_switch: self.vpn_kill_switch,
         }
     }
 }

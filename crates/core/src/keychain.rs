@@ -8,6 +8,7 @@ use crate::CoreError;
 
 const SERVICE: &str = "app.cinma.mac";
 const TMDB_ACCOUNT: &str = "tmdb.api_key";
+const FANART_ACCOUNT: &str = "fanart.api_key";
 const OPENSUBTITLES_KEY_ACCOUNT: &str = "opensubtitles.api_key";
 const OPENSUBTITLES_TOKEN_ACCOUNT: &str = "opensubtitles.token";
 
@@ -93,4 +94,23 @@ pub fn set_tracking_token(
 ) -> Result<(), CoreError> {
     let account = format!("tracking.p{profile_id}.{adapter}");
     write_secret(&account, token)
+}
+
+pub fn get_fanart_api_key() -> Result<Option<String>, CoreError> {
+    read_secret(FANART_ACCOUNT, Some("CINMA_FANART_API_KEY"))
+}
+
+pub fn set_fanart_api_key(key: Option<&str>) -> Result<(), CoreError> {
+    write_secret(FANART_ACCOUNT, key)
+}
+
+pub fn get_debrid_key(profile_id: i64, provider: &str) -> Result<Option<String>, CoreError> {
+    let account = format!("debrid.p{profile_id}.{provider}");
+    let env_name = format!("CINMA_DEBRID_{}_KEY", provider.to_ascii_uppercase());
+    read_secret(&account, Some(&env_name))
+}
+
+pub fn set_debrid_key(profile_id: i64, provider: &str, key: Option<&str>) -> Result<(), CoreError> {
+    let account = format!("debrid.p{profile_id}.{provider}");
+    write_secret(&account, key)
 }

@@ -5,13 +5,23 @@ use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct AnimeIdRecord {
+    #[serde(default)]
     pub imdb_id: Option<String>,
+    #[serde(default, alias = "themoviedb_id")]
     pub tmdb_id: Option<i64>,
+    #[serde(default, alias = "thetvdb_id")]
     pub tvdb_id: Option<i64>,
+    #[serde(default)]
     pub mal_id: Option<i64>,
+    #[serde(default)]
     pub anilist_id: Option<i64>,
+    #[serde(default)]
     pub kitsu_id: Option<i64>,
 }
+
+/// Default community Fribb anime-lists mapping JSON URL (user-triggered refresh only).
+pub const DEFAULT_ANIME_LIST_URL: &str =
+    "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-mini.json";
 
 /// Starter bundled mappings for immediate offline lookup of classic series/films
 /// before fetching full community mappings (e.g. Fribb/anime-lists).

@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use cinma_blobstore::{
-    ByteSource, compute_opensubtitles_hash_file, compute_opensubtitles_hash_nonblocking,
+    ArchiveByteSource, ByteSource, CancellationToken, compute_opensubtitles_hash_file,
+    compute_opensubtitles_hash_nonblocking, detect_archive_kind,
 };
 use cinma_player::{Player, PlayerConfig, PlayerEvents, ThumbnailExtractor, ThumbnailImage};
 use cinma_stremio::Stream;
@@ -156,11 +157,25 @@ impl Core {
     }
 }
 
+fn wrap_archive_if_needed(source: Arc<dyn ByteSource>) -> Arc<dyn ByteSource> {
+    if detect_archive_kind(source.filename()).is_some()
+        && let Ok(wrapped) =
+            ArchiveByteSource::open_largest_video(Arc::clone(&source), &CancellationToken::new())
+    {
+        return Arc::new(wrapped);
+    }
+    source
+}
+
 impl Playback {
-    /// Resolves `stream` (torrent → byte source, URL → direct) and starts it.
+    /// Resolves `stream` (debrid instant cache if configured, else torrent →
+    /// byte source, or URL → direct) and starts it.
     pub async fn play(&self, stream: Stream) -> Result<(), CoreError> {
         self.reset_media_state();
         self.player.begin_load();
+        if let Ok(Some(debrid_url)) = self.core.try_resolve_debrid_stream(&stream).await {
+            return self.play_url(&debrid_url);
+        }
         if let Some(info_hash) = stream.info_hash.clone() {
             let engine = self.core.torrents()?;
             let request = TorrentFileRequest {
@@ -170,7 +185,10 @@ impl Playback {
             };
             let source = self
                 .core
-                .spawn(async move { Ok(engine.open_file(request).await?) })
+                .spawn(async move {
+                    let src = engine.open_file(request).await?;
+                    Ok(wrap_archive_if_needed(src))
+                })
                 .await?;
             if let Ok(mut guard) = self.source.lock() {
                 *guard = Some(Arc::clone(&source));

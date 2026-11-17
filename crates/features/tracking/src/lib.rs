@@ -5,9 +5,12 @@
 
 pub mod anime_map;
 pub mod letterboxd;
+pub mod oauth;
 pub mod stremio_import;
 
 use serde::{Deserialize, Serialize};
+
+pub use oauth::{OAuthProvider, PendingOAuthFlow, build_oauth_request, parse_oauth_callback};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrackingError {
@@ -47,6 +50,20 @@ pub struct TraktDeviceCode {
     pub verification_url: String,
     pub expires_in: u64,
     pub interval: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TraktSyncEntry {
+    pub media_type: String,
+    pub title: String,
+    pub year: Option<u32>,
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<i64>,
+    pub tvdb_id: Option<i64>,
+    pub trakt_id: Option<i64>,
+    pub season: Option<u32>,
+    pub episode: Option<u32>,
+    pub rating: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -316,6 +333,98 @@ impl TrackingClient {
             .await?;
         let _ = check_status("MAL", resp).await?;
         Ok(())
+    }
+
+    pub async fn fetch_anime_id_dataset(
+        &self,
+        url: &str,
+    ) -> Result<Vec<anime_map::AnimeIdRecord>, TrackingError> {
+        let resp = self.http.get(url).send().await?;
+        let data = check_status("AnimeMap", resp).await?;
+        Ok(anime_map::parse_anime_id_dataset(&data)?)
+    }
+
+    pub async fn trakt_pull_watchlist(
+        &self,
+        client_id: &str,
+        token: &str,
+    ) -> Result<Vec<TraktSyncEntry>, TrackingError> {
+        self.trakt_get_sync_list(client_id, token, "/sync/watchlist", false)
+            .await
+    }
+
+    pub async fn trakt_pull_ratings(
+        &self,
+        client_id: &str,
+        token: &str,
+    ) -> Result<Vec<TraktSyncEntry>, TrackingError> {
+        self.trakt_get_sync_list(client_id, token, "/sync/ratings", true)
+            .await
+    }
+
+    pub async fn trakt_pull_history(
+        &self,
+        client_id: &str,
+        token: &str,
+    ) -> Result<Vec<TraktSyncEntry>, TrackingError> {
+        self.trakt_get_sync_list(client_id, token, "/sync/history?limit=100", false)
+            .await
+    }
+
+    async fn trakt_get_sync_list(
+        &self,
+        client_id: &str,
+        token: &str,
+        path: &str,
+        has_rating: bool,
+    ) -> Result<Vec<TraktSyncEntry>, TrackingError> {
+        let resp = self
+            .http
+            .get(format!("{}{path}", self.trakt_base))
+            .header("trakt-api-version", "2")
+            .header("trakt-api-key", client_id)
+            .bearer_auth(token)
+            .send()
+            .await?;
+        let data = check_status("Trakt", resp).await?;
+        let raw: Vec<serde_json::Value> = serde_json::from_slice(&data)?;
+        let mut out = Vec::new();
+        for item in raw {
+            let rating = if has_rating {
+                item.get("rating").and_then(|v| v.as_u64()).map(|n| n as u8)
+            } else {
+                None
+            };
+            if let Some(m) = item.get("movie") {
+                out.push(TraktSyncEntry {
+                    media_type: "movie".into(),
+                    title: m["title"].as_str().unwrap_or("Unknown").to_owned(),
+                    year: m["year"].as_u64().map(|y| y as u32),
+                    imdb_id: m["ids"]["imdb"].as_str().map(str::to_owned),
+                    tmdb_id: m["ids"]["tmdb"].as_i64(),
+                    tvdb_id: m["ids"]["tvdb"].as_i64(),
+                    trakt_id: m["ids"]["trakt"].as_i64(),
+                    season: None,
+                    episode: None,
+                    rating,
+                });
+            } else if let Some(s) = item.get("show") {
+                let ep = item.get("episode");
+                out.push(TraktSyncEntry {
+                    media_type: "series".into(),
+                    title: s["title"].as_str().unwrap_or("Unknown").to_owned(),
+                    year: s["year"].as_u64().map(|y| y as u32),
+                    imdb_id: s["ids"]["imdb"].as_str().map(str::to_owned),
+                    tmdb_id: s["ids"]["tmdb"].as_i64(),
+                    tvdb_id: s["ids"]["tvdb"].as_i64(),
+                    trakt_id: s["ids"]["trakt"].as_i64(),
+                    season: ep.and_then(|e| e["season"].as_u64()).map(|n| n as u32),
+                    episode: ep.and_then(|e| e["number"].as_u64()).map(|n| n as u32),
+                    rating,
+                });
+            }
+        }
+        Ok(out)
     }
 
     // ---- Letterboxd RSS ----

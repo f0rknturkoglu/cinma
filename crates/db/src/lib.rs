@@ -11,6 +11,7 @@ mod repo_disk;
 mod repo_library;
 mod repo_meta;
 mod repo_outbox;
+mod repo_phase9;
 
 use std::path::Path;
 
@@ -25,6 +26,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0005_disk_policy.sql"),
     include_str!("../migrations/0006_tracking_outbox.sql"),
     include_str!("../migrations/0007_download_file_path.sql"),
+    include_str!("../migrations/0008_phase9_integrations.sql"),
 ];
 
 /// Schema version this build understands.
@@ -37,6 +39,7 @@ pub use repo_disk::{DiskEntryRow, DiskKind, KeepRuleRow};
 pub use repo_library::{LibraryItemRow, WatchProgressRow};
 pub use repo_meta::{IdMapEntry, MediaKind};
 pub use repo_outbox::{AdapterStateRow, OutboxRow};
+pub use repo_phase9::{IptvChannelRow, IptvEpgRow, IptvSourceRow, NewIptvChannel, SkipCacheRow};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {

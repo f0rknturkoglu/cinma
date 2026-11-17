@@ -98,11 +98,29 @@ pub fn rank_streams(
     prefs: &RankerPreferences,
     caps: &MachineCapabilities,
 ) -> RankResult {
+    rank_streams_with_debrid(candidates, &std::collections::HashSet::new(), prefs, caps)
+}
+
+/// Runs the ranking pipeline, flagging streams whose lowercase `info_hash`
+/// appears in `debrid_cached_hashes` and boosting them above uncached peers.
+pub fn rank_streams_with_debrid(
+    candidates: Vec<(String, Stream)>,
+    debrid_cached_hashes: &std::collections::HashSet<String>,
+    prefs: &RankerPreferences,
+    caps: &MachineCapabilities,
+) -> RankResult {
     let mut scored = Vec::new();
     let mut filtered = Vec::new();
 
     for (addon_name, stream) in candidates {
-        let parsed = parse_stream(&stream);
+        let mut parsed = parse_stream(&stream);
+        if stream
+            .info_hash
+            .as_deref()
+            .is_some_and(|h| debrid_cached_hashes.contains(&h.to_ascii_lowercase()))
+        {
+            parsed.cached_debrid = true;
+        }
         if let Some(reason) = filter_reason(&stream, &parsed, prefs) {
             filtered.push(FilteredOutStream {
                 addon_name,
@@ -157,7 +175,7 @@ fn filter_reason(
     if parsed.resolution != Resolution::Unknown && parsed.resolution > prefs.max_resolution {
         return Some(FilterReason::ExceedsMaxResolution);
     }
-    if parsed.is_torrent {
+    if parsed.is_torrent && !parsed.cached_debrid {
         let seeders = parsed.seeders;
         if prefs.safety_level == SafetyLevel::Strict && seeders == Some(0) {
             return Some(FilterReason::BelowMinSeeders);
@@ -258,8 +276,12 @@ fn score_stream(
     }
 
     if parsed.is_torrent {
+        if parsed.cached_debrid {
+            push("debrid.cached", Some("Instant Debrid".to_owned()), 160);
+        }
         if let Some(seeders) = parsed.seeders {
             let seed_pts = match seeders {
+                0 if parsed.cached_debrid => 0,
                 0 => -250,
                 1..=4 => 10,
                 5..=19 => 40,

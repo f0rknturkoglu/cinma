@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod archive;
 mod blob;
 mod files;
 mod hash;
@@ -23,6 +24,8 @@ use std::sync::{Arc, Mutex};
 
 use tokio::sync::Notify;
 pub use tokio_util::sync::CancellationToken;
+
+pub use archive::{ArchiveByteSource, ArchiveEntry, ArchiveKind, detect_archive_kind};
 
 pub use blob::{Blob, BlobId, BlobStore, DEFAULT_READAHEAD, PriorityListener, ReadHint};
 pub use files::{FileSource, move_file_no_overwrite, sanitize_file_name, unique_destination};

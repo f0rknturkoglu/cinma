@@ -15,6 +15,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>stremio</string>
+				<string>cinma</string>
 			</array>
 		</dict>
 	</array>

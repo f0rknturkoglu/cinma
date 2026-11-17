@@ -116,6 +116,10 @@ pub struct TorrentPolicy {
     pub download_bps: Option<u32>,
     pub seeding: SeedingPolicy,
     pub delete_on_release: bool,
+    /// Optional BSD interface name (e.g. `utun3`) passed to `librqbit` `bind_device_name`.
+    pub bind_device_name: Option<String>,
+    /// When true, refuses starting a torrent session if `bind_device_name` is unset or offline.
+    pub vpn_kill_switch: bool,
 }
 
 impl Default for TorrentPolicy {
@@ -126,6 +130,8 @@ impl Default for TorrentPolicy {
             download_bps: None,
             seeding: SeedingPolicy::Off,
             delete_on_release: true,
+            bind_device_name: None,
+            vpn_kill_switch: false,
         }
     }
 }
@@ -299,8 +305,19 @@ impl RqbitEngine {
     }
 
     pub async fn update_policy(&self, policy: TorrentPolicy) {
-        let mut g = self.policy.lock().await;
-        *g = policy;
+        let reset_session = {
+            let mut g = self.policy.lock().await;
+            let changed = g.bind_device_name != policy.bind_device_name
+                || g.vpn_kill_switch != policy.vpn_kill_switch;
+            *g = policy;
+            changed
+        };
+        if reset_session {
+            let old = self.session.lock().await.take();
+            if let Some(session) = old {
+                session.stop().await;
+            }
+        }
     }
 
     pub fn downloads_dir(&self) -> PathBuf {
@@ -313,6 +330,17 @@ impl RqbitEngine {
             return Ok(Arc::clone(session));
         }
         let policy = self.policy.lock().await.clone();
+        let bind_dev = policy
+            .bind_device_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned);
+        if policy.vpn_kill_switch && bind_dev.is_none() {
+            return Err(TorrentError::Engine(
+                "VPN kill switch is enabled but no VPN network interface is selected".into(),
+            ));
+        }
         let downloads = self.downloads_dir();
         std::fs::create_dir_all(&downloads).map_err(|e| TorrentError::Engine(e.to_string()))?;
         let session_dir = self.config.root.join("session");
@@ -329,6 +357,7 @@ impl RqbitEngine {
                 folder: Some(session_dir),
             }),
             dht: (!self.config.local_only).then(|| dht_config(self.config.root.join("dht.json"))),
+            bind_device_name: bind_dev,
             disable_local_service_discovery: self.config.local_only,
             peer_limit: Some(80),
             ratelimits: LimitsConfig {

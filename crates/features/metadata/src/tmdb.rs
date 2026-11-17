@@ -434,6 +434,56 @@ impl TmdbClient {
             })
             .collect())
     }
+
+    /// Fetches TMDB watch providers for a title in `region` (e.g. `"US"`, `"TR"`).
+    pub async fn watch_providers(
+        &self,
+        api_key: &str,
+        media_type: &str,
+        tmdb_id: i64,
+        region: &str,
+    ) -> Result<Vec<WatchProvider>, MetadataError> {
+        let kind = if media_type == "series" || media_type == "tv" {
+            "tv"
+        } else {
+            "movie"
+        };
+        let id_str = tmdb_id.to_string();
+        let url = self.endpoint(
+            &[kind, &id_str, "watch", "providers"],
+            &[("api_key", api_key)],
+        )?;
+        let raw: TmdbWatchProvidersResp = self.get_json(url).await?;
+        let reg_key = region.trim().to_ascii_uppercase();
+        let entry = raw.results.get(&reg_key).or_else(|| raw.results.get("US"));
+        let Some(entry) = entry else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        for (kind_label, list) in [
+            ("flatrate", &entry.flatrate),
+            ("rent", &entry.rent),
+            ("buy", &entry.buy),
+        ] {
+            for p in list {
+                out.push(WatchProvider {
+                    provider_id: p.provider_id,
+                    name: p.provider_name.clone(),
+                    logo_url: image_url("w185", p.logo_path.as_deref()),
+                    kind: kind_label.to_owned(),
+                });
+            }
+        }
+        Ok(out)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WatchProvider {
+    pub provider_id: i64,
+    pub name: String,
+    pub logo_url: Option<String>,
+    pub kind: String,
 }
 
 fn pick_logo(images: Option<&TmdbImages>, lang_short: &str) -> Option<String> {
@@ -701,4 +751,28 @@ struct TmdbEpisodeItem {
     overview: Option<String>,
     #[serde(default)]
     still_path: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TmdbWatchProvidersResp {
+    #[serde(default)]
+    results: std::collections::HashMap<String, TmdbWatchRegion>,
+}
+
+#[derive(Deserialize)]
+struct TmdbWatchRegion {
+    #[serde(default)]
+    flatrate: Vec<TmdbWatchItem>,
+    #[serde(default)]
+    rent: Vec<TmdbWatchItem>,
+    #[serde(default)]
+    buy: Vec<TmdbWatchItem>,
+}
+
+#[derive(Deserialize)]
+struct TmdbWatchItem {
+    provider_id: i64,
+    provider_name: String,
+    #[serde(default)]
+    logo_path: Option<String>,
 }

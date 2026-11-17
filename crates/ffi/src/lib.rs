@@ -2054,6 +2054,236 @@ impl CinmaCore {
     pub fn import_backup(&self, src_path: String) -> Result<u32, CinmaError> {
         Ok(self.inner.import_backup(&PathBuf::from(src_path))?)
     }
+
+    // ---- Phase 9: Integrations & Add-ons ----
+
+    pub async fn skip_segments(
+        &self,
+        media_type: String,
+        meta_id: String,
+        season: Option<u32>,
+        episode: Option<u32>,
+    ) -> Result<Vec<SkipSegmentInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .skip_segments(media_type, meta_id, season, episode)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn debrid_statuses(&self) -> Result<Vec<DebridProviderStatusInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .debrid_statuses()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn set_debrid_key(&self, provider: String, key: Option<String>) -> Result<(), CinmaError> {
+        Ok(self.inner.set_debrid_key(provider, key)?)
+    }
+
+    pub async fn rank_streams_with_debrid(
+        &self,
+        streams: Vec<StreamInfo>,
+        preferences: Option<RankPreferencesInput>,
+    ) -> Result<RankResultInfo, CinmaError> {
+        let prefs = preferences.map(TryInto::try_into).transpose()?;
+        let candidates = streams
+            .into_iter()
+            .map(|s| {
+                let stream: cinma_stremio::Stream =
+                    serde_json::from_str(&s.raw).map_err(|e| CinmaError::Invalid {
+                        message: e.to_string(),
+                    })?;
+                Ok(cinma_core::StreamCandidate {
+                    addon_name: s.addon_name,
+                    stream,
+                })
+            })
+            .collect::<Result<Vec<_>, CinmaError>>()?;
+        Ok(self
+            .inner
+            .rank_streams_with_debrid(candidates, prefs)
+            .await?
+            .into())
+    }
+
+    pub fn begin_tracking_oauth(
+        &self,
+        provider: String,
+        client_id: String,
+        client_secret: String,
+    ) -> Result<OAuthStartInfo, CinmaError> {
+        Ok(self
+            .inner
+            .begin_tracking_oauth(provider, client_id, client_secret)?
+            .into())
+    }
+
+    pub async fn complete_tracking_oauth_callback(
+        &self,
+        callback_url: String,
+    ) -> Result<String, CinmaError> {
+        Ok(self
+            .inner
+            .complete_tracking_oauth_callback(callback_url)
+            .await?)
+    }
+
+    pub async fn pull_trakt_sync(&self) -> Result<TraktPullSummaryInfo, CinmaError> {
+        Ok(self.inner.pull_trakt_sync().await?.into())
+    }
+
+    pub async fn opensubtitles_login(
+        &self,
+        username: String,
+        password: String,
+    ) -> Result<OpenSubtitlesQuotaInfo, CinmaError> {
+        Ok(self
+            .inner
+            .opensubtitles_login(username, password)
+            .await?
+            .into())
+    }
+
+    pub async fn opensubtitles_quota(&self) -> Result<OpenSubtitlesQuotaInfo, CinmaError> {
+        Ok(self.inner.opensubtitles_quota().await?.into())
+    }
+
+    pub async fn opensubtitles_logout(&self) -> Result<(), CinmaError> {
+        Ok(self.inner.opensubtitles_logout().await?)
+    }
+
+    pub fn fanart_api_key(&self) -> Result<Option<String>, CinmaError> {
+        Ok(self.inner.fanart_api_key()?)
+    }
+
+    pub fn set_fanart_api_key(&self, key: Option<String>) -> Result<(), CinmaError> {
+        Ok(self.inner.set_fanart_api_key(key)?)
+    }
+
+    pub async fn title_extras(
+        &self,
+        media_type: String,
+        id: String,
+    ) -> Result<TitleExtrasInfo, CinmaError> {
+        Ok(self.inner.title_extras(media_type, id).await?.into())
+    }
+
+    pub async fn add_m3u_source(
+        &self,
+        name: String,
+        url: String,
+        epg_url: Option<String>,
+    ) -> Result<u32, CinmaError> {
+        Ok(self.inner.add_m3u_source(name, url, epg_url).await?)
+    }
+
+    pub async fn add_xtream_source(
+        &self,
+        name: String,
+        base_url: String,
+        username: String,
+        password: String,
+    ) -> Result<u32, CinmaError> {
+        Ok(self
+            .inner
+            .add_xtream_source(name, base_url, username, password)
+            .await?)
+    }
+
+    pub async fn refresh_xmltv(&self, url: String) -> Result<u32, CinmaError> {
+        Ok(self.inner.refresh_xmltv(url).await?)
+    }
+
+    pub fn list_iptv_sources(&self) -> Result<Vec<IptvSourceInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .list_iptv_sources()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn remove_iptv_source(&self, source_id: i64) -> Result<(), CinmaError> {
+        Ok(self.inner.remove_iptv_source(source_id)?)
+    }
+
+    pub fn list_iptv_channels(
+        &self,
+        group: Option<String>,
+        query: Option<String>,
+    ) -> Result<Vec<IptvChannelInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .list_iptv_channels(group, query)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn set_iptv_favorite(&self, channel_id: i64, favorite: bool) -> Result<(), CinmaError> {
+        Ok(self.inner.set_iptv_favorite(channel_id, favorite)?)
+    }
+
+    pub fn iptv_epg_now_next(
+        &self,
+        epg_channel_id: String,
+    ) -> Result<Vec<IptvEpgInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .iptv_epg_now_next(epg_channel_id)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn update_discord_presence(
+        &self,
+        title: String,
+        subtitle: Option<String>,
+        duration_s: Option<u64>,
+        position_s: u64,
+        paused: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .update_discord_presence(cinma_core::DiscordPresenceInput {
+                title,
+                subtitle,
+                duration_s,
+                position_s,
+                paused,
+            })
+            .await?)
+    }
+
+    pub async fn clear_discord_presence(&self) -> Result<(), CinmaError> {
+        Ok(self.inner.clear_discord_presence().await?)
+    }
+
+    pub fn vpn_torrent_binding(&self) -> Result<VpnBindingInfo, CinmaError> {
+        let s = self.inner.disk_policy_settings()?;
+        Ok(VpnBindingInfo {
+            bind_device_name: s.bind_device_name,
+            vpn_kill_switch: s.vpn_kill_switch,
+        })
+    }
+
+    pub async fn set_vpn_torrent_binding(
+        &self,
+        bind_device_name: Option<String>,
+        vpn_kill_switch: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .set_vpn_torrent_binding(bind_device_name, vpn_kill_switch)
+            .await?)
+    }
 }
 
 #[derive(uniffi::Record)]
@@ -2252,6 +2482,218 @@ impl From<cinma_core::TraktRecommendation> for TraktRecommendationInfo {
             tmdb_id: r.tmdb_id,
         }
     }
+}
+
+#[derive(uniffi::Record)]
+pub struct SkipSegmentInfo {
+    pub kind: String,
+    pub start_s: f64,
+    pub end_s: f64,
+    pub source: String,
+}
+
+impl From<cinma_core::SkipSegment> for SkipSegmentInfo {
+    fn from(s: cinma_core::SkipSegment) -> Self {
+        let kind = match s.kind {
+            cinma_core::SkipKind::Intro => "intro",
+            cinma_core::SkipKind::Outro => "outro",
+            cinma_core::SkipKind::Recap => "recap",
+            cinma_core::SkipKind::Preview => "preview",
+        };
+        Self {
+            kind: kind.to_owned(),
+            start_s: s.start_s,
+            end_s: s.end_s,
+            source: s.source,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct DebridProviderStatusInfo {
+    pub provider: String,
+    pub display_name: String,
+    pub configured: bool,
+}
+
+impl From<cinma_core::DebridProviderStatus> for DebridProviderStatusInfo {
+    fn from(d: cinma_core::DebridProviderStatus) -> Self {
+        Self {
+            provider: d.provider,
+            display_name: d.display_name,
+            configured: d.configured,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct OAuthStartInfo {
+    pub provider: String,
+    pub authorize_url: String,
+    pub state: String,
+}
+
+impl From<cinma_core::OAuthStartResult> for OAuthStartInfo {
+    fn from(o: cinma_core::OAuthStartResult) -> Self {
+        Self {
+            provider: o.provider,
+            authorize_url: o.authorize_url,
+            state: o.state,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct TraktPullSummaryInfo {
+    pub watchlist_items: u32,
+    pub rating_items: u32,
+    pub history_items: u32,
+}
+
+impl From<cinma_core::TraktPullSummary> for TraktPullSummaryInfo {
+    fn from(t: cinma_core::TraktPullSummary) -> Self {
+        Self {
+            watchlist_items: t.watchlist_items,
+            rating_items: t.rating_items,
+            history_items: t.history_items,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct OpenSubtitlesQuotaInfo {
+    pub allowed_downloads: u32,
+    pub remaining_downloads: u32,
+    pub downloads_count: u32,
+    pub level: String,
+    pub vip: bool,
+}
+
+impl From<cinma_core::OsUserQuota> for OpenSubtitlesQuotaInfo {
+    fn from(q: cinma_core::OsUserQuota) -> Self {
+        Self {
+            allowed_downloads: q.allowed_downloads,
+            remaining_downloads: q.remaining_downloads,
+            downloads_count: q.downloads_count,
+            level: q.level,
+            vip: q.vip,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct WatchProviderInfo {
+    pub provider_id: i64,
+    pub name: String,
+    pub logo_url: Option<String>,
+    pub kind: String,
+}
+
+impl From<cinma_core::WatchProvider> for WatchProviderInfo {
+    fn from(p: cinma_core::WatchProvider) -> Self {
+        Self {
+            provider_id: p.provider_id,
+            name: p.name,
+            logo_url: p.logo_url,
+            kind: p.kind,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct TitleExtrasInfo {
+    pub clearlogo: Option<String>,
+    pub fanart_backdrop: Option<String>,
+    pub watch_providers: Vec<WatchProviderInfo>,
+}
+
+impl From<cinma_core::TitleExtras> for TitleExtrasInfo {
+    fn from(e: cinma_core::TitleExtras) -> Self {
+        Self {
+            clearlogo: e.clearlogo,
+            fanart_backdrop: e.fanart_backdrop,
+            watch_providers: e.watch_providers.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct IptvSourceInfo {
+    pub id: i64,
+    pub name: String,
+    pub kind: String,
+    pub url: String,
+    pub username: Option<String>,
+    pub epg_url: Option<String>,
+}
+
+impl From<cinma_core::IptvSourceRow> for IptvSourceInfo {
+    fn from(s: cinma_core::IptvSourceRow) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            kind: s.kind,
+            url: s.url,
+            username: s.username,
+            epg_url: s.epg_url,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct IptvChannelInfo {
+    pub id: i64,
+    pub source_id: i64,
+    pub stream_id: String,
+    pub name: String,
+    pub group_title: Option<String>,
+    pub logo_url: Option<String>,
+    pub stream_url: String,
+    pub epg_channel_id: Option<String>,
+    pub is_favorite: bool,
+}
+
+impl From<cinma_core::IptvChannelRow> for IptvChannelInfo {
+    fn from(c: cinma_core::IptvChannelRow) -> Self {
+        Self {
+            id: c.id,
+            source_id: c.source_id,
+            stream_id: c.stream_id,
+            name: c.name,
+            group_title: c.group_title,
+            logo_url: c.logo_url,
+            stream_url: c.stream_url,
+            epg_channel_id: c.epg_channel_id,
+            is_favorite: c.is_favorite,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct IptvEpgInfo {
+    pub channel_id: String,
+    pub start_ts: i64,
+    pub stop_ts: i64,
+    pub title: String,
+    pub description: Option<String>,
+}
+
+impl From<cinma_core::IptvEpgRow> for IptvEpgInfo {
+    fn from(e: cinma_core::IptvEpgRow) -> Self {
+        Self {
+            channel_id: e.channel_id,
+            start_ts: e.start_ts,
+            stop_ts: e.stop_ts,
+            title: e.title,
+            description: e.description,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct VpnBindingInfo {
+    pub bind_device_name: Option<String>,
+    pub vpn_kill_switch: bool,
 }
 
 #[derive(uniffi::Record)]

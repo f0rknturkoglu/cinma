@@ -5,7 +5,7 @@ Updated 2026-11-17 after the Phase 3–7 review. The owner's test checklist and 
 ## Not yet verified on real networks or devices
 - **Torrent TTFF and seek on a real swarm.** The agent sandbox proxies outbound TCP, so only the loopback seeder was tested. On a normal network run: `tools/measure-playback.sh "<addon manifest url>" movie <imdb id> 5`.
 - **Chromecast / DLNA.** The in-process mDNS and SSDP discovery and the CastV2/SOAP control are tested with synthetic packets and local mocks. A real device test is owner-side. macOS may ask for local network permission the first time you cast.
-- **Trakt / Simkl / AniList / MAL / Stremio import.** Tested only against local mock servers.
+- **Trakt / Simkl / AniList / MAL / Stremio / OpenSubtitles / Debrid / SkipSegments / Fanart / Kitsu / IPTV / Discord IPC:** all Phase 6 & Phase 9 clients are tested against local mock servers or Unix sockets (`cargo test`); real-account credentials, live OAuth browser redirect round trips, live Discord desktop IPC, and VPN `utun*` kill-switch behavior are owner-side checks.
 
 ## Media and rendering
 - **Dolby Vision P5 & corpus:** the OpenGL render path (ADR 0004) stays active until real samples (`DV P5/P8/P7`, `AV1`, `ASS-heavy`, `multi-audio` in `tools/media-corpus.md`) are tested by the owner. If DV P5 colours are wrong or CPU exceeds limits, D1 (`libmpv` + `macvk`/`libplacebo`) will be bundled in Phase 10.

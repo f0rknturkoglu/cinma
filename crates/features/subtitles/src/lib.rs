@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use cinma_stremio::AddonSubtitle;
 
 pub use encoding::{DecodedSubtitle, decode_subtitle_bytes, unpack_if_gzipped};
-pub use opensubtitles::OpenSubtitlesClient;
+pub use opensubtitles::{OpenSubtitlesClient, OsAccountSession, OsUserQuota};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SubtitleError {

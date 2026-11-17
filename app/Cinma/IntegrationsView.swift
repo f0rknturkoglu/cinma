@@ -10,6 +10,18 @@ struct IntegrationsSheetView: View {
 
     @State private var castingEnabled = false
     @State private var trackingEnabled = false
+    @State private var skipSegmentsEnabled = false
+    @State private var debridEnabled = false
+    @State private var iptvEnabled = false
+    @State private var discordEnabled = false
+    @State private var debridStatuses: [DebridProviderStatusInfo] = []
+    @State private var debridProvider = "realdebrid"
+    @State private var debridApiKey = ""
+    @State private var fanartApiKey = ""
+    @State private var hasFanartKey = false
+    @State private var oauthProvider = "simkl"
+    @State private var oauthClientId = ""
+    @State private var oauthClientSecret = ""
     @State private var adapters: [AdapterStatusInfo] = []
     @State private var statusMessage = ""
 
@@ -98,6 +110,26 @@ struct IntegrationsSheetView: View {
                                 .font(.caption.monospaced())
                             Button(String(localized: "Verify Code")) { pollTraktAuth(dev) }
                         }
+                        Spacer()
+                        Button(String(localized: "Pull Watchlist & History")) { pullTrakt() }
+                            .disabled(busy)
+                    }
+                }
+
+                Section(String(localized: "Browser OAuth Sign-In (Simkl / AniList / MAL)")) {
+                    Picker(String(localized: "Service"), selection: $oauthProvider) {
+                        Text("Simkl").tag("simkl")
+                        Text("AniList").tag("anilist")
+                        Text("MyAnimeList (PKCE)").tag("mal")
+                    }
+                    TextField(String(localized: "App Client ID"), text: $oauthClientId)
+                    SecureField(String(localized: "Client Secret (optional for MAL)"), text: $oauthClientSecret)
+                    HStack {
+                        Button(String(localized: "Sign in with Browser")) { startBrowserOAuth() }
+                            .disabled(oauthClientId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Spacer()
+                        Button(String(localized: "Refresh Anime ID Map")) { refreshAnimeMapFromDataset() }
+                            .disabled(busy)
                     }
                 }
 
@@ -136,6 +168,86 @@ struct IntegrationsSheetView: View {
                 }
             }
 
+            Section(String(localized: "Phase 9 Optional Modules (Off by Default)")) {
+                Toggle(String(localized: "Skip Intro / Outro Segments (AniSkip & IntroDB)"), isOn: $skipSegmentsEnabled)
+                    .onChange(of: skipSegmentsEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "skip_segments", enabled: val) }
+                    }
+                Toggle(String(localized: "Debrid Cached Stream Resolver"), isOn: $debridEnabled)
+                    .onChange(of: debridEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "debrid", enabled: val) }
+                    }
+                Toggle(String(localized: "Live TV / IPTV Playlists & EPG"), isOn: $iptvEnabled)
+                    .onChange(of: iptvEnabled) { _, val in
+                        Task {
+                            try? await core.setFeatureEnabled(name: "iptv", enabled: val)
+                            NotificationCenter.default.post(name: .cinmaIptvVisibilityChanged, object: nil)
+                        }
+                    }
+                Toggle(String(localized: "Discord Rich Presence"), isOn: $discordEnabled)
+                    .onChange(of: discordEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "discord", enabled: val) }
+                    }
+            }
+
+            if debridEnabled {
+                Section(String(localized: "Debrid Accounts (Keychain)")) {
+                    Picker(String(localized: "Provider"), selection: $debridProvider) {
+                        Text("Real-Debrid").tag("realdebrid")
+                        Text("AllDebrid").tag("alldebrid")
+                        Text("Premiumize").tag("premiumize")
+                        Text("TorBox").tag("torbox")
+                    }
+                    HStack {
+                        SecureField(String(localized: "API Key / Token"), text: $debridApiKey)
+                        Button(String(localized: "Save")) {
+                            try? core.setDebridKey(provider: debridProvider, key: debridApiKey)
+                            debridApiKey = ""
+                            statusMessage = String(localized: "Debrid API key saved to Keychain")
+                            reload()
+                        }
+                        .disabled(debridApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    ForEach(debridStatuses, id: \.provider) { item in
+                        HStack {
+                            Text(item.displayName)
+                            Spacer()
+                            Text(item.configured ? String(localized: "Configured") : String(localized: "Not configured"))
+                                .font(.caption)
+                                .foregroundStyle(item.configured ? .green : .secondary)
+                            if item.configured {
+                                Button(String(localized: "Clear")) {
+                                    try? core.setDebridKey(provider: item.provider, key: nil)
+                                    reload()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Section(String(localized: "Metadata Extras (Fanart.tv & Anime Map)")) {
+                HStack {
+                    SecureField(
+                        hasFanartKey ? String(localized: "Fanart.tv key saved in Keychain") : String(localized: "Fanart.tv Personal API Key (optional)"),
+                        text: $fanartApiKey
+                    )
+                    Button(String(localized: "Save")) {
+                        try? core.setFanartApiKey(key: fanartApiKey)
+                        fanartApiKey = ""
+                        hasFanartKey = true
+                        statusMessage = String(localized: "Fanart.tv API key saved to Keychain")
+                    }
+                    .disabled(fanartApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if hasFanartKey {
+                        Button(String(localized: "Clear")) {
+                            try? core.setFanartApiKey(key: nil)
+                            hasFanartKey = false
+                        }
+                    }
+                }
+            }
+
             Section(String(localized: "One-Time Stremio Account Import")) {
                 TextField(String(localized: "Stremio Email"), text: $stremioEmail)
                 SecureField(String(localized: "Stremio Password (never stored)"), text: $stremioPassword)
@@ -162,7 +274,56 @@ struct IntegrationsSheetView: View {
     private func reload() {
         castingEnabled = (try? core.featureEnabled(name: "casting")) ?? false
         trackingEnabled = (try? core.featureEnabled(name: "tracking")) ?? false
+        skipSegmentsEnabled = (try? core.featureEnabled(name: "skip_segments")) ?? false
+        debridEnabled = (try? core.featureEnabled(name: "debrid")) ?? false
+        iptvEnabled = (try? core.featureEnabled(name: "iptv")) ?? false
+        discordEnabled = (try? core.featureEnabled(name: "discord")) ?? false
+        debridStatuses = (try? core.debridStatuses()) ?? []
+        hasFanartKey = ((try? core.fanartApiKey()) ?? nil) != nil
         adapters = (try? core.trackingAdapters()) ?? []
+    }
+
+    private func startBrowserOAuth() {
+        do {
+            let flow = try core.beginTrackingOauth(
+                provider: oauthProvider,
+                clientId: oauthClientId,
+                clientSecret: oauthClientSecret
+            )
+            if let url = URL(string: flow.authorizeUrl) {
+                NSWorkspace.shared.open(url)
+                statusMessage = String(localized: "Opened browser sign-in for \(oauthProvider.capitalized)…")
+            }
+        } catch {
+            statusMessage = FriendlyError.explain(error)
+        }
+    }
+
+    private func pullTrakt() {
+        busy = true
+        Task {
+            defer { busy = false; reload() }
+            do {
+                let s = try await core.pullTraktSync()
+                statusMessage = String(localized: "Trakt sync: \(s.watchlistItems) watchlist, \(s.ratingItems) ratings, \(s.historyItems) history")
+            } catch {
+                statusMessage = FriendlyError.explain(error)
+            }
+        }
+    }
+
+    private func refreshAnimeMapFromDataset() {
+        busy = true
+        statusMessage = String(localized: "Refreshing anime ID mappings…")
+        Task {
+            defer { busy = false }
+            do {
+                let n = try await core.refreshAnimeIdMap(url: "")
+                statusMessage = String(localized: "Imported \(n) anime ID mappings")
+            } catch {
+                statusMessage = FriendlyError.explain(error)
+            }
+        }
     }
 
     private func drainOutbox() {

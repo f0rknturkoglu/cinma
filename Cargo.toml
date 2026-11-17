@@ -15,6 +15,9 @@ members = [
     "crates/features/http",
     "crates/features/casting",
     "crates/features/tracking",
+    "crates/features/debrid",
+    "crates/features/iptv",
+    "crates/features/discord",
     "tools/uniffi-bindgen",
 ]
 default-members = [
@@ -32,6 +35,9 @@ default-members = [
     "crates/features/http",
     "crates/features/casting",
     "crates/features/tracking",
+    "crates/features/debrid",
+    "crates/features/iptv",
+    "crates/features/discord",
 ]
 
 [workspace.package]
@@ -54,6 +60,9 @@ cinma-subtitles = { path = "crates/features/subtitles" }
 cinma-http = { path = "crates/features/http" }
 cinma-casting = { path = "crates/features/casting" }
 cinma-tracking = { path = "crates/features/tracking" }
+cinma-debrid = { path = "crates/features/debrid" }
+cinma-iptv = { path = "crates/features/iptv" }
+cinma-discord = { path = "crates/features/discord" }
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }

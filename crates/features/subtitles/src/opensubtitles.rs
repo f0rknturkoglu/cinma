@@ -7,6 +7,22 @@ use crate::{SubtitleCandidate, SubtitleError, SubtitleQueryParams, normalize_lan
 
 const DEFAULT_BASE_URL: &str = "https://api.opensubtitles.com/api/v1";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OsAccountSession {
+    pub token: String,
+    pub allowed_downloads: u32,
+    pub level: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OsUserQuota {
+    pub allowed_downloads: u32,
+    pub remaining_downloads: u32,
+    pub downloads_count: u32,
+    pub level: String,
+    pub vip: bool,
+}
+
 #[derive(Clone)]
 pub struct OpenSubtitlesClient {
     http: reqwest::Client,
@@ -148,6 +164,101 @@ impl OpenSubtitlesClient {
             .unwrap_or_else(|| "srt".to_owned());
         Ok((file_resp.bytes().await?.to_vec(), ext))
     }
+
+    /// Logs in with OpenSubtitles username/password to obtain a JWT bearer token.
+    pub async fn login(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<OsAccountSession, SubtitleError> {
+        let u = username.trim();
+        if u.is_empty() || password.is_empty() {
+            return Err(SubtitleError::Invalid(
+                "username and password are required".into(),
+            ));
+        }
+        let body = serde_json::to_vec(&serde_json::json!({
+            "username": u,
+            "password": password
+        }))?;
+        let resp = self
+            .http
+            .post(format!("{}/login", self.base_url))
+            .header("Api-Key", &self.api_key)
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .body(body)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(SubtitleError::HttpStatus(resp.status().as_u16()));
+        }
+        let parsed: OsLoginResp = serde_json::from_slice(&resp.bytes().await?)?;
+        if parsed.token.trim().is_empty() {
+            return Err(SubtitleError::Invalid(
+                "OpenSubtitles login returned an empty token".into(),
+            ));
+        }
+        Ok(OsAccountSession {
+            token: parsed.token,
+            allowed_downloads: parsed
+                .user
+                .as_ref()
+                .and_then(|u| u.allowed_downloads)
+                .unwrap_or(0),
+            level: parsed
+                .user
+                .and_then(|u| u.level)
+                .unwrap_or_else(|| "Standard".into()),
+        })
+    }
+
+    /// Fetches the signed-in user's download quota via `/infos/user`.
+    pub async fn user_info(&self) -> Result<OsUserQuota, SubtitleError> {
+        let token = self
+            .token
+            .as_deref()
+            .ok_or_else(|| SubtitleError::Invalid("not signed in to OpenSubtitles".into()))?;
+        let resp = self
+            .http
+            .get(format!("{}/infos/user", self.base_url))
+            .header("Api-Key", &self.api_key)
+            .header("Accept", "application/json")
+            .bearer_auth(token)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            return Err(SubtitleError::HttpStatus(resp.status().as_u16()));
+        }
+        let parsed: OsUserInfoResp = serde_json::from_slice(&resp.bytes().await?)?;
+        let d = parsed.data;
+        let allowed = d.allowed_downloads.unwrap_or(0);
+        let used = d.downloads_count.unwrap_or(0);
+        let remaining = d
+            .remaining_downloads
+            .unwrap_or_else(|| allowed.saturating_sub(used));
+        Ok(OsUserQuota {
+            allowed_downloads: allowed,
+            remaining_downloads: remaining,
+            downloads_count: used,
+            level: d.level.unwrap_or_else(|| "Standard".into()),
+            vip: d.vip.unwrap_or(false),
+        })
+    }
+
+    pub async fn logout(&self) -> Result<(), SubtitleError> {
+        let Some(token) = self.token.as_deref() else {
+            return Ok(());
+        };
+        let _ = self
+            .http
+            .delete(format!("{}/logout", self.base_url))
+            .header("Api-Key", &self.api_key)
+            .bearer_auth(token)
+            .send()
+            .await?;
+        Ok(())
+    }
 }
 
 fn to_opensubtitles_iso2(code: &str) -> Option<String> {
@@ -207,4 +318,30 @@ struct OsDownloadResponse {
     link: String,
     #[serde(default)]
     file_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct OsLoginResp {
+    token: String,
+    #[serde(default)]
+    user: Option<OsUserData>,
+}
+
+#[derive(Deserialize)]
+struct OsUserInfoResp {
+    data: OsUserData,
+}
+
+#[derive(Deserialize)]
+struct OsUserData {
+    #[serde(default)]
+    allowed_downloads: Option<u32>,
+    #[serde(default)]
+    remaining_downloads: Option<u32>,
+    #[serde(default)]
+    downloads_count: Option<u32>,
+    #[serde(default)]
+    level: Option<String>,
+    #[serde(default)]
+    vip: Option<bool>,
 }

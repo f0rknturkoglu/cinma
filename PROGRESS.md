@@ -1,13 +1,44 @@
 # PROGRESS
 
-## Status: Phases 0–8 built (2026-11-17); Phase 8 awaiting owner review before Phase 9. ADRs 0010, 0011, 0012, 0014, 0016 accepted; ADR 0013 §3 accepted (disk quota superseded by 0016); ADR 0015 backup/libmpv lookup accepted (packaging deferred to Phase 10); CLAUDE.md §6 targets owner-approved.
+## Status: Phases 0–9 built (2026-11-17); Phase 9 awaiting owner review before Phase 10. ADRs 0010, 0011, 0012, 0014, 0016 accepted; ADR 0013 §3 accepted (disk quota superseded by 0016); ADR 0015 backup/libmpv lookup accepted (packaging deferred to Phase 10); ADR 0017 Phase 9 integrations proposed; CLAUDE.md §6 targets owner-approved.
 
 **Next:** see `docs/ROADMAP.md`:
 - §2: the owner's test checklist;
 - §3 & §6: recorded owner decisions (2026-11-17);
-- §8–9: Phase 9 (integrations and add-ons), Phase 10 (hardening and release).
+- §9: Phase 10 (hardening, bundled `libmpv`+FFmpeg, crash sweep, competitor benchmark).
 
-Two things are still unmeasured: real-swarm torrent TTFF/seek (the agent sandbox has no P2P) and real Chromecast/DLNA/Trakt round trips. See `docs/RISKS.md`.
+Unmeasured outside local mocks / sandbox: real-swarm torrent TTFF/seek and live external service round trips (Debrid, OAuth, AniSkip/IntroDB, Fanart, Kitsu, IPTV, Discord IPC, Chromecast/DLNA). See `docs/RISKS.md`.
+
+---
+
+## Phase 9 — Integrations & add-ons ✅ (2026-11-17)
+
+### Done in Phase 9 (`docs/adr/0017-phase9-integrations-and-providers.md`, migration `0008_phase9_integrations.sql`)
+- **Zero new external Cargo dependencies:** reused existing workspace crates (`reqwest`, `serde`, `ring`, `url`, `tokio`, `rusqlite`, `librqbit`).
+- **Off-by-default runtime boundaries (`Feature::{SkipSegments, Debrid, Iptv, Discord}`):** disabled modules construct zero HTTP clients, sockets, or Live TV UI views and tear down immediately when toggled off.
+- **Skip intro/outro (`cinma-metadata::skip_segments`, `skip_segment_cache`):** AniSkip v2 (`mal_id`) + IntroDB (`imdb_id`, season, episode) with 7-day SQLite TTL, merged directly into `PlayerViewController`'s Skip button alongside chapter markers.
+- **Debrid resolvers (`crates/features/debrid` + `cinma-ranker`):** Real-Debrid, AllDebrid, Premiumize, and TorBox Keychain API keys, batch instant-cache lookup, ranker `[Instant Debrid]` +`160` boost, and HTTPS stream resolution on play with P2P fallback.
+- **OAuth PKCE, Two-Way Trakt & Anime ID Refresh (`cinma-tracking::oauth`, `Info.plist`):** registered `cinma://` URL scheme for system-browser OAuth PKCE/code exchange (`Simkl`, `AniList`, `MAL`, zero WebViews), two-way Trakt pull (`/sync/watchlist`, `/sync/ratings`, `/sync/history`), and Fribb-compatible `refresh_anime_id_map`.
+- **OpenSubtitles account & hash search (`cinma-subtitles`, `SheetsAndSettings.swift`, `PlayerViewController.swift`):** `/login`, `/infos/user` quota display, `/logout`, plus hash-based subtitle lookup enabled on both stream and local files.
+- **Metadata enrichment (`cinma-metadata`):** Fanart.tv v3 (`clearlogo` + backdrops via Keychain key), TMDB watch providers (`Watch on: ...` on `TitleDetailViewController`), and Kitsu JSON:API `kitsu:<id>` fallback.
+- **Store-mode Archive playback (`crates/blobstore/src/archive.rs`):** `ArchiveByteSource: ByteSource` streaming uncompressed entries (`method == 0` ZIP + `0x30` RAR4/RAR5) over any outer torrent/file `ByteSource` with seek priority forwarding.
+- **Live TV / IPTV (`crates/features/iptv`, `LiveTvViewController.swift`):** M3U/M3U8, Xtream Codes, and XMLTV EPG parsers cached in SQLite; conditional `Live TV` tab shown only when `Feature::Iptv` is enabled and played directly through `libmpv`.
+- **Discord Rich Presence (`crates/features/discord`):** in-process `$TMPDIR/discord-ipc-{0..9}` Unix domain socket client updating on play/pause/seek/stop.
+- **VPN interface binding & kill switch (`cinma-torrent`, `disk.rs`, `SheetsAndSettings.swift`):** BSD interface picker (`Darwin.getifaddrs`) + `librqbit::SessionOptions::bind_device_name` + fail-closed kill switch.
+- **macOS integrations (`CalendarNotifications.swift`, `SpotlightAndIntents.swift`):** local-only `UserNotifications` for upcoming library episodes (off by default, zero daemon) + `AppIntents` (`OpenCinmaSearchIntent`, `PlayContinueWatchingIntent`) + opt-in lazy `CoreSpotlight` library indexing.
+
+### Verification & Measurements (Phase 9, Release, after final edits)
+- **`cargo fmt --check` & `cargo clippy --all-targets -- -D warnings`:** passed (0 warnings).
+- **`cargo test --quiet`:** **132 Rust tests pass**, 0 failed, 0 ignored (`blobstore` 28 incl. store ZIP/RAR4 archive streaming, `core` 20 incl. `phase9` zero-cost/VPN/PKCE tests, `debrid` 2, `discord` 1, `iptv` 2, `metadata` 3, plus existing suites).
+- **Release `xcodebuild` (`Cinma.app`):** passed with **0 compiler warnings** and **0 errors**; `501` `en` + `tr` localized strings (`0` missing non-empty translations).
+- **Launch & Idle (`tools/measure.sh`, Release, 5 runs):**
+  - Median first frame: **184.2 ms** (< 250 ms target ✅)
+  - Median core ready: **193.5 ms**
+  - Median idle `phys_footprint`: **31.0 MB** (≤ 70 MB empty window target ✅), RSS **100.4 MB**
+  - Median idle CPU: **0.00 %** (~0 % target ✅)
+- **Local playback smoke tests (Release):**
+  - 1080p SDR MKV (`sdr_h264_1080p.mkv`): TTFF **422.0 ms**, seek **79.8 ms**, `gamma=bt.1886 hdr=false`, exit `0`.
+  - 4K HDR10 MP4 (`hdr10_hevc_4k.mp4`): TTFF **350.5 ms**, seek **139.6 ms**, `gamma=pq hdr=true`, exit `0`.
 
 ---
 

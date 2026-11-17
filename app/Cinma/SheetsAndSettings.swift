@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -466,11 +467,22 @@ struct SettingsView: View {
     @State private var hasTmdbKey = false
     @State private var openSubKey = ""
     @State private var hasOpenSubKey = false
+    @State private var osUsername = ""
+    @State private var osPassword = ""
+    @State private var osQuota: OpenSubtitlesQuotaInfo?
     @State private var language = "tr-TR"
     @State private var addonsEnabled = true
     @State private var torrentEnabled = true
     @State private var castingEnabled = false
     @State private var trackingEnabled = false
+    @State private var skipSegmentsEnabled = false
+    @State private var debridEnabled = false
+    @State private var iptvEnabled = false
+    @State private var discordEnabled = false
+    @State private var calendarAlertsEnabled = false
+    @State private var spotlightEnabled = false
+    @State private var vpnBinding = VpnBindingInfo(bindDeviceName: nil, vpnKillSwitch: false)
+    @State private var availableIfaces: [String] = []
     @State private var menubarEnabled = true
     @State private var diskPolicy = DiskPolicySettingsInfo(
         videoFolder: "",
@@ -612,6 +624,41 @@ struct SettingsView: View {
                     .onChange(of: trackingEnabled) { _, val in
                         Task { try? await core.setFeatureEnabled(name: "tracking", enabled: val) }
                     }
+                Toggle(String(localized: "Skip Intro / Outro Segments (AniSkip / IntroDB)"), isOn: $skipSegmentsEnabled)
+                    .onChange(of: skipSegmentsEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "skip_segments", enabled: val) }
+                    }
+                Toggle(String(localized: "Debrid Resolvers"), isOn: $debridEnabled)
+                    .onChange(of: debridEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "debrid", enabled: val) }
+                    }
+                Toggle(String(localized: "Live TV / IPTV"), isOn: $iptvEnabled)
+                    .onChange(of: iptvEnabled) { _, val in
+                        Task {
+                            try? await core.setFeatureEnabled(name: "iptv", enabled: val)
+                            NotificationCenter.default.post(name: .cinmaIptvVisibilityChanged, object: nil)
+                        }
+                    }
+                Toggle(String(localized: "Discord Rich Presence"), isOn: $discordEnabled)
+                    .onChange(of: discordEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "discord", enabled: val) }
+                    }
+            }
+
+            Section(String(localized: "macOS Integration")) {
+                Toggle(String(localized: "Calendar New Episode Notifications"), isOn: $calendarAlertsEnabled)
+                    .onChange(of: calendarAlertsEnabled) { _, val in
+                        Task {
+                            let ok = await CalendarNotifications.setEnabled(val, core: core)
+                            calendarAlertsEnabled = ok
+                            status = ok ? String(localized: "Calendar episode alerts scheduled") : String(localized: "Calendar alerts disabled")
+                        }
+                    }
+                Toggle(String(localized: "Index Library in macOS Spotlight"), isOn: $spotlightEnabled)
+                    .onChange(of: spotlightEnabled) { _, val in
+                        SpotlightLibraryIndexer.isEnabled = val
+                        if val { SpotlightLibraryIndexer.indexLibraryIfEnabled(core: core) }
+                    }
             }
         }
         .formStyle(.grouped)
@@ -632,7 +679,31 @@ struct SettingsView: View {
                             try? core.setOpensubtitlesCredentials(apiKey: nil, token: nil)
                             openSubKey = ""
                             hasOpenSubKey = false
+                            osQuota = nil
                             status = String(localized: "OpenSubtitles key removed from Keychain")
+                        }
+                    }
+                }
+                if hasOpenSubKey {
+                    if let q = osQuota {
+                        HStack {
+                            Text(String(localized: "Account Quota: \(q.remainingDownloads) / \(q.allowedDownloads) remaining · \(q.level)"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button(String(localized: "Sign Out")) {
+                                Task {
+                                    try? await core.opensubtitlesLogout()
+                                    osQuota = nil
+                                }
+                            }
+                        }
+                    } else {
+                        HStack {
+                            TextField(String(localized: "OpenSubtitles Username"), text: $osUsername)
+                            SecureField(String(localized: "Password"), text: $osPassword)
+                            Button(String(localized: "Sign In")) { signInOpenSubtitles() }
+                                .disabled(osUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || osPassword.isEmpty)
                         }
                     }
                 }
@@ -754,6 +825,26 @@ struct SettingsView: View {
                     .onChange(of: diskPolicy.uploadLimitKbps) { _, _ in saveDiskPolicy() }
             }
 
+            Section(String(localized: "VPN Interface Binding & Kill Switch")) {
+                Picker(
+                    String(localized: "Bind Torrent Traffic to Interface"),
+                    selection: Binding(
+                        get: { vpnBinding.bindDeviceName ?? "" },
+                        set: { val in
+                            vpnBinding.bindDeviceName = val.isEmpty ? nil : val
+                            saveVpnBinding()
+                        }
+                    )
+                ) {
+                    Text(String(localized: "Any (Default)")).tag("")
+                    ForEach(availableIfaces, id: \.self) { iface in
+                        Text(iface).tag(iface)
+                    }
+                }
+                Toggle(String(localized: "VPN Kill Switch (block torrents if interface is unset/down)"), isOn: $vpnBinding.vpnKillSwitch)
+                    .onChange(of: vpnBinding.vpnKillSwitch) { _, _ in saveVpnBinding() }
+            }
+
             Section(String(localized: "Trailers & Web Downloads (yt-dlp)")) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
@@ -846,6 +937,17 @@ struct SettingsView: View {
         torrentEnabled = (try? core.featureEnabled(name: "torrent")) ?? true
         castingEnabled = (try? core.featureEnabled(name: "casting")) ?? false
         trackingEnabled = (try? core.featureEnabled(name: "tracking")) ?? false
+        skipSegmentsEnabled = (try? core.featureEnabled(name: "skip_segments")) ?? false
+        debridEnabled = (try? core.featureEnabled(name: "debrid")) ?? false
+        iptvEnabled = (try? core.featureEnabled(name: "iptv")) ?? false
+        discordEnabled = (try? core.featureEnabled(name: "discord")) ?? false
+        calendarAlertsEnabled = CalendarNotifications.isEnabled
+        spotlightEnabled = SpotlightLibraryIndexer.isEnabled
+        if let v = try? core.vpnTorrentBinding() { vpnBinding = v }
+        availableIfaces = Self.activeNetworkInterfaces(including: vpnBinding.bindDeviceName)
+        if hasOpenSubKey {
+            Task { osQuota = try? await core.opensubtitlesQuota() }
+        }
         menubarEnabled = (try? core.menubarEnabled()) ?? true
         if let dp = try? core.diskPolicySettings() { diskPolicy = dp }
         ytdlpStatus = core.ytdlpStatus()
@@ -877,6 +979,50 @@ struct SettingsView: View {
 
     private func savePlayerPrefs() {
         try? core.setPlayerPreferences(prefs: playerPrefs)
+    }
+
+    private func saveVpnBinding() {
+        let binding = vpnBinding
+        Task {
+            try? await core.setVpnTorrentBinding(
+                bindDeviceName: binding.bindDeviceName,
+                vpnKillSwitch: binding.vpnKillSwitch
+            )
+            status = binding.bindDeviceName.map { String(localized: "Torrents bound to \($0)") }
+                ?? String(localized: "VPN interface binding cleared")
+        }
+    }
+
+    private func signInOpenSubtitles() {
+        let u = osUsername
+        let p = osPassword
+        osPassword = ""
+        Task {
+            do {
+                osQuota = try await core.opensubtitlesLogin(username: u, password: p)
+                status = String(localized: "Signed in to OpenSubtitles")
+            } catch {
+                status = FriendlyError.explain(error)
+            }
+        }
+    }
+
+    private static func activeNetworkInterfaces(including current: String?) -> [String] {
+        var names = Set<String>()
+        if let current, !current.isEmpty { names.insert(current) }
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        if getifaddrs(&ifaddr) == 0, let first = ifaddr {
+            var ptr: UnsafeMutablePointer<ifaddrs>? = first
+            while let cur = ptr {
+                let name = String(cString: cur.pointee.ifa_name)
+                if name.hasPrefix("utun") || name.hasPrefix("en") || name.hasPrefix("ipsec") || name.hasPrefix("ppp") {
+                    names.insert(name)
+                }
+                ptr = cur.pointee.ifa_next
+            }
+            freeifaddrs(first)
+        }
+        return names.sorted()
     }
 
     private func folderRow(_ label: String, path: String, onPick: @escaping (String) -> Void) -> some View {

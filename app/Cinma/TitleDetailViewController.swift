@@ -52,6 +52,8 @@ final class TitleDetailViewController: NSViewController {
     private var progressByVideo: [String: WatchProgressInfo] = [:]
 
     private var accumulatedStreams: [StreamInfo] = []
+    private var rankedWithDebrid: RankResultInfo?
+    private var debridRankTask: Task<Void, Never>?
     private var respondedAddonsCount = 0
     private var lastStreamVideoId: String?
     private var lastStreamTitle: String?
@@ -382,6 +384,7 @@ final class TitleDetailViewController: NSViewController {
         trailerButton?.isHidden = m.trailers.isEmpty
         refreshLibraryButton()
         loadProgress()
+        loadTitleExtras(mediaType: m.mediaType, id: m.id, hasLogo: m.logo != nil)
 
         if m.mediaType == "series" {
             let seasons = rich.seasonNumbers.isEmpty
@@ -408,6 +411,41 @@ final class TitleDetailViewController: NSViewController {
         let metaId = richMeta?.meta.id ?? preview.id
         let rows = (try? core.progressForMeta(metaId: metaId)) ?? []
         progressByVideo = Dictionary(rows.map { ($0.videoId, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    private func loadTitleExtras(mediaType: String, id: String, hasLogo: Bool) {
+        let core = core
+        Task { [weak self] in
+            guard let extras = try? await core.titleExtras(mediaType: mediaType, id: id),
+                  let self
+            else { return }
+            if !hasLogo, let logo = extras.clearlogo {
+                self.logoView.isHidden = false
+                self.logoView.setRemoteImage(logo, pointSize: NSSize(width: 420, height: 90), taskStorage: &self.logoTask)
+            }
+            if !extras.watchProviders.isEmpty {
+                let unique = Array(Set(extras.watchProviders.map(\.name))).sorted().prefix(5).joined(separator: ", ")
+                let suffix = String(localized: "Watch on: \(unique)")
+                if self.castLabel.stringValue.isEmpty {
+                    self.castLabel.stringValue = suffix
+                } else {
+                    self.castLabel.stringValue += "\n\(suffix)"
+                }
+            }
+        }
+    }
+
+    private func refreshDebridRanking(_ streams: [StreamInfo]) {
+        debridRankTask?.cancel()
+        let core = core
+        debridRankTask = Task { [weak self] in
+            guard let ranked = try? await core.rankStreamsWithDebrid(streams: streams, preferences: nil),
+                  !Task.isCancelled,
+                  let self
+            else { return }
+            self.rankedWithDebrid = ranked
+            self.renderRankedStreams()
+        }
     }
 
     private func rebuildSeasonTabs(_ seasons: [UInt32]) {
@@ -578,10 +616,13 @@ final class TitleDetailViewController: NSViewController {
                 guard !Task.isCancelled, let self else { return }
                 self.streamSpinner.stopAnimation(nil)
                 self.accumulatedStreams = all
+                self.rankedWithDebrid = nil
                 if all.isEmpty {
                     self.streamStatusLabel.stringValue = String(localized: "No playable streams found from enabled addons. Check Addons or try another source.")
                     self.streamActionButton.title = String(localized: "Open Addons…")
                     self.streamActionButton.isHidden = false
+                } else {
+                    self.refreshDebridRanking(all)
                 }
                 self.renderRankedStreams()
             } catch {
@@ -642,7 +683,7 @@ final class TitleDetailViewController: NSViewController {
             v.removeFromSuperview()
         }
         guard !accumulatedStreams.isEmpty else { return }
-        guard let result = try? core.rankStreams(streams: accumulatedStreams, preferences: nil) else { return }
+        guard let result = rankedWithDebrid ?? (try? core.rankStreams(streams: accumulatedStreams, preferences: nil)) else { return }
 
         let filtered = result.ranked.filter { item in
             switch activeFilter {
@@ -678,6 +719,9 @@ final class TitleDetailViewController: NSViewController {
         resLabel.textColor = CinemaTheme.textPrimary
 
         var badgeViews: [NSView] = [tierChip, resLabel]
+        if item.parsed.cachedDebrid {
+            badgeViews.append(CinemaTheme.makeChip(String(localized: "Instant Debrid"), highlighted: true))
+        }
         for b in item.parsed.hdrBadges { badgeViews.append(CinemaTheme.makeChip(b)) }
         if item.parsed.codec != "Unknown" { badgeViews.append(CinemaTheme.makeChip(item.parsed.codec)) }
         if item.parsed.audio != "Unknown" { badgeViews.append(CinemaTheme.makeChip(item.parsed.audio)) }
@@ -768,6 +812,7 @@ final class TitleDetailViewController: NSViewController {
                     let count = r.detail ?? "0"
                     return String(localized: "\(count) seeders")
                 case "direct": return String(localized: "Direct / cached stream")
+                case "debrid.cached": return String(localized: "Cached on your Debrid account")
                 case "language": return String(localized: "Language: \(detail)")
                 case "release_group": return String(localized: "Group: \(detail)")
                 default: return r.detail ?? r.code

@@ -2,7 +2,6 @@
   "sourceLanguage": "en",
   "strings": {
     "": {
-      "shouldTranslate": false,
       "localizations": {
         "en": {
           "stringUnit": {
@@ -16,7 +15,8 @@
             "value": ""
           }
         }
-      }
+      },
+      "shouldTranslate": false
     },
     "%@ %@": {
       "localizations": {
@@ -46,6 +46,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ %@:"
+          }
+        }
+      }
+    },
+    "%@ (%@)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ (%2$@)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (%@)"
           }
         }
       }
@@ -190,6 +206,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@: %u sn"
+          }
+        }
+      }
+    },
+    "%lld channels": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld kanal"
           }
         }
       }
@@ -534,6 +560,16 @@
         }
       }
     },
+    "API Key / Token": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API Anahtarı / Token"
+          }
+        }
+      }
+    },
     "About Cinma": {
       "localizations": {
         "en": {
@@ -546,6 +582,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cinma Hakkında"
+          }
+        }
+      }
+    },
+    "Account Quota: %u / %u remaining · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Account Quota: %1$u / %2$u remaining · %3$@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hesap Kotası: %1$u / %2$u kalan · %3$@"
           }
         }
       }
@@ -598,6 +650,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "İndirme Ekle"
+          }
+        }
+      }
+    },
+    "Add IPTV Source": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IPTV Kaynağı Ekle"
+          }
+        }
+      }
+    },
+    "Add Playlist…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liste Ekle…"
           }
         }
       }
@@ -766,12 +838,52 @@
         }
       }
     },
+    "All Channels": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tüm Kanallar"
+          }
+        }
+      }
+    },
+    "AllDebrid": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AllDebrid"
+          }
+        }
+      }
+    },
     "AniList": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "AniList"
+          }
+        }
+      }
+    },
+    "Any (Default)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herhangi Biri (Varsayılan)"
+          }
+        }
+      }
+    },
+    "App Client ID": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uygulama Client ID"
           }
         }
       }
@@ -1018,6 +1130,16 @@
         }
       }
     },
+    "Bind Torrent Traffic to Interface": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Torrent Trafiğini Arayüze Bağla"
+          }
+        }
+      }
+    },
     "BitTorrent Engine": {
       "localizations": {
         "en": {
@@ -1030,6 +1152,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "BitTorrent Motoru"
+          }
+        }
+      }
+    },
+    "Browser OAuth Sign-In (Simkl / AniList / MAL)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarayıcı OAuth Girişi (Simkl / AniList / MAL)"
           }
         }
       }
@@ -1050,6 +1182,16 @@
         }
       }
     },
+    "Cached on your Debrid account": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debrid hesabınızda önbellekte hazır"
+          }
+        }
+      }
+    },
     "Calendar": {
       "localizations": {
         "en": {
@@ -1062,6 +1204,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Takvim"
+          }
+        }
+      }
+    },
+    "Calendar New Episode Notifications": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Takvim Yeni Bölüm Bildirimleri"
+          }
+        }
+      }
+    },
+    "Calendar alerts disabled": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Takvim bildirimleri kapatıldı"
+          }
+        }
+      }
+    },
+    "Calendar episode alerts scheduled": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Takvim bölüm bildirimleri zamanlandı"
           }
         }
       }
@@ -1359,6 +1531,16 @@
         }
       }
     },
+    "Client Secret (optional for MAL)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Client Secret (MAL için isteğe bağlı)"
+          }
+        }
+      }
+    },
     "Close": {
       "localizations": {
         "en": {
@@ -1375,6 +1557,16 @@
         }
       }
     },
+    "Completing sign-in…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oturum açma tamamlanıyor…"
+          }
+        }
+      }
+    },
     "Configure": {
       "localizations": {
         "en": {
@@ -1387,6 +1579,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yapılandır"
+          }
+        }
+      }
+    },
+    "Configured": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yapılandırıldı"
+          }
+        }
+      }
+    },
+    "Configured Sources": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yapılandırılmış Kaynaklar"
           }
         }
       }
@@ -1445,6 +1657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "İzlemeye devam et"
+          }
+        }
+      }
+    },
+    "Continue Watching in Cinma": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cinma'da İzlemeye Devam Et"
           }
         }
       }
@@ -1513,6 +1735,46 @@
         }
       }
     },
+    "Debrid API key saved to Keychain": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debrid API anahtarı Anahtar Zinciri'ne kaydedildi"
+          }
+        }
+      }
+    },
+    "Debrid Accounts (Keychain)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debrid Hesapları (Anahtar Zinciri)"
+          }
+        }
+      }
+    },
+    "Debrid Cached Stream Resolver": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debrid Önbellekli Akış Çözümleyici"
+          }
+        }
+      }
+    },
+    "Debrid Resolvers": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debrid Çözümleyiciler"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "tr": {
@@ -1545,6 +1807,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Doğrudan HTTP/S (Parçalı)"
+          }
+        }
+      }
+    },
+    "Discord Rich Presence": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discord Zengin Durum (Rich Presence)"
           }
         }
       }
@@ -1854,6 +2126,36 @@
         }
       }
     },
+    "Fanart.tv API key saved to Keychain": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fanart.tv API anahtarı Anahtar Zinciri'ne kaydedildi"
+          }
+        }
+      }
+    },
+    "Fanart.tv Personal API Key (optional)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fanart.tv Kişisel API Anahtarı (isteğe bağlı)"
+          }
+        }
+      }
+    },
+    "Fanart.tv key saved in Keychain": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fanart.tv anahtarı Anahtar Zinciri'nde kayıtlı"
+          }
+        }
+      }
+    },
     "Featured": {
       "localizations": {
         "en": {
@@ -1930,6 +2232,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dosya"
+          }
+        }
+      }
+    },
+    "Filter channels…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kanalları filtrele…"
           }
         }
       }
@@ -2140,6 +2452,16 @@
         }
       }
     },
+    "Import Channels": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kanalları İçe Aktar"
+          }
+        }
+      }
+    },
     "Imported %u addons and %u library items": {
       "localizations": {
         "en": {
@@ -2156,12 +2478,42 @@
         }
       }
     },
+    "Imported %u anime ID mappings": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%u anime kimlik eşleşmesi içe aktarıldı"
+          }
+        }
+      }
+    },
+    "Imported %u channels": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%u kanal içe aktarıldı"
+          }
+        }
+      }
+    },
     "Importing from Stremio…": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Stremio'dan içe aktarılıyor…"
+          }
+        }
+      }
+    },
+    "Importing…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İçe aktarılıyor…"
           }
         }
       }
@@ -2188,6 +2540,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yanlış PIN"
+          }
+        }
+      }
+    },
+    "Index Library in macOS Spotlight": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kitaplığı macOS Spotlight'ta Dizinle"
           }
         }
       }
@@ -2304,6 +2666,16 @@
         }
       }
     },
+    "Instant Debrid": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anında Debrid"
+          }
+        }
+      }
+    },
     "Integrations…": {
       "localizations": {
         "tr": {
@@ -2408,6 +2780,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kütüphane"
+          }
+        }
+      }
+    },
+    "Live TV": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canlı TV"
+          }
+        }
+      }
+    },
+    "Live TV / IPTV": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canlı TV / IPTV"
+          }
+        }
+      }
+    },
+    "Live TV / IPTV Playlists & EPG": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canlı TV / IPTV Listeleri ve EPG"
           }
         }
       }
@@ -2576,6 +2978,16 @@
         }
       }
     },
+    "M3U / M3U8 URL": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "M3U / M3U8 URL"
+          }
+        }
+      }
+    },
     "Matched with OpenSubtitles hash": {
       "localizations": {
         "en": {
@@ -2614,6 +3026,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Meta Veri (TMDB ve Dil)"
+          }
+        }
+      }
+    },
+    "Metadata Extras (Fanart.tv & Anime Map)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ek Meta Veri (Fanart.tv ve Anime Eşlemesi)"
           }
         }
       }
@@ -2692,6 +3114,16 @@
         }
       }
     },
+    "Movie in Cinma Library": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cinma Kitaplığındaki Film"
+          }
+        }
+      }
+    },
     "Mute": {
       "localizations": {
         "en": {
@@ -2714,6 +3146,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "MyAnimeList"
+          }
+        }
+      }
+    },
+    "MyAnimeList (PKCE)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MyAnimeList (PKCE)"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ad"
           }
         }
       }
@@ -2750,12 +3202,52 @@
         }
       }
     },
+    "Next": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sonraki"
+          }
+        }
+      }
+    },
     "No Chromecast or DLNA devices responded on your LAN.": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ağınızda yanıt veren Chromecast veya DLNA cihazı yok."
+          }
+        }
+      }
+    },
+    "No IPTV playlists added yet. Click Add Playlist… to import an M3U URL or Xtream account.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Henüz IPTV listesi eklenmedi. M3U URL'si veya Xtream hesabı eklemek için Liste Ekle…'ye tıklayın."
+          }
+        }
+      }
+    },
+    "No IPTV sources configured.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yapılandırılmış IPTV kaynağı yok."
+          }
+        }
+      }
+    },
+    "No XMLTV EPG URL configured on current sources.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mevcut kaynaklarda XMLTV EPG URL'si tanımlı değil."
           }
         }
       }
@@ -2861,6 +3353,16 @@
         }
       }
     },
+    "No channels match your filter.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtrenizle eşleşen kanal yok."
+          }
+        }
+      }
+    },
     "No chapters": {
       "localizations": {
         "en": {
@@ -2945,6 +3447,16 @@
         }
       }
     },
+    "Not configured": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yapılandırılmamış"
+          }
+        }
+      }
+    },
     "Not installed": {
       "localizations": {
         "en": {
@@ -2967,6 +3479,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bağlı değil"
+          }
+        }
+      }
+    },
+    "Now": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Şimdi"
           }
         }
       }
@@ -3059,6 +3581,16 @@
         }
       }
     },
+    "Open Cinma Title": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cinma İçeriğini Aç"
+          }
+        }
+      }
+    },
     "Open Download Folder": {
       "localizations": {
         "tr": {
@@ -3133,6 +3665,16 @@
         }
       }
     },
+    "OpenSubtitles Username": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles Kullanıcı Adı"
+          }
+        }
+      }
+    },
     "OpenSubtitles key removed from Keychain": {
       "localizations": {
         "en": {
@@ -3177,6 +3719,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "OpenSubtitles anahtarı Keychain’e kaydedildi"
+          }
+        }
+      }
+    },
+    "Opened browser sign-in for %@…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ için tarayıcıda oturum açma sayfası açıldı…"
+          }
+        }
+      }
+    },
+    "Opens a movie or series in Cinma by IMDb/TMDB ID.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IMDb/TMDB kimliğiyle Cinma'da bir film veya dizi açar."
+          }
+        }
+      }
+    },
+    "Opens your most recently watched title in Cinma.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cinma'da son izlediğiniz içeriği açar."
           }
         }
       }
@@ -3243,6 +3815,16 @@
         }
       }
     },
+    "Password": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parola"
+          }
+        }
+      }
+    },
     "Paste": {
       "localizations": {
         "en": {
@@ -3291,6 +3873,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Duraklatıldı"
+          }
+        }
+      }
+    },
+    "Phase 9 Optional Modules (Off by Default)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Faz 9 İsteğe Bağlı Modüller (Varsayılan Kapalı)"
           }
         }
       }
@@ -3433,6 +4025,16 @@
         }
       }
     },
+    "Premiumize": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Premiumize"
+          }
+        }
+      }
+    },
     "Press Return to resume playback": {
       "localizations": {
         "en": {
@@ -3519,6 +4121,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "İlerleme"
+          }
+        }
+      }
+    },
+    "Provider": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sağlayıcı"
+          }
+        }
+      }
+    },
+    "Pull Watchlist & History": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzleme Listesini ve Geçmişi Çek"
           }
         }
       }
@@ -3627,6 +4249,16 @@
         }
       }
     },
+    "Real-Debrid": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Real-Debrid"
+          }
+        }
+      }
+    },
     "Record": {
       "localizations": {
         "en": {
@@ -3655,6 +4287,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yinele"
+          }
+        }
+      }
+    },
+    "Refresh Anime ID Map": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anime Kimlik Haritasını Yenile"
+          }
+        }
+      }
+    },
+    "Refresh EPG": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EPG'yi Yenile"
+          }
+        }
+      }
+    },
+    "Refreshing EPG…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EPG yenileniyor…"
+          }
+        }
+      }
+    },
+    "Refreshing anime ID mappings…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anime kimlik eşleşmeleri yenileniyor…"
           }
         }
       }
@@ -4197,6 +4869,16 @@
         }
       }
     },
+    "Series in Cinma Library": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cinma Kitaplığındaki Dizi"
+          }
+        }
+      }
+    },
     "Service": {
       "localizations": {
         "tr": {
@@ -4301,6 +4983,56 @@
         }
       }
     },
+    "Sign In": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giriş Yap"
+          }
+        }
+      }
+    },
+    "Sign Out": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Çıkış Yap"
+          }
+        }
+      }
+    },
+    "Sign in with Browser": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarayıcıyla Giriş Yap"
+          }
+        }
+      }
+    },
+    "Signed in to %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ hesabına giriş yapıldı"
+          }
+        }
+      }
+    },
+    "Signed in to OpenSubtitles": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles'a giriş yapıldı"
+          }
+        }
+      }
+    },
     "Simkl": {
       "localizations": {
         "tr": {
@@ -4339,6 +5071,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "İntroyu Atla"
+          }
+        }
+      }
+    },
+    "Skip Intro / Outro Segments (AniSkip & IntroDB)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giriş / Bitiş Bölümlerini Atla (AniSkip & IntroDB)"
+          }
+        }
+      }
+    },
+    "Skip Intro / Outro Segments (AniSkip / IntroDB)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Giriş / Bitiş Bölümlerini Atla (AniSkip / IntroDB)"
+          }
+        }
+      }
+    },
+    "Skip Outro": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitişi Atla"
+          }
+        }
+      }
+    },
+    "Skip Recap": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Özeti Atla"
           }
         }
       }
@@ -4930,6 +5702,16 @@
         }
       }
     },
+    "Title ID (e.g. tt0133093)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İçerik Kimliği (ör. tt0133093)"
+          }
+        }
+      }
+    },
     "Token Sign-In (AniList / MAL / Simkl)": {
       "localizations": {
         "tr": {
@@ -4950,12 +5732,32 @@
         }
       }
     },
+    "TorBox": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TorBox"
+          }
+        }
+      }
+    },
     "Torrent Seeding Policy": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Torrent Paylaşım Politikası"
+          }
+        }
+      }
+    },
+    "Torrents bound to %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Torrent trafiği %@ arayüzüne bağlandı"
           }
         }
       }
@@ -5075,6 +5877,22 @@
         }
       }
     },
+    "Trakt sync: %u watchlist, %u ratings, %u history": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Trakt sync: %1$u watchlist, %2$u ratings, %3$u history"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trakt eşitleme: %1$u izleme listesi, %2$u puan, %3$u geçmiş"
+          }
+        }
+      }
+    },
     "Trending Movies": {
       "localizations": {
         "en": {
@@ -5103,6 +5921,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Haftanın Popüler Dizileri"
+          }
+        }
+      }
+    },
+    "Type": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tür"
           }
         }
       }
@@ -5185,6 +6013,16 @@
         }
       }
     },
+    "Updated %u EPG programmes": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%u EPG programı güncellendi"
+          }
+        }
+      }
+    },
     "Upload Limit": {
       "localizations": {
         "tr": {
@@ -5223,6 +6061,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kullan"
+          }
+        }
+      }
+    },
+    "Username": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kullanıcı Adı"
+          }
+        }
+      }
+    },
+    "VPN Interface Binding & Kill Switch": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPN Arayüz Bağlama ve Kill Switch"
+          }
+        }
+      }
+    },
+    "VPN Kill Switch (block torrents if interface is unset/down)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPN Kill Switch (arayüz seçili değilse/kapalıysa torrenti engelle)"
+          }
+        }
+      }
+    },
+    "VPN interface binding cleared": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPN arayüz bağlaması temizlendi"
           }
         }
       }
@@ -5295,6 +6173,16 @@
         }
       }
     },
+    "Watch": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzle"
+          }
+        }
+      }
+    },
     "Watch Tracking & Outbox": {
       "localizations": {
         "tr": {
@@ -5311,6 +6199,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "İzleme Takibi (Trakt / Simkl / AniList / MAL)"
+          }
+        }
+      }
+    },
+    "Watch on: %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzleme platformları: %@"
           }
         }
       }
@@ -5375,6 +6273,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pencere"
+          }
+        }
+      }
+    },
+    "XMLTV EPG URL (optional)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "XMLTV EPG URL'si (isteğe bağlı)"
+          }
+        }
+      }
+    },
+    "Xtream Codes": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xtream Codes"
           }
         }
       }
@@ -5445,6 +6363,16 @@
         }
       }
     },
+    "http://host:port": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "http://sunucu:port"
+          }
+        }
+      }
+    },
     "https://example.com/manifest.json": {
       "localizations": {
         "en": {
@@ -5457,6 +6385,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "https://ornek.com/manifest.json"
+          }
+        }
+      }
+    },
+    "https://example.com/playlist.m3u8": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://ornek.com/liste.m3u8"
           }
         }
       }
@@ -5478,6 +6416,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "https://…/manifest.json"
+          }
+        }
+      }
+    },
+    "macOS Integration": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS Entegrasyonu"
           }
         }
       }

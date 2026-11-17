@@ -3,12 +3,19 @@
 
 #![forbid(unsafe_code)]
 
+pub mod fanart;
+pub mod kitsu;
+pub mod skip_segments;
 mod tmdb;
 
 use serde::{Deserialize, Serialize};
 
+pub use fanart::{FanartArt, FanartClient};
+pub use kitsu::KitsuClient;
+pub use skip_segments::{SkipKind, SkipSegment, SkipSegmentClient};
 pub use tmdb::{
-    ResolvedIds, RichMeta, TmdbClient, UpcomingEpisode, format_episode_id, parse_tmdb_prefixed_id,
+    ResolvedIds, RichMeta, TmdbClient, UpcomingEpisode, WatchProvider, format_episode_id,
+    parse_tmdb_prefixed_id,
 };
 
 #[derive(Debug, thiserror::Error)]

@@ -109,6 +109,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     private var abLoopB: Double?
     private var tracks: [MediaTrackInfo] = []
     private var chapters: [ChapterInfo] = []
+    private var apiSkipSegments: [SkipSegmentInfo] = []
     private var appliedAutoTracks = false
     private var onlineSubtitles: [SubtitleCandidateInfo] = []
     private var searchingSubtitles = false
@@ -529,6 +530,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
     private func start() {
         statusLabel.stringValue = String(localized: "Starting player…")
+        loadSkipSegmentsIfEnabled()
         let sink = PlaybackEventSink { [weak self] event in
             Task { @MainActor in self?.handle(event) }
         }
@@ -768,7 +770,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     }
 
     private func scheduleOnlineSubtitleLookup() {
-        guard let meta = metadata else { return }
+        let meta = metadata
         let core = core
         Task { [weak self] in
             // Allow torrent head+tail warmup a moment to compute the OpenSubtitles hash.
@@ -779,11 +781,11 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
             }
             guard let self, !self.closing else { return }
             let input = SubtitleSearchInput(
-                mediaType: meta.mediaType,
-                videoId: meta.videoId,
-                imdbId: meta.metaId.hasPrefix("tt") ? meta.metaId : nil,
-                season: meta.season.map { UInt32($0) },
-                episode: meta.episode.map { UInt32($0) },
+                mediaType: meta?.mediaType ?? "movie",
+                videoId: meta?.videoId ?? (identity?.filename ?? "local"),
+                imdbId: meta?.metaId.hasPrefix("tt") == true ? meta?.metaId : nil,
+                season: meta?.season.map { UInt32($0) },
+                episode: meta?.episode.map { UInt32($0) },
                 videoHash: identity?.hash,
                 videoSize: identity?.size,
                 filename: identity?.filename
@@ -796,6 +798,23 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
             self.subtitleSearchStatus = identity?.hash != nil
                 ? String(localized: "Matched with OpenSubtitles hash")
                 : ""
+        }
+    }
+
+    private func loadSkipSegmentsIfEnabled() {
+        guard let meta = metadata else { return }
+        let core = core
+        Task { [weak self] in
+            let segs = (try? await core.skipSegments(
+                mediaType: meta.mediaType,
+                metaId: meta.metaId,
+                season: meta.season.map { UInt32($0) },
+                episode: meta.episode.map { UInt32($0) }
+            )) ?? []
+            await MainActor.run {
+                self?.apiSkipSegments = segs
+                self?.updateSkipSegmentVisibility()
+            }
         }
     }
 
@@ -912,6 +931,15 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     }
 
     private func updateSkipSegmentVisibility() {
+        if let seg = activeApiSkipSegment() {
+            switch seg.kind {
+            case "outro": skipButton.title = String(localized: "Skip Outro")
+            case "recap": skipButton.title = String(localized: "Skip Recap")
+            default: skipButton.title = String(localized: "Skip Intro")
+            }
+            skipButton.isHidden = false
+            return
+        }
         guard let idx = chapters.lastIndex(where: { $0.startS <= position }),
               isIntroChapter(chapters[idx].title),
               idx + 1 < chapters.count
@@ -923,7 +951,16 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         skipButton.isHidden = false
     }
 
+    private func activeApiSkipSegment() -> SkipSegmentInfo? {
+        apiSkipSegments.first { position >= $0.startS && position < ($0.endS - 1.0) }
+    }
+
     @objc private func skipCurrentSegment() {
+        if let seg = activeApiSkipSegment() {
+            seekAbsolute(seg.endS)
+            skipButton.isHidden = true
+            return
+        }
         guard let idx = chapters.lastIndex(where: { $0.startS <= position }),
               idx + 1 < chapters.count
         else { return }
@@ -1618,6 +1655,21 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
             paused: paused,
             speed: speed
         )
+        let core = core
+        let title = titleField.stringValue.isEmpty ? "Cinma" : titleField.stringValue
+        let subtitle = subField.isHidden || subField.stringValue.isEmpty ? nil : subField.stringValue
+        let dur: UInt64? = duration > 0 ? UInt64(duration) : nil
+        let pos = UInt64(max(0, position))
+        let isPaused = paused
+        Task {
+            try? await core.updateDiscordPresence(
+                title: title,
+                subtitle: subtitle,
+                durationS: dur,
+                positionS: pos,
+                paused: isPaused
+            )
+        }
     }
 
     private func saveProgressIfNeeded(force: Bool) {
@@ -1688,6 +1740,8 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         cancelStallWatchdog()
         activePopover?.performClose(nil)
         nowPlaying.teardown()
+        let discordCore = core
+        Task { try? await discordCore.clearDiscordPresence() }
         thumbCache?.clear()
         thumbCache = nil
         saveProgressIfNeeded(force: true)

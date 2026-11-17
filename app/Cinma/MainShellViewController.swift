@@ -12,6 +12,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         case library = 2
         case calendar = 3
         case downloads = 4
+        case liveTv = 5
     }
 
     private let core: CinmaCore
@@ -40,6 +41,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         self?.openDetail(item)
     }
     private lazy var downloadsVC = DownloadsViewController(core: core, onPlay: onPlay)
+    private var liveTvVC: LiveTvViewController?
 
     private var activeTab: Tab = .home
     private var detailVC: TitleDetailViewController?
@@ -104,6 +106,14 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         discoverVC.onOpenAddons = { [weak self] in self?.openAddons() }
         libraryVC.onOpenHome = { [weak self] in self?.switchToTab(.home) }
         calendarVC.onOpenSettings = { [weak self] in self?.openSettings() }
+        NotificationCenter.default.addObserver(
+            forName: .cinmaIptvVisibilityChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.syncIptvTabVisibility() }
+        }
+        syncIptvTabVisibility()
         refreshProfileBadge()
         switchToTab(.home)
     }
@@ -131,6 +141,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
             (.library, String(localized: "Library")),
             (.calendar, String(localized: "Calendar")),
             (.downloads, String(localized: "Downloads")),
+            (.liveTv, String(localized: "Live TV")),
         ]
         tabButtons = titles.map { tab, title in
             let btn = NSButton(title: title, target: self, action: #selector(tabButtonClicked(_:)))
@@ -240,6 +251,11 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         case .downloads:
             downloadsVC.reload()
             target = downloadsVC
+        case .liveTv:
+            let tv = liveTvVC ?? LiveTvViewController(core: core, onPlayChannel: onPlay)
+            liveTvVC = tv
+            tv.reload()
+            target = tv
         }
         showChild(target)
     }
@@ -451,6 +467,41 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         })
         holder = vc
         presentAsSheet(vc)
+    }
+
+    private func syncIptvTabVisibility() {
+        let enabled = (try? core.featureEnabled(name: "iptv")) ?? false
+        if let tvBtn = tabButtons.first(where: { $0.tag == Tab.liveTv.rawValue }) {
+            tvBtn.isHidden = !enabled
+        }
+        if !enabled {
+            if activeTab == .liveTv { switchToTab(.home) }
+            liveTvVC = nil
+        }
+    }
+
+    func continueMostRecent() {
+        if let first = (try? core.continueWatching(limit: 1))?.first {
+            resumeContinueWatching(first)
+        }
+    }
+
+    func openById(mediaType: String, id: String) {
+        let preview = MetaPreviewInfo(
+            id: id,
+            mediaType: mediaType,
+            name: id,
+            poster: nil,
+            posterShape: "poster",
+            background: nil,
+            logo: nil,
+            description: nil,
+            releaseInfo: nil,
+            imdbRating: nil,
+            genres: [],
+            runtime: nil
+        )
+        openDetail(preview)
     }
 
     @objc func openFile() {

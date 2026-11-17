@@ -16,14 +16,26 @@ pub enum Feature {
     Casting,
     /// External tracking adapters (Trakt, Simkl, AniList, MAL, Letterboxd — off by default).
     Tracking,
+    /// AniSkip & IntroDB skip-segment lookups (off by default).
+    SkipSegments,
+    /// Native Debrid cache check & stream unrestricting (off by default).
+    Debrid,
+    /// Live TV / IPTV playlists & XMLTV EPG (off by default).
+    Iptv,
+    /// In-process Discord Rich Presence IPC (off by default).
+    Discord,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 4] = [
+    pub const ALL: [Feature; 8] = [
         Feature::Addons,
         Feature::Torrent,
         Feature::Casting,
         Feature::Tracking,
+        Feature::SkipSegments,
+        Feature::Debrid,
+        Feature::Iptv,
+        Feature::Discord,
     ];
 
     pub fn name(self) -> &'static str {
@@ -32,6 +44,10 @@ impl Feature {
             Feature::Torrent => "torrent",
             Feature::Casting => "casting",
             Feature::Tracking => "tracking",
+            Feature::SkipSegments => "skip_segments",
+            Feature::Debrid => "debrid",
+            Feature::Iptv => "iptv",
+            Feature::Discord => "discord",
         }
     }
 
@@ -119,6 +135,39 @@ impl Core {
                         .lock()
                         .map_err(|_| CoreError::Poisoned)?
                         .take();
+                }
+                Feature::SkipSegments => {
+                    self.skip_client
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .take();
+                }
+                Feature::Debrid => {
+                    self.debrid_client
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .take();
+                }
+                Feature::Iptv => {
+                    self.iptv_client
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .take();
+                }
+                Feature::Discord => {
+                    let client = self
+                        .discord_client
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .take();
+                    if let Some(client) = client {
+                        self.spawn(async move {
+                            let mut g = client.lock().await;
+                            let _ = g.clear().await;
+                            Ok(())
+                        })
+                        .await?;
+                    }
                 }
             }
         }

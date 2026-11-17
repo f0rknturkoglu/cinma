@@ -89,7 +89,7 @@ impl Core {
         Ok(())
     }
 
-    fn tmdb_client(&self) -> Result<TmdbClient, CoreError> {
+    pub(crate) fn tmdb_client(&self) -> Result<TmdbClient, CoreError> {
         let mut slot = self.tmdb.lock().map_err(|_| CoreError::Poisoned)?;
         if let Some(client) = slot.as_ref() {
             return Ok(client.clone());
@@ -264,6 +264,14 @@ impl Core {
                     next_episode: rich.next_episode,
                 });
             }
+        }
+
+        if let Some(kitsu_id) = id
+            .strip_prefix("kitsu:")
+            .and_then(|s| s.parse::<i64>().ok())
+            && let Ok(res) = self.kitsu_meta(kitsu_id).await
+        {
+            return Ok(res);
         }
 
         // Fallback to Stremio addon meta (e.g. Cinemeta).

@@ -195,6 +195,7 @@ fn torrent_download_engine_completes_via_queue_on_local_seeder() {
             download_bps: None,
             seeding: SeedingPolicy::Off,
             delete_on_release: false,
+            ..Default::default()
         },
     ));
     let db = Arc::new(std::sync::Mutex::new(
@@ -289,6 +290,7 @@ fn app_policy() -> cinma_torrent::TorrentPolicy {
         download_bps: None,
         seeding: cinma_torrent::SeedingPolicy::Off,
         delete_on_release: false,
+        ..Default::default()
     }
 }
 

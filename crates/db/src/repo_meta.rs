@@ -103,6 +103,15 @@ impl Database {
             .transpose()
     }
 
+    pub fn find_id_map_by_kitsu(&self, kitsu_id: i64) -> Result<Option<IdMapEntry>, DbError> {
+        let sql = format!("SELECT {ID_MAP_COLS} FROM id_map WHERE kitsu_id = ?1 LIMIT 1");
+        self.conn
+            .query_row(&sql, params![kitsu_id], id_map_from_row)
+            .optional()?
+            .map(finish_id_map)
+            .transpose()
+    }
+
     /// Inserts or merges an ID mapping row matched by `imdb_id` or `tmdb_id`.
     pub fn upsert_id_map(&self, entry: &IdMapEntry) -> Result<(), DbError> {
         let kind = entry.media_kind.as_str();

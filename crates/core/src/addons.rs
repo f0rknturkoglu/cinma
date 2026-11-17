@@ -555,6 +555,10 @@ impl Core {
     }
 }
 
+pub(crate) fn machine_capabilities_pub() -> MachineCapabilities {
+    machine_capabilities()
+}
+
 /// Detected once per process, in-process via `sysctlbyname`.
 fn machine_capabilities() -> MachineCapabilities {
     static CACHED: std::sync::OnceLock<MachineCapabilities> = std::sync::OnceLock::new();

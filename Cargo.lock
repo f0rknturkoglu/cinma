@@ -489,7 +489,10 @@ dependencies = [
  "cinma-blobstore",
  "cinma-casting",
  "cinma-db",
+ "cinma-debrid",
+ "cinma-discord",
  "cinma-http",
+ "cinma-iptv",
  "cinma-metadata",
  "cinma-player",
  "cinma-queue",
@@ -520,6 +523,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "cinma-debrid"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "cinma-discord"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "cinma-ffi"
 version = "0.1.0"
 dependencies = [
@@ -541,6 +567,19 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "cinma-iptv"
+version = "0.1.0"
+dependencies = [
+ "cinma-db",
+ "reqwest",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
  "url",
@@ -636,10 +675,12 @@ name = "cinma-tracking"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "url",
 ]
 
 [[package]]
