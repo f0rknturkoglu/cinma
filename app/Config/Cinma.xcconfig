@@ -28,7 +28,7 @@ LOCALIZATION_PREFERS_STRING_CATALOGS = YES
 // Rust core (produced by tools/build-core.sh).
 SWIFT_INCLUDE_PATHS = $(PROJECT_DIR)/Generated/include
 LIBRARY_SEARCH_PATHS = $(PROJECT_DIR)/Generated/lib
-OTHER_LDFLAGS = -lcinma_ffi -lsqlite3    // from `cargo rustc -- --print native-static-libs`
+OTHER_LDFLAGS = -lcinma_ffi -lsqlite3 -liconv -framework Security -framework CoreFoundation    // from `cargo rustc -- --print native-static-libs`
 
 ALWAYS_SEARCH_USER_PATHS = NO
 CLANG_ENABLE_MODULES = YES
@@ -43,3 +43,6 @@ DEBUG_INFORMATION_FORMAT[config=Debug] = dwarf
 DEBUG_INFORMATION_FORMAT[config=Release] = dwarf-with-dsym
 ONLY_ACTIVE_ARCH[config=Debug] = YES
 ENABLE_TESTABILITY[config=Debug] = YES
+
+// OpenGL is deprecated but is the only libmpv render API on macOS (ADR 0004).
+OTHER_SWIFT_FLAGS = -Xcc -DGL_SILENCE_DEPRECATION

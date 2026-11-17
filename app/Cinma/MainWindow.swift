@@ -28,6 +28,14 @@ enum MainWindow {
         window.setFrameAutosaveName("MainWindow")
         return window
     }
+
+    /// Swaps the window's content without resizing the window.
+    static func setContent(_ controller: NSViewController, in window: NSWindow) {
+        let frame = window.frame
+        window.contentViewController = controller
+        window.setFrame(frame, display: true)
+        window.makeFirstResponder(controller.view)
+    }
 }
 
 /// Phase 0 placeholder for the Home screen.

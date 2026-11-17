@@ -37,27 +37,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func openCore() {
         let dataDir = Self.dataDirectory().path
         Task.detached(priority: .userInitiated) {
-            let result = Result { () throws -> (CinmaCore, UInt32) in
-                let core = try CinmaCore.open(dataDir: dataDir)
-                return (core, try core.schemaVersion())
+            let result = Result { () throws -> CinmaCore in
+                try CinmaCore.open(dataDir: dataDir)
             }
             await self.coreDidOpen(result)
         }
     }
 
-    private func coreDidOpen(_ result: Result<(CinmaCore, UInt32), any Error>) {
+    private func coreDidOpen(_ result: Result<CinmaCore, any Error>) {
         switch result {
-        case let .success((core, schema)):
+        case let .success(core):
             self.core = core
-            home?.showStatus(
-                String(localized: "Core \(coreVersion()) · schema v\(Int(schema))")
-            )
             LaunchMetrics.report("CORE_READY")
+            showBrowse()
+            DevAutomation.run(core: core) { [weak self] request in self?.showPlayer(request) }
         case let .failure(error):
             home?.showStatus(
                 String(localized: "Core failed to start: \(error.localizedDescription)")
             )
         }
+    }
+
+    private func showBrowse() {
+        guard let core, let window else { return }
+        let browse = SliceViewController(core: core) { [weak self] request in
+            self?.showPlayer(request)
+        }
+        MainWindow.setContent(browse, in: window)
+    }
+
+    private func showPlayer(_ request: PlayRequest) {
+        guard let core, let window else { return }
+        let player = PlayerViewController(core: core, request: request) { [weak self] in
+            self?.showBrowse()
+        }
+        MainWindow.setContent(player, in: window)
     }
 
     private static func dataDirectory() -> URL {

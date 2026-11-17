@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lld streams · double-click to play": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld streams · double-click to play"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld kaynak · oynatmak için çift tıklayın"
+          }
+        }
+      }
+    },
     "About Cinma": {
       "localizations": {
         "en": {
@@ -13,6 +29,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cinma Hakkında"
+          }
+        }
+      }
+    },
+    "Addon manifest URL or stremio:// link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Addon manifest URL or stremio:// link"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eklenti manifest URL'si veya stremio:// bağlantısı"
+          }
+        }
+      }
+    },
+    "Addons: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Addons: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eklentiler: %@"
+          }
+        }
+      }
+    },
+    "Buffering…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buffering…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arabelleğe alınıyor…"
           }
         }
       }
@@ -33,18 +97,18 @@
         }
       }
     },
-    "Core %@ · schema v%lld": {
+    "Connecting to peers…": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Core %@ · schema v%lld"
+            "value": "Connecting to peers…"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Çekirdek %@ · şema v%lld"
+            "value": "Eşlere bağlanılıyor…"
           }
         }
       }
@@ -61,6 +125,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Çekirdek başlatılamadı: %@"
+          }
+        }
+      }
+    },
+    "Fetching streams failed: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fetching streams failed: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kaynaklar alınamadı: %@"
+          }
+        }
+      }
+    },
+    "Fetching streams…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fetching streams…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kaynaklar alınıyor…"
+          }
+        }
+      }
+    },
+    "Find Streams": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find Streams"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kaynakları Bul"
           }
         }
       }
@@ -97,6 +209,86 @@
         }
       }
     },
+    "IMDb id, e.g. tt1254207 or tt0944947:1:1": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IMDb id, e.g. tt1254207 or tt0944947:1:1"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IMDb kimliği, ör. tt1254207 veya tt0944947:1:1"
+          }
+        }
+      }
+    },
+    "Install": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kur"
+          }
+        }
+      }
+    },
+    "Install failed: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install failed: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurulum başarısız: %@"
+          }
+        }
+      }
+    },
+    "Installed %@ %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed %@ %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ %@ kuruldu"
+          }
+        }
+      }
+    },
+    "Installing addon…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installing addon…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eklenti kuruluyor…"
+          }
+        }
+      }
+    },
     "Loading…": {
       "localizations": {
         "en": {
@@ -129,6 +321,102 @@
         }
       }
     },
+    "No addons installed. Cinma ships without content sources; add one by URL.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No addons installed. Cinma ships without content sources; add one by URL."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kurulu eklenti yok. Cinma içerik kaynağı olmadan gelir; URL ile bir eklenti ekleyin."
+          }
+        }
+      }
+    },
+    "Open File…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open File…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dosya Aç…"
+          }
+        }
+      }
+    },
+    "Pause": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duraklat"
+          }
+        }
+      }
+    },
+    "Play": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oynat"
+          }
+        }
+      }
+    },
+    "Playback error: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback error: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oynatma hatası: %@"
+          }
+        }
+      }
+    },
+    "Playback failed: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback failed: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oynatma başarısız: %@"
+          }
+        }
+      }
+    },
     "Quit Cinma": {
       "localizations": {
         "en": {
@@ -157,6 +445,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tümünü Göster"
+          }
+        }
+      }
+    },
+    "Starting player…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting player…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oynatıcı başlatılıyor…"
           }
         }
       }
