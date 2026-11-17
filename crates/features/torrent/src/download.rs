@@ -74,6 +74,19 @@ async fn run_torrent_download(
 ) -> Result<(), String> {
     let spec: TorrentSourceSpec =
         serde_json::from_str(&job.download.source_json).map_err(|e| e.to_string())?;
+    let info_hash = crate::normalize_info_hash(&spec.info_hash).map_err(|e| e.to_string())?;
+    engine.mark_download(&info_hash);
+    let result = download_and_seed(&engine, &job, &spec, seeding).await;
+    engine.unmark_download(&info_hash);
+    result
+}
+
+async fn download_and_seed(
+    engine: &Arc<RqbitEngine>,
+    job: &Job,
+    spec: &TorrentSourceSpec,
+    seeding: SeedingPolicy,
+) -> Result<(), String> {
     let (handle, source) = engine
         .open_with_handle(TorrentFileRequest {
             info_hash: spec.info_hash.clone(),
@@ -86,7 +99,7 @@ async fn run_torrent_download(
     let total_size = source.size();
     let blob = job.blob(total_size).map_err(|e| e.to_string())?;
     if !blob.is_complete() {
-        copy_source_to_blob(Arc::clone(&source), &blob, &job).await?;
+        copy_source_to_blob(Arc::clone(&source), &blob, job).await?;
     }
     let _ = job.report_progress(&blob);
 

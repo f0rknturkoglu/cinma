@@ -30,7 +30,15 @@ fn content() -> Vec<u8> {
 }
 
 async fn start_seeder(dir: &std::path::Path, data: &[u8]) -> (Arc<Session>, String, SocketAddr) {
-    let path = dir.join("movie.mkv");
+    start_named_seeder(dir, "movie.mkv", data).await
+}
+
+async fn start_named_seeder(
+    dir: &std::path::Path,
+    file_name: &str,
+    data: &[u8],
+) -> (Arc<Session>, String, SocketAddr) {
+    let path = dir.join(file_name);
     std::fs::write(&path, data).unwrap();
     let torrent = create_torrent(
         &path,
@@ -248,5 +256,168 @@ fn torrent_download_engine_completes_via_queue_on_local_seeder() {
     runtime.block_on(async {
         engine.release_all().await;
         seeder.stop().await;
+    });
+}
+
+/// The policy the app uses (Phase 5 disk policy): persistent session, no
+/// blanket delete on release.
+fn app_policy() -> cinma_torrent::TorrentPolicy {
+    cinma_torrent::TorrentPolicy {
+        fastresume: true,
+        upload_bps: None,
+        download_bps: None,
+        seeding: cinma_torrent::SeedingPolicy::Off,
+        delete_on_release: false,
+    }
+}
+
+fn session_json(root: &std::path::Path) -> String {
+    std::fs::read_to_string(root.join("session").join("session.json")).unwrap_or_default()
+}
+
+fn open_and_read_head(
+    runtime: &tokio::runtime::Runtime,
+    engine: &RqbitEngine,
+    info_hash: &str,
+) -> Arc<dyn ByteSource> {
+    let source: Arc<dyn ByteSource> = runtime
+        .block_on(async {
+            tokio::time::timeout(
+                Duration::from_secs(60),
+                engine.open_file(TorrentFileRequest {
+                    info_hash: info_hash.to_owned(),
+                    file_idx: None,
+                    trackers: vec![],
+                }),
+            )
+            .await
+        })
+        .expect("open timed out")
+        .expect("open failed");
+    let reader_source = Arc::clone(&source);
+    std::thread::spawn(move || {
+        let mut reader = reader_source.open_reader().unwrap();
+        let mut buf = vec![0u8; 4096];
+        let n = reader
+            .read_at(0, &mut buf, &CancellationToken::new())
+            .unwrap();
+        assert!(n > 0);
+    })
+    .join()
+    .unwrap();
+    source
+}
+
+#[test]
+fn streamed_torrent_is_removed_on_release_with_persistent_session() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let seed_dir = dir.path().join("seed");
+    std::fs::create_dir_all(&seed_dir).unwrap();
+    let (seeder, info_hash, addr) = runtime.block_on(start_seeder(&seed_dir, &content()));
+
+    let root = dir.path().join("leech");
+    let engine = RqbitEngine::with_policy(
+        TorrentConfig {
+            root: root.clone(),
+            extra_peers: vec![addr],
+            local_only: true,
+        },
+        runtime.handle().clone(),
+        app_policy(),
+    );
+    let source = open_and_read_head(&runtime, &engine, &info_hash);
+    drop(source);
+    assert!(
+        root.join("streams.json").exists(),
+        "stream is marked while playing"
+    );
+
+    runtime.block_on(async {
+        engine.release_all().await;
+        seeder.stop().await;
+    });
+    assert!(
+        !root.join("downloads").join("movie.mkv").exists(),
+        "streamed file must be deleted on release"
+    );
+    assert!(
+        !session_json(&root).contains(&info_hash),
+        "streamed torrent must not stay in the persisted session"
+    );
+    assert!(!root.join("streams.json").exists());
+}
+
+#[test]
+fn stream_left_by_a_crash_is_removed_when_the_session_restarts() {
+    let dir = tempfile::tempdir().unwrap();
+    let seed_dir = dir.path().join("seed");
+    std::fs::create_dir_all(&seed_dir).unwrap();
+    let root = dir.path().join("leech");
+    let seeder_rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let first = content();
+    let second: Vec<u8> = first.iter().map(|b| b.wrapping_add(1)).collect();
+    let (seeder_a, hash_a, addr_a) =
+        seeder_rt.block_on(start_named_seeder(&seed_dir, "first.mkv", &first));
+    let (seeder_b, hash_b, addr_b) =
+        seeder_rt.block_on(start_named_seeder(&seed_dir, "second.mkv", &second));
+
+    // First run: stream A, then "crash" (runtime dropped, no release).
+    {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .unwrap();
+        let engine = RqbitEngine::with_policy(
+            TorrentConfig {
+                root: root.clone(),
+                extra_peers: vec![addr_a],
+                local_only: true,
+            },
+            runtime.handle().clone(),
+            app_policy(),
+        );
+        drop(open_and_read_head(&runtime, &engine, &hash_a));
+        assert!(root.join("downloads").join("first.mkv").exists());
+        drop(engine);
+        runtime.shutdown_timeout(Duration::from_secs(2));
+    }
+
+    // Second run: starting a new stream cleans up the crashed one.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let engine = RqbitEngine::with_policy(
+        TorrentConfig {
+            root: root.clone(),
+            extra_peers: vec![addr_b],
+            local_only: true,
+        },
+        runtime.handle().clone(),
+        app_policy(),
+    );
+    let source = open_and_read_head(&runtime, &engine, &hash_b);
+    assert!(
+        !root.join("downloads").join("first.mkv").exists(),
+        "crashed stream's file must be deleted on restart"
+    );
+    assert!(!session_json(&root).contains(&hash_a));
+    drop(source);
+    runtime.block_on(engine.release_all());
+    assert!(!root.join("downloads").join("second.mkv").exists());
+    seeder_rt.block_on(async {
+        seeder_a.stop().await;
+        seeder_b.stop().await;
     });
 }

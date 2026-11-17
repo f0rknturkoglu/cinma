@@ -2,6 +2,14 @@
 
 ## Status: Phases 0–7 complete (end-to-end roadmap built & verified; risks documented in `docs/RISKS.md`).
 
+## Review fixes (2026-11-17)
+An owner-requested review of Phases 3–7 found three critical bugs; all three are fixed and verified in the app.
+- **First launch stalled on "Loading…"**: onboarding was presented as a sheet in `viewDidLoad`, before the shell had a window, so it opened as a stray off-screen window and the content swap never finished. It is now presented once from `viewDidAppear`. Verified on a fresh data dir: the sheet shows over Home and Skip closes it.
+- **Streamed torrents stayed on disk and came back**: the persistent session (fastresume, no delete on release) kept every streamed file and restored it unpaused on the next session. `RqbitEngine` now tracks streaming torrents separately from downloads and deletes them with their files when playback stops (`release_streams`, also when a download keeps the session alive). A `streams.json` marker removes streams left by a crash when the next session starts. Verified in the app over loopback: 72 MB and a persisted torrent before, 4 KB and an empty `session.json` after.
+- **Quota could delete finished downloads**: eviction only protected queued/active/paused rows. It now protects every blob a download row owns (`download_blob_ids`), and finished downloads are indexed as pinned.
+- Tests: +3 (stream removed on release, crash leftover removed on restart, quota keeps a finished download); 103 Rust tests pass, clippy clean, Release build without warnings.
+- Still open from the review (not critical): see the review notes in the conversation — 4K HDR CPU claim not reproduced (17.6 % measured), torrent downloads stored twice, downloads not exportable, no automatic tracking sync, `dns-sd`/`sysctl` child processes, 100+ strings missing Turkish, non-atomic restore.
+
 ## Phases 5, 6 & 7 — Unified Downloads, Integrations, Security & Packaging ✅
 
 ### Done in Phase 5 (Unified Download Manager, Disk Policy & Menu Bar)

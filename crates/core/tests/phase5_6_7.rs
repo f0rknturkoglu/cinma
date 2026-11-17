@@ -299,3 +299,59 @@ fn profile_pin_and_backup_restore_round_trip() {
     assert_eq!(profiles.len(), 2);
     assert!(core.verify_profile_pin(1, "4242").unwrap());
 }
+
+#[test]
+fn disk_quota_never_evicts_a_finished_download() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(dir.path()).unwrap();
+    let store = core.blob_store().unwrap();
+    let downloaded = store.create(2 * 1024 * 1024).unwrap();
+    let cached = store.create(2 * 1024 * 1024).unwrap();
+
+    // A completed download owns `downloaded` (written through a second
+    // connection, as the queue would have done).
+    {
+        let db = cinma_db::Database::open(&dir.path().join("cinma.sqlite3")).unwrap();
+        let id = db
+            .insert_download(&cinma_db::NewDownload {
+                profile_id: 1,
+                kind: cinma_db::DownloadKind::Http,
+                title: "movie.mkv".into(),
+                source_json: "{}".into(),
+                priority: 1,
+            })
+            .unwrap();
+        db.set_download_blob(id, downloaded.id().as_str(), Some(2 * 1024 * 1024))
+            .unwrap();
+        db.set_download_state(id, cinma_db::DownloadState::Completed, None)
+            .unwrap();
+    }
+    // Indexed as unpinned on purpose: rows written by older builds look like this.
+    for (blob, key) in [(&downloaded, "d"), (&cached, "c")] {
+        core.record_disk_entry(
+            &format!("blob:{}", blob.id().as_str()),
+            cinma_db::DiskKind::Blob,
+            Some(key),
+            Some("movie"),
+            &dir.path().join("blobs").join(key).to_string_lossy(),
+            2 * 1024 * 1024,
+            false,
+        )
+        .unwrap();
+    }
+
+    let mut policy = core.disk_policy_settings().unwrap();
+    policy.cache_quota_mb = 1;
+    core.set_disk_policy_settings(&policy).unwrap();
+    let freed = core.enforce_disk_quota().unwrap();
+
+    assert_eq!(freed, 2 * 1024 * 1024, "only the cache blob is evicted");
+    assert!(
+        store.open_blob(downloaded.id()).is_ok(),
+        "download survives"
+    );
+    assert!(
+        store.open_blob(cached.id()).is_err(),
+        "cache blob is evicted"
+    );
+}

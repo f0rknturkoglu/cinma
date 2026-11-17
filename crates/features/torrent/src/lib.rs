@@ -132,7 +132,23 @@ pub struct RqbitEngine {
     policy: Mutex<TorrentPolicy>,
     runtime: Handle,
     session: Mutex<Option<Arc<Session>>>,
+    /// Torrents in the session and why they are there. Streams are temporary:
+    /// they are deleted with their files when playback stops, so they never
+    /// linger on disk or come back through session persistence.
+    roles: std::sync::Mutex<TorrentRoles>,
 }
+
+#[derive(Default)]
+struct TorrentRoles {
+    streams: HashSet<String>,
+    downloads: HashSet<String>,
+    /// Streams a previous run left behind (crash); deleted when the session starts.
+    leftover: HashSet<String>,
+}
+
+/// Info hashes of torrents opened for streaming, kept on disk so a crash
+/// mid-stream is cleaned up the next time the session starts.
+const STREAMS_MARKER: &str = "streams.json";
 
 impl RqbitEngine {
     pub fn new(config: TorrentConfig, runtime: Handle) -> Self {
@@ -140,11 +156,81 @@ impl RqbitEngine {
     }
 
     pub fn with_policy(config: TorrentConfig, runtime: Handle, policy: TorrentPolicy) -> Self {
+        let leftover: HashSet<String> = std::fs::read(config.root.join(STREAMS_MARKER))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
         Self {
             config,
             policy: Mutex::new(policy),
             runtime,
             session: Mutex::new(None),
+            roles: std::sync::Mutex::new(TorrentRoles {
+                leftover,
+                ..TorrentRoles::default()
+            }),
+        }
+    }
+
+    fn streams_marker(&self) -> PathBuf {
+        self.config.root.join(STREAMS_MARKER)
+    }
+
+    fn write_streams_marker(&self, roles: &TorrentRoles) {
+        let path = self.streams_marker();
+        let mut list: Vec<&String> = roles.streams.union(&roles.leftover).collect();
+        if list.is_empty() {
+            let _ = std::fs::remove_file(&path);
+            return;
+        }
+        list.sort();
+        let _ = std::fs::create_dir_all(&self.config.root);
+        if let Ok(json) = serde_json::to_vec(&list) {
+            let tmp = path.with_extension("json.tmp");
+            if std::fs::write(&tmp, json).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+        }
+    }
+
+    fn mark_stream(&self, info_hash: &str) {
+        if let Ok(mut roles) = self.roles.lock()
+            && !roles.downloads.contains(info_hash)
+            && roles.streams.insert(info_hash.to_owned())
+        {
+            self.write_streams_marker(&roles);
+        }
+    }
+
+    pub(crate) fn mark_download(&self, info_hash: &str) {
+        if let Ok(mut roles) = self.roles.lock() {
+            roles.downloads.insert(info_hash.to_owned());
+            if roles.streams.remove(info_hash) {
+                self.write_streams_marker(&roles);
+            }
+        }
+    }
+
+    pub(crate) fn unmark_download(&self, info_hash: &str) {
+        if let Ok(mut roles) = self.roles.lock() {
+            roles.downloads.remove(info_hash);
+        }
+    }
+
+    /// Deletes every streaming torrent (and its files) from the running session.
+    /// Torrents that are also being downloaded are kept.
+    pub async fn release_streams(&self) {
+        let hashes: Vec<String> = match self.roles.lock() {
+            Ok(mut roles) => {
+                let hashes = roles.streams.drain().collect();
+                self.write_streams_marker(&roles);
+                hashes
+            }
+            Err(_) => return,
+        };
+        let session = self.session.lock().await.clone();
+        if let Some(session) = session {
+            delete_torrents(&session, &hashes).await;
         }
     }
 
@@ -199,11 +285,35 @@ impl RqbitEngine {
             ..Default::default()
         };
         let session = Session::new_with_opts(downloads, options).await?;
+        // Streams left over from a crash were restored by persistence: delete them.
+        let leftover: Vec<String> = self
+            .roles
+            .lock()
+            .map(|r| {
+                r.leftover
+                    .iter()
+                    .filter(|h| !r.streams.contains(*h) && !r.downloads.contains(*h))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !leftover.is_empty() {
+            delete_torrents(&session, &leftover).await;
+        }
+        if let Ok(mut roles) = self.roles.lock()
+            && !roles.leftover.is_empty()
+        {
+            roles.leftover.clear();
+            self.write_streams_marker(&roles);
+        }
         *guard = Some(Arc::clone(&session));
         Ok(session)
     }
 
     async fn open(&self, request: TorrentFileRequest) -> Result<Arc<dyn ByteSource>, TorrentError> {
+        let info_hash = normalize_info_hash(&request.info_hash)?;
+        // Mark before adding, so a crash during add is cleaned up next start.
+        self.mark_stream(&info_hash);
         self.open_with_handle(request).await.map(|(_, s)| s)
     }
 
@@ -358,6 +468,7 @@ impl RqbitEngine {
     /// Stops the session. Under Phase 5 DiskPolicy (`delete_on_release == false`),
     /// downloaded files stay managed by LRU quota instead of unconditional delete.
     async fn release(&self) {
+        self.release_streams().await;
         let delete = self.policy.lock().await.delete_on_release;
         let session = self.session.lock().await.take();
         if let Some(session) = session {
@@ -388,6 +499,29 @@ impl TorrentEngine for RqbitEngine {
 
     fn release_all(&self) -> BoxFuture<'_, ()> {
         Box::pin(self.release())
+    }
+}
+
+/// Removes the given torrents and their files from `session` (best effort).
+async fn delete_torrents(session: &Arc<Session>, info_hashes: &[String]) {
+    for hash in info_hashes {
+        let id = session.with_torrents(|torrents| {
+            let mut found = None;
+            for (id, t) in torrents {
+                if t.info_hash().as_string() == *hash {
+                    found = Some(id);
+                    break;
+                }
+            }
+            found
+        });
+        if let Some(id) = id
+            && let Err(e) = session
+                .delete(librqbit::api::TorrentIdOrHash::Id(id), true)
+                .await
+        {
+            eprintln!("[cinma] torrent: could not remove stream {hash}: {e}");
+        }
     }
 }
 

@@ -300,7 +300,8 @@ fn index_completed_download(core: &Core, id: i64) {
         media_type.as_deref(),
         &blob_path.to_string_lossy(),
         bytes,
-        false,
+        // A finished download is something the user asked to keep.
+        true,
     );
     let _ = core.enforce_disk_quota();
 }

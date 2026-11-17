@@ -463,10 +463,12 @@ impl Database {
             .is_some())
     }
 
-    pub fn all_active_or_queued_blob_ids(&self) -> Result<Vec<String>, DbError> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT blob_id FROM download WHERE blob_id IS NOT NULL AND state IN ('queued', 'active', 'paused')",
-        )?;
+    /// Blobs owned by a download row in any state, across profiles. These belong
+    /// to the user (queued or finished) and must never be cache-evicted.
+    pub fn download_blob_ids(&self) -> Result<Vec<String>, DbError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT blob_id FROM download WHERE blob_id IS NOT NULL")?;
         let rows = stmt.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }

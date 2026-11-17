@@ -408,21 +408,24 @@ impl Playback {
                 })
             })
             .unwrap_or(false);
-        if !has_torrent_download {
-            let engine = self
-                .core
-                .torrents
-                .lock()
-                .map_err(|_| CoreError::Poisoned)?
-                .clone();
-            if let Some(engine) = engine {
-                self.core
-                    .spawn(async move {
+        let engine = self
+            .core
+            .torrents
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .clone();
+        if let Some(engine) = engine {
+            self.core
+                .spawn(async move {
+                    if has_torrent_download {
+                        // Keep the session for the download; drop only what we streamed.
+                        engine.release_streams().await;
+                    } else {
                         engine.release_all().await;
-                        Ok(())
-                    })
-                    .await?;
-            }
+                    }
+                    Ok(())
+                })
+                .await?;
         }
         cinma_player::release_heap_pressure();
         Ok(())

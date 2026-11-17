@@ -193,7 +193,7 @@ impl Core {
         })
     }
 
-    /// Evicts oldest non-kept, non-queued items (`Blob`s and `librqbit` folders)
+    /// Evicts oldest non-kept items that no download owns (`Blob`s and `librqbit` folders)
     /// until total tracked cache is at or below `cache_quota_mb`. Returns bytes freed.
     pub fn enforce_disk_quota(&self) -> Result<u64, CoreError> {
         let settings = self.disk_policy_settings()?;
@@ -204,8 +204,7 @@ impl Core {
 
         let (entries, protected_blobs, kept_flags) = {
             let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
-            let protected: HashSet<String> =
-                db.all_active_or_queued_blob_ids()?.into_iter().collect();
+            let protected: HashSet<String> = db.download_blob_ids()?.into_iter().collect();
             let entries = db.disk_entries_lru()?;
             let mut flags = Vec::with_capacity(entries.len());
             for e in &entries {

@@ -45,6 +45,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
     private var detailVC: TitleDetailViewController?
     private var currentVC: NSViewController?
     private var statusClearTask: Task<Void, Never>?
+    private var onboardingChecked = false
 
     init(core: CinmaCore, onPlay: @escaping (PlayRequest) -> Void) {
         self.core = core
@@ -102,6 +103,14 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         super.viewDidLoad()
         refreshProfileBadge()
         switchToTab(.home)
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // A sheet needs a window to attach to; in viewDidLoad the view has none yet,
+        // so AppKit shows it as a stray window and the content swap never finishes.
+        guard !onboardingChecked, view.window != nil else { return }
+        onboardingChecked = true
         presentOnboardingIfNeeded()
     }
 
