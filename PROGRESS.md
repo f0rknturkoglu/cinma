@@ -1,6 +1,15 @@
 # PROGRESS
 
-## Status: Phases 0–2 done and accepted. Remaining work for the next agent is in **docs/ROADMAP.md**.
+## Status: Phases 0–2 done and accepted. Phase 3 in progress (steps 0, 2, 5 complete; awaiting owner measurement & schema/mockup decisions for steps 1, 3, 4, 6, 11).
+
+## Phase 3 — Browsing & stream selection (in progress)
+
+### Done so far in Phase 3
+- **Deep-link confirmation** (`AppDelegate.handleLink`): `stremio://` links now inspect the manifest via `Core::inspect_addon` (without persisting) and ask confirmation in an `NSAlert` showing addon name, description, and URL (en + tr).
+- **Addon protocol (`cinma-stremio`, `cinma-core`, `cinma-ffi`)**: added `catalog` (with `search`, `genre`, `skip` extras), `meta` (movies, series, episodes, trailers, links), catalog listing/browsing/search fan-out, and per-addon incremental batch observers (`StreamBatchObserver`, `CatalogBatchObserver`) tested against offline Cinemeta/Torrentio-shaped JSON fixtures.
+- **Stream ranker (`cinma-ranker`)**: parse → filter (CAM/TS, fakes, safety levels, max resolution, min seeders) → score (resolution, source, HDR/DV fallback, codec with M3+ hardware AV1 detection via `sysctl`, audio, seeders/debrid, preferred languages, reputable release groups) → tier → explainable `ScoreReason` breakdown, wired into `Core` and `FFI`.
+- **Proposed ADR 0010**: schema design for Migrations `0003` (`id_map`, `meta_cache`) and `0004` (`library_item`, `watch_progress`), Keychain storage for TMDB key, and `yt-dlp` binary lookup/update policy.
+- **Checkpoint measurements** (`tools/measure.sh`, Release, 3 runs): median first frame **174.3 ms** (< 250 ms), idle footprint **24.0 MB** (≤ 40 MB), idle CPU **0.00 %**. 72 Rust tests pass, `cargo clippy` clean, Release `xcodebuild` clean.
 
 ## Phase 2 — Core solid ✅ (accepted 2026-11-17)
 

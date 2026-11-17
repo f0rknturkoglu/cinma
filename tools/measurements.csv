@@ -3,3 +3,4 @@ date,commit,runs,first_frame_ms,core_ready_ms,rss_mb,footprint_mb,idle_cpu_pct,n
 2026-11-17T11:20:42,74a9786,7,154.4,165.8,82.1,19.0,0.00,"phase0 baseline, direct exec, warm"
 2026-11-17T12:15:56,cbbf855,7,158.0,168.1,95.7,25.0,0.00,"phase1, direct exec, warm"
 2026-11-17T13:01:11,6fd5883,5,154.0,166.7,96.2,25.0,0.07,"phase2, direct exec, warm, 15s idle window"
+2026-11-17T14:01:56,e9a99e5,3,174.3,179.0,96.2,24.0,0.00,"phase3 checkpoint: deep-link, catalog/meta/search, ranker"
