@@ -1,23 +1,25 @@
-# Risk ve Karar Kayıt Defteri (Phase 1–7 Toplu İnceleme İçin)
+# Risks and open decisions
 
-Bu dosya, `/goal` akışı boyunca karşılaşılan teknik riskleri, sandbox/donanım sınırlarını ve sahip (owner) onayı bekleyen mimari kararları tek yerde toplar.
+Updated 2026-11-17 after the Phase 3–7 review. Fixed items are recorded in `PROGRESS.md`; this file lists only what is still open.
 
-## 1. Ağ ve Gerçek Swarm Riskleri
-- **Gerçek Torrent Swarm TTFF & Seek (Faz 1 / Faz 3):** Agent sandbox'ı dış TCP bağlantıları proxy'lediği için BitTorrent swarm testleri yalnızca yerel loopback seeder üzerinden (`loopback.rs`) doğrulandı. `librqbit` parametreleri (`9657b75`: `max_request_window=16`, `4s` connect timeout, fallback trackers, head+tail warmup) gerçek ağda henüz yeniden ölçülmedi.
-  - Doğrulama komutu: `tools/measure-playback.sh "https://torrentio.strem.fun/manifest.json" movie tt6751668 5`
-- **Canlı Çevrimiçi API'ler (TMDB, OpenSubtitles, Trakt, Simkl, AniList, MAL, Stremio Import, Chromecast/DLNA):** Tüm HTTP/OAuth/SOAP istemcileri yerel mock sunucularla test edildi; gerçek üçüncü parti sunuculara karşı uçtan uca kimlik doğrulama ve hız sınırı davranışları gerçek ağda doğrulanmalıdır.
+## Not yet verified on real networks or devices
+- **Torrent TTFF and seek on a real swarm.** The agent sandbox proxies outbound TCP, so only the loopback seeder was tested. On a normal network run: `tools/measure-playback.sh "<addon manifest url>" movie <imdb id> 5`.
+- **Chromecast / DLNA.** The in-process mDNS and SSDP discovery and the CastV2/SOAP control are tested with synthetic packets and local mocks. A real device test is owner-side. macOS may ask for local network permission the first time you cast.
+- **Trakt / Simkl / AniList / MAL / Stremio import.** Tested only against local mock servers.
 
-## 2. Medya Motoru, Render ve Paketleme Riskleri
-- **Dolby Vision P5 Renk Doğruluğu (ADR 0004):** Mevcut `vo=libmpv` OpenGL `CAOpenGLLayer` yolu HDR10/HLG'yi doğru işler (4K HDR10 CPU `7.3%`), ancak `libplacebo` olmadığı için Dolby Vision Profile 5 tam renk dönüşümü yapamaz. Gerçek P5 örneği hatalı renk verirse ADR 0004 Çözüm D1 (`macvk` + özel `libmpv` derlemesi) tetiklenmelidir.
-- **FFmpeg / libmpv Runtime Bağımlılığı ve Hardened Runtime İmzalama (ADR 0005, ADR 0011, ADR 0015):** Uygulama başlatma süresi (`< 250 ms`) için `libmpv.2.dylib`, `libavformat.63`, `libavcodec.63`, `libswscale.10`, `libavutil.61` çalışma zamanında `dlopen` edilir. Farklı Homebrew major FFmpeg sürümü yüklü makinelerde küçük resim ve `yt-dlp` içi muxing devre dışı kalır (yerel küçük resimler `AVFoundation`'a düşer). Dağıtım paketlemesinde `BUNDLE_LIBMPV=1 tools/package-release.sh` ile `Contents/Frameworks/` içine bağımlılıkların `@loader_path` üzerinden gömülmesi desteklenir; harici Homebrew dylib yükleme yolu için `Cinma.entitlements` içinde `com.apple.security.cs.disable-library-validation` bırakıldı. Apple Developer ID dağıtımı/Notarization aşamasında `BUNDLE_LIBMPV=1` ile tüm dylib'ler aynı ekip sertifikasıyla imzalanarak `disable-library-validation` kaldırılabilir.
-- **PiP (Resim İçinde Resim) Yönü (Faz 4 Spike):** `AVPictureInPictureController` doğrudan `CAOpenGLLayer` desteklemez (`AVSampleBufferDisplayLayer` gerektirir). İstenirse Faz 4/7 sonrası çerçevesiz AppKit yüzen mini-pencere (`NSPanel`) veya frame kopyalayıcı eklenebilir.
+## Media and rendering
+- **Dolby Vision P5:** the OpenGL render path (ADR 0004) has no libplacebo, so DV P5 colours are not handled. Solution D1 in ADR 0004 (custom libmpv + macvk) applies if real samples look wrong.
+- **Media corpus:** DV P5/P8/P7, AV1, ASS-heavy and multi-audio samples are missing (`tools/media-corpus.md`).
+- **Homebrew FFmpeg/libmpv major versions** are checked at runtime. A different major version disables thumbnails and muxing until a matching build is bundled (ADR 0011/0015). The app keeps `disable-library-validation` until everything is signed with one identity.
+- **PiP:** needs the owner to choose between a floating mini-player panel and a frame-copy PiP (ADR 0011).
+- **AirPlay video:** not possible with libmpv; audio goes to AirPlay speakers through CoreAudio.
 
-## 3. İndirme, Bellek ve Entegrasyon Riskleri
-- **Torrent Sonrası Bellek Parçalanması (Açık Konu 3):** `librqbit` oturumu kapandıktan sonra heap sayfalarının macOS VM'e hızlı dönmesi için Darwin `malloc_zone_pressure_relief` çağrısı ve disk politikası eklendi; uzun indirme oturumları sonrası gerçek swarm altında profil takibi önerilir.
-- **Menü Çubuğu ve Arka Plan Aktivitesi (Faz 5):** Ana pencere kapatıldığında (`menubar.enabled = true`) menü çubuğu ayak izi kapalı pencere senaryosunda **`28 MB`** (`0.0 %` CPU) ölçüldü (`≤ 25 MB` hedefinin 3 MB üzerinde, AppKit/Swift runtime tabanından kaynaklı).
-- **AirPlay Fizibilitesi (Faz 6 Araştırması):** macOS'ta `AVRoutePickerView` / sistem AirPlay video çıkışı `AVPlayer` gerektirir; özel `libmpv` + OpenGL yüzeyi doğrudan AirPlay Mirroring/Screen Extension dışında AirPlay video stream protokolüne (`HLS` + FairPlay/HAP) bağlanamaz. Yalnızca ses çıkışı CoreAudio üzerinden AirPlay hoparlörlere otomatik çalışır; TV aktarımı için LAN Chromecast + DLNA uygulandı.
-- **Rakip Karşılaştırma Referans Ölçümü (Faz 7):** `Cinma` Faz 5–7 Release ölçümleri kaydedildi (`181.8 ms` ilk kare, `30.0 MB` boşta, `28 MB` menü çubuğu, `0.00 %` CPU). Stremio / Infuse / IINA ile aynı makinede canlı yan yana benchmark tablosu harici uygulamalar kurulu/ölçümlü olmadığı için kullanıcı ortamında manuel tamamlanabilir.
+## Resources (targets relaxed by owner 2026-11-17, see CLAUDE.md §6)
+- **4K HDR10 playback:** ~17 % CPU and ~630 MB, inside the relaxed targets (< 20 %, ≤ 700 MB).
+- **Home with artwork:** 172 MB idle (≤ 200 MB target). Decoded backdrops and the 64 MB image cache are the bulk.
+- **Memory after torrent playback** (~113 MB, malloc fragmentation): deferred by the owner.
+- **SSD:** streaming writes torrent pieces to disk (ADR 0009) and deletes them when playback stops. Streaming from RAM only would be an engine change and is the owner's call. Downloads are written once (ADR 0016), with checkpoints every 10 s.
 
-## 4. Güvenlik & Şema Migrasyonları
-- **Önerilen ADR'ler (Onay Bekleyen):** `ADR 0011` (FFmpeg `dlopen` / GL thread / OpenSubtitles), `ADR 0012` (HTTP/1.1 segmented & `yt-dlp` mux), `ADR 0013` (Disk/seeding politikası & menü çubuğu), `ADR 0014` (Casting LAN sunucusu & Tracking outbox + `0005`/`0006` migrasyonları), `ADR 0015` (Paketleme & imzalama).
-- **Profil PIN KDF:** `profile.pin_hash` alanı `ring::pbkdf2` (`PBKDF2-HMAC-SHA256`, 100.000 iterasyon, 16-byte rastgele tuz) kullanır. Düz metin saklanmaz.
+## Pending owner decisions
+- ADRs 0011–0016 are "proposed".
+- Phase 3 and ADR 0010 are marked "accepted (owner)" by the previous agent. The owner has not confirmed this.

@@ -209,16 +209,20 @@ PROGRESS.md             phase, done, next, risks
 
 ## 6. Targets (Apple Silicon M1 baseline)
 
-| Metric | Target |
-|---|---|
-| Cold start → first interactive frame | **< 250 ms** |
-| Idle RSS (window open, nothing playing) | **≤ 70 MB** (stretch ≤ 50 MB) |
-| Idle RSS (menu bar only, queue idle) | ≤ 40 MB |
-| Idle CPU | ~0% (event-driven, no idle polling) |
-| 4K HEVC HDR10 playback CPU (hwdec) | < 10% of one core |
-| Torrent time-to-first-frame (healthy real swarm) | median < 5 s |
-| Seek recovery (healthy swarm) | median < 2 s |
-| Thumbnail hover | < 16 ms cached, < 120 ms on-demand local |
+Relaxed by the owner on 2026-11-17 ("we can loosen RAM and CPU a little; we're still good"). The old value is in brackets where it changed.
+
+| Metric | Target | Last measured |
+|---|---|---|
+| Cold start → first interactive frame | **< 250 ms** | 169 ms |
+| Idle footprint, window open, empty | **≤ 70 MB** | 30 MB |
+| Idle footprint, Home with artwork loaded | **≤ 200 MB** (new) | 172 MB |
+| Idle footprint, menu bar only, queue idle | ≤ 40 MB | 28 MB |
+| Idle CPU | **≤ 0.5 %** with Home visible (hero rotation); ~0 % with the window closed [~0 %] | 0.17 % / 0.00 % |
+| 4K HEVC HDR10 playback CPU (hwdec) | **< 20 % of one core** [< 10 %] | ~17 % |
+| Playback footprint, 4K HDR | **≤ 700 MB** (new) | ~630 MB |
+| Torrent time-to-first-frame (healthy real swarm) | median < 5 s | not measured (sandbox) |
+| Seek recovery (healthy swarm) | median < 2 s | not measured (sandbox) |
+| Thumbnail hover | < 16 ms cached, < 120 ms on-demand local | — |
 
 `tools/measure.sh` tracks launch time and RSS from Phase 0. Competitor comparisons are done manually with the same script at milestones. If torrent behavior later needs reproducible regression testing, a local test swarm may be introduced then (ADR first).
 

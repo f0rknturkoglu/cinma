@@ -7,3 +7,6 @@ date,commit,runs,first_frame_ms,core_ready_ms,rss_mb,footprint_mb,idle_cpu_pct,n
 2026-11-17T14:42:14,7d88830,5,170.2,179.7,99.8,29.0,0.00,"phase3 complete: UI, Liquid Glass, ImagePipeline, TMDB/Cinemeta"
 2026-11-17T15:10:26,4c04a99,5,170.5,186.9,97.4,28.0,0.00,"phase4 complete: player controls, GL thread, SDR 8-bit, thumbnails, subtitles"
 2026-11-17T15:46:59,dc62716,5,181.8,194.7,100.6,30.0,0.00,"phases 5-7 complete: downloads, disk policy, integrations, polish"
+2026-11-17T21:11:46,356b7c6,5,169.4,173.8,100.9,30.0,0.00,"after review fixes: single-copy downloads, mDNS, auto sync"
+2026-11-17T21:10:00,356b7c6,1,,,,172.0,0.17,"populated Home (Cinemeta + artwork), 30 s idle, hero rotating"
+2026-11-17T21:05:00,356b7c6,3,,,,628.0,16.97,"4K HEVC HDR10 playback, mean of 3x20 s, footprint at 28 s"

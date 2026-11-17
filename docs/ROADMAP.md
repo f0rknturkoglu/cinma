@@ -1,5 +1,7 @@
 # Cinma — handoff and roadmap (Phases 3–7)
 
+> **Historical (2026-11-17).** Phases 3–7 have been built from this plan and reviewed. For the current state, measurements and open items read `PROGRESS.md` and `docs/RISKS.md`. The pitfalls and commands below are still accurate. The targets in `CLAUDE.md` §6 were relaxed by the owner.
+
 This is written for the next agent picking up the project. Phases 0–2 are done and accepted. Everything below is what is left, in order, with the context needed to continue without re-discovering it.
 
 **Read first, in this order:**

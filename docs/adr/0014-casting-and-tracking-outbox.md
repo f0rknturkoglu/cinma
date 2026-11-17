@@ -17,3 +17,8 @@
 
 ## 3. Profile PIN KDF (Phase 7)
 - `profile.pin_hash` (`0002_core_schema.sql`) uses `pbkdf2$<16-byte hex salt>$<32-byte hex DK>` computed with `ring::pbkdf2` (`PBKDF2_HMAC_SHA256`, 100,000 iterations) and verified in constant time via `ring::constant_time::verify_slices_are_equal`.
+
+## Update (2026-11-17, review round 2)
+- **Chromecast discovery** no longer spawns `/usr/bin/dns-sd`, which broke §1 "one process". It is an in-process one-shot mDNS query (`cinma-casting::mdns`): legacy unicast from an ephemeral port, nothing bound to 5353, the socket dropped afterwards, packets parsed with bounds checks.
+- **Outbox:** the worker now runs automatically. It is event-driven: it starts on enqueue, on enabling tracking or a token, and at launch if rows are waiting. It sleeps until the next due row and exits when the outbox is empty. Rows are dropped after 30 attempts or on permanent errors.
+- **Trakt client secret:** stored in Keychain, not in `app_setting`.

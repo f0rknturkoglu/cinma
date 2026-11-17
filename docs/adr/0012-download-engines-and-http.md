@@ -18,3 +18,10 @@
 - Invokes `yt-dlp -J --no-playlist <url>` as a short-lived child to inspect formats (supporting best video+audio muxed, capped resolution, or `audio_only`).
 - Downloads media streams through the segmented HTTP engine (`crates/features/http`).
 - When separate video + audio formats are selected, muxes in-process via our already `dlopen`ed Homebrew `libavformat.63.dylib` (`avformat_alloc_output_context2`, `avformat_new_stream`, `avcodec_parameters_copy`, `av_interleaved_write_frame`) directly to disk/BlobStore — no `ffmpeg` subprocess spawned.
+
+## Update (2026-11-17, review round 2)
+- **Torrent:** the copy into a blob is gone. Storage is one copy in the destination's `.cinma-partial` staging folder; see ADR 0016.
+- **yt-dlp:**
+  - A single track now really goes through the segmented HTTP engine, as §3 already said; before, it downloaded to temp files and copied them into a blob. Resume ignores signed-URL changes (`url_may_change`).
+  - Muxed downloads still use temp parts.
+- **Checkpoints:** every 10 s, which cuts SSD writes. Segmented HTTP writes progress to SQLite at each checkpoint.

@@ -17,3 +17,12 @@
 - In-process `MenuBarController` (`NSStatusItem`, toggled via `menubar.enabled`):
   - When enabled, closing the last window hides it (`applicationShouldTerminateAfterLastWindowClosed` returns `false`), clears `ImagePipeline` caches, and keeps idle menu-bar-only `phys_footprint <= 25 MB` (ADR 0003).
   - While queued/active downloads exist, acquires `NSProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Cinma active downloads")` to prevent App Nap throttling.
+
+## Update (2026-11-17, review round 2)
+§1–2 are superseded by ADR 0016:
+- Streamed data is deleted when playback stops.
+- Finished downloads are the user's files in their folders, never cache.
+- The quota and "keep watched" have nothing to evict, so their UI is hidden.
+- Quota eviction never deletes folders by a stored path.
+
+The menu bar extra (§3) is unchanged. The menu-bar-only footprint measured 28 MB, above the "≤ 25 MB" stated in §3 and within the brief's ≤ 40 MB.

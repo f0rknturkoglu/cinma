@@ -1,14 +1,63 @@
 # PROGRESS
 
-## Status: Phases 0–7 complete (end-to-end roadmap built & verified; risks documented in `docs/RISKS.md`).
+## Status: Phases 0–7 built; review fixes done (2026-11-17). Owner sign-off on Phases 4–7 and ADRs 0011–0016 is still pending.
 
-## Review fixes (2026-11-17)
+Two things are still unmeasured: real-swarm torrent TTFF/seek (the agent sandbox has no P2P) and real Chromecast/DLNA/Trakt round trips. See "Open items" below.
+
+## Review fixes, round 2 (2026-11-17): everything else from the review
+Commits `8c4bda8`…`356b7c6`. 118 Rust tests pass, clippy is clean, and the Release build has no warnings.
+
+- **One process again.** Chromecast discovery is an in-process mDNS query (legacy unicast from an ephemeral port). Packets are parsed with bounds checks and hop-limited name compression, and tested with synthetic packets. CPU detection uses `sysctlbyname`. `yt-dlp -J` is the only child process. Info.plist declares local-network use.
+- **Downloads are stored once and land in the user's folders** (ADR 0016):
+  - Torrent downloads write into `<folder>/.cinma-partial/<hash>` and are hard-linked into the folder when done, so there is no second copy. Pause detaches the torrent; resume re-checks the pieces on disk.
+  - HTTP downloads move their blob into `<folder>/<title>.<ext>`.
+  - yt-dlp single tracks reuse the segmented HTTP engine, so they are resumable and playable while downloading.
+  - The defaults are `~/Movies/Cinma` and `~/Music/Cinma`; both can be changed in Settings.
+  - Downloads has Show in Finder, Open Download Folder, and a Remove dialog that keeps the file or moves it to the Trash. Nothing in a user folder is ever deleted directly.
+- **Download durability.**
+  - Interrupted downloads resume at launch. Before, they waited until the Downloads queue was touched.
+  - Segmented HTTP now writes progress to SQLite at each checkpoint (before: only at the end).
+  - Checkpoints run every 10 s instead of 2 s, to cut SSD writes.
+  - Every move step is re-doable after a crash (migration 0007, `download.file_path`).
+- **Tracking.** The outbox syncs on its own: an event-driven worker sleeps until the next row is due and exits when the outbox is empty. Rows are dropped after 30 failed attempts. The Trakt client secret moved from SQLite (and backups) to Keychain.
+- **Restore.** The backup is staged, fsynced and validated, then swapped by rename, with rollback. The previous database is kept as `.pre-restore`. Restore is refused while downloads run.
+- **Others.** yt-dlp installs are verified against the release's SHA2-256SUMS. 191 missing Turkish strings are translated, from the compiler's string extraction, not a regex. A flaky timing test is fixed.
+- **Verified in the app** (Release, launched with `open -n`):
+  - a v6 data dir migrated to v7 and kept its addon;
+  - a throttled HTTP download played with Play Now while downloading;
+  - after `kill -9` and a relaunch it resumed from 32 MB on its own;
+  - it finished as one byte-identical copy: 82 MB in the folder, 236 KB left in the data dir;
+  - Remove from List kept the file.
+
+  Torrent single-copy, pause/resume and yt-dlp placement are covered by loopback/stub tests, not by the UI.
+
+### Measured (Release, M-series, 2026-11-17)
+| Metric | Value | Target (relaxed by owner) |
+|---|---|---|
+| Launch, first frame (median of 5) | 169 ms | < 250 ms ✅ |
+| Idle footprint, empty window | 30 MB | ≤ 70 MB ✅ |
+| Idle, Home with Cinemeta artwork | 172 MB, 0.17 % CPU (hero rotation) | ≤ 200 MB, ≤ 0.5 % ✅ |
+| 4K HEVC HDR10 playback | 16.5 / 17.1 / 17.4 % CPU, ~628 MB | < 20 %, ≤ 700 MB ✅ |
+
+Correction: the Phase 4 note below claims 7.3 % CPU for 4K HDR10. That figure did not reproduce; the measured value is ~17 %, about the same as Phase 1.
+
+### Open items (not done; owner decisions or owner-side tests)
+1. **Real-swarm torrent TTFF/seek.** Run `tools/measure-playback.sh <addon manifest url> movie <imdb id> 5` on a normal network.
+2. **Real Chromecast/DLNA and Trakt/Simkl/AniList/MAL round trips.** The code is tested only against local mocks.
+3. **Media corpus.** Dolby Vision P5/P8/P7, AV1, ASS-heavy and multi-audio samples are missing (`tools/media-corpus.md`), so Phase 4's corpus checklist has not been run.
+4. **Streaming writes torrent pieces to disk** (librqbit storage, ADR 0009). They are deleted on stop, but streaming from RAM only would be an engine change. This is the owner's decision.
+5. **Memory after torrent playback** (~113 MB): deferred by the owner.
+6. **PiP:** the spike is done (ADR 0011). It needs a choice between a floating mini-player panel and a frame-copy PiP.
+7. **ADRs 0011–0016 are "proposed".** Phase 3 and ADR 0010 are marked "accepted (owner)" by the previous agent. The owner has not confirmed this.
+8. **Dormant code:** the disk quota and "keep watched" no longer have anything to manage (ADR 0016). Their UI is hidden.
+
+## Review fixes, round 1 (2026-11-17): critical bugs
 An owner-requested review of Phases 3–7 found three critical bugs; all three are fixed and verified in the app.
 - **First launch stalled on "Loading…"**: onboarding was presented as a sheet in `viewDidLoad`, before the shell had a window, so it opened as a stray off-screen window and the content swap never finished. It is now presented once from `viewDidAppear`. Verified on a fresh data dir: the sheet shows over Home and Skip closes it.
 - **Streamed torrents stayed on disk and came back**: the persistent session (fastresume, no delete on release) kept every streamed file and restored it unpaused on the next session. `RqbitEngine` now tracks streaming torrents separately from downloads and deletes them with their files when playback stops (`release_streams`, also when a download keeps the session alive). A `streams.json` marker removes streams left by a crash when the next session starts. Verified in the app over loopback: 72 MB and a persisted torrent before, 4 KB and an empty `session.json` after.
 - **Quota could delete finished downloads**: eviction only protected queued/active/paused rows. It now protects every blob a download row owns (`download_blob_ids`), and finished downloads are indexed as pinned.
 - Tests: +3 (stream removed on release, crash leftover removed on restart, quota keeps a finished download); 103 Rust tests pass, clippy clean, Release build without warnings.
-- Still open from the review (not critical): see the review notes in the conversation — 4K HDR CPU claim not reproduced (17.6 % measured), torrent downloads stored twice, downloads not exportable, no automatic tracking sync, `dns-sd`/`sysctl` child processes, 100+ strings missing Turkish, non-atomic restore.
+- The non-critical review items were fixed in round 2 (above).
 
 ## Phases 5, 6 & 7 — Unified Downloads, Integrations, Security & Packaging ✅
 
