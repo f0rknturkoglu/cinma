@@ -11,6 +11,7 @@ MARKETING_VERSION = 0.1.0
 CURRENT_PROJECT_VERSION = 1
 
 GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_FILE = Config/Info.plist           // URL schemes (stremio://), merged in
 INFOPLIST_KEY_NSPrincipalClass = NSApplication
 INFOPLIST_KEY_CFBundleDisplayName = Cinma
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.entertainment

@@ -8,6 +8,7 @@ import AppKit
 ///   CINMA_AUTOQUIT=1                    quit after the last seek (or 5 s of playback)
 ///   CINMA_AUTOQUIT=close                close the player instead and stay running
 ///   CINMA_AUTOCLOSE_AFTER=<seconds>     close the player that long after it opens
+///   CINMA_DEV_OPEN_URL=<url>            handle a URL as if macOS opened it (deep links)
 @MainActor
 enum DevAutomation {
     static let environment = ProcessInfo.processInfo.environment
@@ -19,6 +20,8 @@ enum DevAutomation {
     static var autoQuit: Bool { environment["CINMA_AUTOQUIT"] != nil }
     static var autoCloseAfter: Double? { environment["CINMA_AUTOCLOSE_AFTER"].flatMap(Double.init) }
     static var closeOnly: Bool { environment["CINMA_AUTOQUIT"] == "close" }
+
+    static var openURL: URL? { environment["CINMA_DEV_OPEN_URL"].flatMap(URL.init(string:)) }
 
     static func run(core: CinmaCore, play: @escaping (PlayRequest) -> Void) {
         guard let target = environment["CINMA_AUTOPLAY"] else { return }

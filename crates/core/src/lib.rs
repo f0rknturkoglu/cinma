@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod addons;
+mod commands;
 mod events;
 mod playback;
 mod settings;
@@ -17,6 +18,9 @@ use cinma_stremio::AddonClient;
 use cinma_torrent::{RqbitEngine, TorrentConfig};
 
 pub use addons::{InstalledAddon, StreamCandidate};
+pub use commands::{
+    COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
+};
 pub use events::{CoreEvent, CoreEventListener};
 pub use settings::Feature;
 pub use cinma_player::{EndReason, PlayerEvent, PlayerEvents, UpdateCallback};

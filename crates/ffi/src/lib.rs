@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use cinma_core::{Core, CoreError, EndReason, PlayerEvent, PlayerEvents};
+use cinma_core::{CommandContext, Core, CoreError, CoreEvent, EndReason, Feature, PlayerEvent, PlayerEvents};
 
 uniffi::setup_scaffolding!();
 
@@ -45,6 +45,70 @@ impl From<CoreError> for CinmaError {
 #[uniffi::export]
 pub fn core_version() -> String {
     cinma_core::VERSION.to_string()
+}
+
+#[derive(uniffi::Record)]
+pub struct CommandInfo {
+    pub id: String,
+    /// "global" | "player"
+    pub context: String,
+    /// Canonical combo, e.g. "cmd+shift+z", "space"; `None` = unbound.
+    pub key: Option<String>,
+}
+
+/// Commands with their default bindings. Needs no core (launch path).
+#[uniffi::export]
+pub fn default_commands() -> Vec<CommandInfo> {
+    cinma_core::COMMANDS
+        .iter()
+        .map(|c| CommandInfo {
+            id: c.id.to_owned(),
+            context: c.context.name().to_owned(),
+            key: c.default_key.map(str::to_owned),
+        })
+        .collect()
+}
+
+#[derive(uniffi::Record)]
+pub struct CommandInvocation {
+    pub command: String,
+    pub argument: Option<String>,
+}
+
+/// Maps a URL the app was opened with to a command (e.g. `stremio://…`).
+#[uniffi::export]
+pub fn parse_deep_link(url: String) -> Option<CommandInvocation> {
+    cinma_core::parse_deep_link(&url).map(|i| CommandInvocation {
+        command: i.command.to_owned(),
+        argument: i.argument,
+    })
+}
+
+#[derive(uniffi::Enum)]
+pub enum CoreEventKind {
+    AddonsChanged,
+    KeyBindingsChanged,
+}
+
+/// Implemented in Swift. Called on whichever thread raised the event.
+#[uniffi::export(with_foreign)]
+pub trait CoreEventListener: Send + Sync {
+    fn on_event(&self, event: CoreEventKind);
+}
+
+struct EventAdapter(Arc<dyn CoreEventListener>);
+
+impl cinma_core::CoreEventListener for EventAdapter {
+    fn on_event(&self, event: CoreEvent) {
+        self.0.on_event(match event {
+            CoreEvent::AddonsChanged => CoreEventKind::AddonsChanged,
+            CoreEvent::KeyBindingsChanged => CoreEventKind::KeyBindingsChanged,
+        });
+    }
+}
+
+fn feature(name: &str) -> Result<Feature, CinmaError> {
+    Feature::from_name(name).ok_or_else(|| CinmaError::Invalid { message: format!("unknown feature {name}") })
 }
 
 #[derive(uniffi::Record)]
@@ -200,6 +264,50 @@ impl CinmaCore {
 
     pub fn remove_addon(&self, id: String) -> Result<(), CinmaError> {
         Ok(self.inner.remove_addon(&id)?)
+    }
+
+    /// Enables/disables an installed addon for the active profile.
+    pub fn set_addon_enabled(&self, id: String, enabled: bool) -> Result<(), CinmaError> {
+        Ok(self.inner.set_addon_enabled(&id, enabled)?)
+    }
+
+    pub fn subscribe(&self, listener: Arc<dyn CoreEventListener>) -> Result<(), CinmaError> {
+        Ok(self.inner.subscribe(Arc::new(EventAdapter(listener)))?)
+    }
+
+    /// Commands with effective key bindings (user overrides applied).
+    pub fn commands(&self) -> Result<Vec<CommandInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .key_bindings()?
+            .into_iter()
+            .map(|(spec, key)| CommandInfo { id: spec.id.to_owned(), context: spec.context.name().to_owned(), key })
+            .collect())
+    }
+
+    /// Command bound to `combo` in `context` ("global" | "player").
+    pub fn resolve_key(&self, context: String, combo: String) -> Result<Option<String>, CinmaError> {
+        let context = CommandContext::from_name(&context)
+            .ok_or_else(|| CinmaError::Invalid { message: format!("unknown context {context}") })?;
+        Ok(self.inner.resolve_key(context, &combo)?.map(str::to_owned))
+    }
+
+    /// Rebinds a command; `combo = None` unbinds it.
+    pub fn set_key_binding(&self, id: String, combo: Option<String>) -> Result<(), CinmaError> {
+        Ok(self.inner.set_key_binding(&id, combo.as_deref())?)
+    }
+
+    pub fn reset_key_binding(&self, id: String) -> Result<(), CinmaError> {
+        Ok(self.inner.reset_key_binding(&id)?)
+    }
+
+    /// Feature names: "addons", "torrent".
+    pub fn feature_enabled(&self, name: String) -> Result<bool, CinmaError> {
+        Ok(self.inner.feature_enabled(feature(&name)?)?)
+    }
+
+    pub async fn set_feature_enabled(&self, name: String, enabled: bool) -> Result<(), CinmaError> {
+        Ok(self.inner.set_feature_enabled(feature(&name)?, enabled).await?)
     }
 
     /// `media_type`: "movie" | "series"; `id`: e.g. "tt1254207" or "tt0944947:1:1".

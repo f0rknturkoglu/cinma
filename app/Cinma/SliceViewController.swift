@@ -107,8 +107,12 @@ final class SliceViewController: NSViewController, NSTableViewDataSource, NSTabl
         return row
     }
 
-    private func refreshAddons() {
-        let names = ((try? core.addons()) ?? []).map(\.name)
+    func showStatus(_ text: String) {
+        statusLabel.stringValue = text
+    }
+
+    func refreshAddons() {
+        let names = ((try? core.addons()) ?? []).filter(\.enabled).map(\.name)
         addonsLabel.stringValue = names.isEmpty
             ? String(localized: "No addons installed. Cinma ships without content sources; add one by URL.")
             : String(localized: "Addons: \(names.joined(separator: ", "))")
@@ -124,7 +128,6 @@ final class SliceViewController: NSViewController, NSTableViewDataSource, NSTabl
                 let addon = try await core.installAddon(url: url)
                 statusLabel.stringValue = String(localized: "Installed \(addon.name) \(addon.version)")
                 addonField.stringValue = ""
-                refreshAddons()
             } catch {
                 statusLabel.stringValue = String(localized: "Install failed: \(error.localizedDescription)")
             }
@@ -156,7 +159,7 @@ final class SliceViewController: NSViewController, NSTableViewDataSource, NSTabl
         onPlay(.stream(streams[row]))
     }
 
-    @objc private func openFile() {
+    @objc func openFile() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.movie, .video, .audiovisualContent]
         panel.allowsOtherFileTypes = true

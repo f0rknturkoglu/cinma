@@ -33,11 +33,13 @@ All findings use Homebrew libmpv 0.42 (libplacebo 7.387, MoltenVK 1.4.2) on an M
 
 ## Solution paths for B's limits (ordered by cost)
 
+The effort figures are rough guesses, and the mpv source locations and upstream status are from memory. Verify them when picking a path.
+
 What B lacks: Dolby Vision P5 (needs libplacebo), HDR peak detection (needs compute shaders), and a future-proof API (OpenGL is deprecated).
 
 1. **Harden C (≈1 day, quick, fragile).** Reparent mpv's macvk view into our view. Keep mpv's hidden window the same size as our view (`setFrame` on resize/fullscreen/backing-scale change) so mpv renders at the right size. Remove the view again before `quit`. Gate it behind a setting with B as fallback. Risk: depends on mpv's private `MacCommon` structure, so pin the mpv version.
-2. **D1 — patch macvk to honour `wid` (≈2–4 days, inside the custom libmpv build from ADR 0005).** In `video/out/mac/*` + `vulkan/context_mac`, when `wid` is set, take the given `CAMetalLayer*` instead of creating a window and report its size from the layer. The patch is small (mostly Swift in mpv's tree) and is a good candidate to upstream, which would remove the maintenance burden.
-3. **D2 — add a Vulkan render API to libmpv (≈1–2 weeks).** An `MPV_RENDER_API_TYPE_VULKAN` backend for libmpv's render API; mpv upstream has discussed this. We'd own the `CAMetalLayer` + MoltenVK swapchain. Cleanest architecture, most work.
+2. **D1 — patch macvk to honour `wid` (≈2–4 days, inside the custom libmpv build from ADR 0005).** In `video/out/mac/*` + `vulkan/context_mac`, when `wid` is set, take the given `CAMetalLayer*` instead of creating a window (exact files: to be checked in the mpv tree) and report its size from the layer. The patch is small (mostly Swift in mpv's tree) and is a good candidate to upstream, which would remove the maintenance burden.
+3. **D2 — add a Vulkan render API to libmpv (≈1–2 weeks).** An `MPV_RENDER_API_TYPE_VULKAN` backend for libmpv's render API; upstream interest is unverified. We'd own the `CAMetalLayer` + MoltenVK swapchain. Cleanest architecture, most work.
 4. **Upstream first.** Watch or ask mpv for macvk `wid` support or a gpu-next render API. If it lands, option 2 or 3 becomes free.
 5. **Not recommended:** our own libplacebo + FFmpeg pipeline without mpv (we'd re-implement subtitles, A/V sync, filters).
 

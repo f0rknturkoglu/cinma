@@ -257,14 +257,19 @@ final class PlayerViewController: NSViewController {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 
+    /// Keys resolve through the command registry, so they can be remapped.
     private func handleKey(_ event: NSEvent) -> Bool {
-        switch event.keyCode {
-        case 49: togglePause(); return true                    // space
-        case 123: try? session?.seekRelative(seconds: -10); return true  // ←
-        case 124: try? session?.seekRelative(seconds: 10); return true   // →
-        case 53: close(); return true                          // esc
-        default: return false
+        guard let combo = KeyCombo.from(event),
+              let command = try? core.resolveKey(context: "player", combo: combo)
+        else { return false }
+        switch command {
+        case "player.toggle_pause": togglePause()
+        case "player.seek_back": try? session?.seekRelative(seconds: -10)
+        case "player.seek_forward": try? session?.seekRelative(seconds: 10)
+        case "player.close": close()
+        default: return false   // global commands go through the menu
         }
+        return true
     }
 
     @objc private func togglePause() {

@@ -1,6 +1,54 @@
 # PROGRESS
 
-## Current phase: 1 — Vertical slice (built; awaiting owner review)
+## Current phase: 2 — Core solid (built; awaiting owner review)
+
+### Done in Phase 2
+- **Schema 0002** (ADR 0008, *proposed*): `addon` + `profile_addon` (installed globally, enabled per profile), `profile_setting`, `download`; profile gets `avatar` and `pin_hash`.
+  - The Phase 1 addon list migrates automatically; tested on a v1 database with data.
+  - Repositories are profile-scoped; an isolation test covers it.
+  - `busy_timeout` 5 s.
+- **Settings and feature toggles**: `addons` and `torrent`, stored in `app_setting`.
+  - A disabled feature is never constructed: tested that no runtime, HTTP client or torrent session gets created.
+  - Turning torrent off during playback stops the session; the playing torrent stops receiving data.
+- **BlobStore** (ADR 0009):
+  - sparse files plus a durable ranges sidecar;
+  - write and mark-available are separate steps;
+  - `checkpoint` (fsync, then atomic sidecar);
+  - blocking reads wake on data or cancel without polling (cancel returns in < 50 ms);
+  - a priority hint on every read;
+  - head/tail-first `fetch_order`.
+  - `MemorySource` no longer polls.
+- **Download queue skeleton** (`cinma-queue`):
+  - priority scheduler with `max_active`, a `DownloadEngine` trait, pause/resume/remove;
+  - `active`→`queued` recovery on start-up and resume from the blob's ranges;
+  - progress is checkpoint-then-DB;
+  - fixed a pause→resume race (job generations).
+  - Engines come in Phase 5; the queue isn't wired to the UI yet.
+- **kill -9 tests** (real child processes): blob bytes always match the sidecar; a download row never runs ahead of its blob; SQLite `integrity_check` passes.
+- **Command registry**: every menu item, the player keys and the `stremio://` deep link go through command ids.
+  - Bindings: defaults plus user overrides (`keybinding.*`); conflicts within a context are rejected.
+  - Launch builds the menu from static defaults (no DB) and rebuilds with the user's bindings once the core is open.
+  - Verified in the app: menu, player keys (← / → / Esc), and the `stremio://` link installing Cinemeta.
+- **Core event stream**: `AddonsChanged` and `KeyBindingsChanged`, the only two with consumers. A Swift listener refreshes the addon label and the menu.
+- `stremio://` URL scheme registered in Info.plist, so macOS may offer Cinma for Stremio links.
+
+### Measured
+| Metric | Value | Target |
+|---|---|---|
+| Launch, first frame (median of 5) | 154 ms | < 250 ms ✅ |
+| Idle footprint | 25 MB | ≤ 40 MB ✅ |
+| Idle CPU | ~0 % (≤ 0.07 %, the `ps` resolution) | ~0 % ✅ |
+| Tests | 59 Rust tests (incl. 2 kill -9 suites), clippy clean, Swift build warning-free | — |
+
+### Open decisions for the owner
+1. ADR 0008 schema (proposed).
+2. ADR 0009: torrents stay on librqbit storage, outside BlobStore (proposed).
+
+### Next: Phase 3 — Browsing & stream selection
+
+---
+
+## Phase 1 — Vertical slice ✅ (accepted 2026-11-17)
 
 ### Done in Phase 1
 - **Addon client** (`cinma-stremio`): manifest/stream parsing (Torrentio-shaped fixtures), `stremio://` and URL normalization, `supports()` by type and idPrefix. Installed addons persist as JSON in `app_setting` (`addons.v1`); real tables come with the Phase 2 schema.
@@ -49,8 +97,7 @@ Real-swarm numbers are missing because the agent's sandbox proxies outbound TCP,
 6. **Uploading:** while streaming, librqbit also uploads to peers (its default). Seeding policy and rate limits come in Phase 5.
 5. Rendering happens on the main thread. A long `mpv_render_context_render` would stall the UI. Move it to a dedicated thread in Phase 4.
 
-### Next: Phase 2 — Core solid
-BlobStore (sparse files, bitmaps, head/tail, composable sources), unified queue skeleton, DB schema with `profile_id` (addon tables included), settings and feature toggles, command registry, event stream, kill -9 test.
+Real-swarm TTFF and seek are still unmeasured. Owner decisions: stay on the OpenGL render path; ~19 % CPU accepted; post-torrent memory deferred.
 
 ---
 
