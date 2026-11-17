@@ -14,7 +14,8 @@ thiserror.workspace = true
 
 [dev-dependencies]
 librqbit.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+anyhow.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal"] }
 tempfile.workspace = true
 
 [lints]

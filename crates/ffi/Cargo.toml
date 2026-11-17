@@ -12,6 +12,8 @@ crate-type = ["staticlib", "cdylib", "lib"]
 
 [dependencies]
 cinma-core.workspace = true
+cinma-stremio.workspace = true
+serde_json.workspace = true
 uniffi.workspace = true
 thiserror.workspace = true
 

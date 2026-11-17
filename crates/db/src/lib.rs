@@ -53,6 +53,23 @@ impl Database {
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
+
+    pub fn get_app_setting(&self, key: &str) -> Result<Option<String>, DbError> {
+        use rusqlite::OptionalExtension;
+        Ok(self
+            .conn
+            .query_row("SELECT value FROM app_setting WHERE key = ?1", [key], |r| r.get(0))
+            .optional()?)
+    }
+
+    pub fn set_app_setting(&self, key: &str, value: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO app_setting (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [key, value],
+        )?;
+        Ok(())
+    }
 }
 
 fn user_version(conn: &Connection) -> Result<u32, DbError> {
@@ -135,6 +152,15 @@ mod tests {
             Database::open(&path),
             Err(DbError::FutureSchema { .. })
         ));
+    }
+
+    #[test]
+    fn app_settings_upsert() {
+        let db = Database::open_in_memory().unwrap();
+        assert_eq!(db.get_app_setting("k").unwrap(), None);
+        db.set_app_setting("k", "1").unwrap();
+        db.set_app_setting("k", "2").unwrap();
+        assert_eq!(db.get_app_setting("k").unwrap().as_deref(), Some("2"));
     }
 
     #[test]
