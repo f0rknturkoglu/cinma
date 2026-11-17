@@ -823,7 +823,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
     private func showNextEpisodeCard(_ plan: NextEpisodePrefetchInfo) {
         guard nextCard.isHidden else { return }
-        nextTitleLabel.stringValue = "S\(plan.season) · B\(plan.episode) — \(plan.title)"
+        nextTitleLabel.stringValue = String(localized: "S\(plan.season) · E\(plan.episode) — \(plan.title)")
         nextSubtitleLabel.stringValue = plan.bestStream != nil
             ? String(localized: "Prefetched & ready")
             : String(localized: "Ready to load")
@@ -865,7 +865,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
                 metaId: prev.metaId,
                 mediaType: prev.mediaType,
                 title: prev.title,
-                subtitle: "S\(plan.season) · B\(plan.episode) — \(plan.title)",
+                subtitle: String(localized: "S\(plan.season) · E\(plan.episode) — \(plan.title)"),
                 artwork: plan.still ?? prev.artwork,
                 season: Int64(plan.season),
                 episode: Int64(plan.episode),
@@ -1401,11 +1401,11 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         if abLoopA == nil {
             abLoopA = position
             try? session?.setAbLoopA(seconds: position)
-            statusLabel.stringValue = "A/B Loop A = \(Self.format(position))"
+            statusLabel.stringValue = String(localized: "A/B loop: A = \(Self.format(position))")
         } else if abLoopB == nil {
             abLoopB = position
             try? session?.setAbLoopB(seconds: position)
-            statusLabel.stringValue = "A/B Loop A=\(Self.format(abLoopA ?? 0)) B=\(Self.format(position))"
+            statusLabel.stringValue = String(localized: "A/B loop: A = \(Self.format(abLoopA ?? 0)), B = \(Self.format(position))")
         } else {
             abLoopA = nil
             abLoopB = nil
