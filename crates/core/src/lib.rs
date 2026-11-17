@@ -21,6 +21,10 @@ pub use addons::{
     AddonCatalog, CatalogBatch, CatalogBatchListener, CatalogPage, InstalledAddon, MetaResult,
     StreamBatch, StreamBatchListener, StreamCandidate,
 };
+pub use cinma_ranker::{
+    FilterReason, FilteredOutStream, MachineCapabilities, ParsedStream, RankResult, RankedStream,
+    RankerPreferences, Resolution, SafetyLevel, ScoreReason, StreamTier,
+};
 pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo};
 pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,

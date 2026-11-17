@@ -473,6 +473,7 @@ dependencies = [
  "cinma-blobstore",
  "cinma-db",
  "cinma-player",
+ "cinma-ranker",
  "cinma-stremio",
  "cinma-torrent",
  "serde",
@@ -521,6 +522,14 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+]
+
+[[package]]
+name = "cinma-ranker"
+version = "0.1.0"
+dependencies = [
+ "cinma-stremio",
+ "serde",
 ]
 
 [[package]]

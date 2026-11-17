@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use cinma_ranker::{MachineCapabilities, RankResult, RankerPreferences, rank_streams};
 use cinma_stremio::{CatalogDescriptor, CatalogQuery, Manifest, Meta, MetaPreview, Stream};
 
 use crate::events::CoreEvent;
@@ -474,5 +475,25 @@ impl Core {
             Ok(results.into_iter().flat_map(|(_, c)| c).collect())
         })
         .await
+    }
+
+    /// Ranks stream candidates using machine capabilities (e.g. M3+ AV1 decode)
+    /// and the provided or default preferences.
+    pub fn rank_streams(
+        &self,
+        candidates: Vec<StreamCandidate>,
+        prefs: Option<RankerPreferences>,
+    ) -> RankResult {
+        let caps = MachineCapabilities::detect();
+        let prefs = prefs.unwrap_or_default();
+        let raw = candidates
+            .into_iter()
+            .map(|c| (c.addon_name, c.stream))
+            .collect();
+        rank_streams(raw, &prefs, &caps)
+    }
+
+    pub fn hardware_av1_supported(&self) -> bool {
+        MachineCapabilities::detect().hardware_av1
     }
 }

@@ -445,6 +445,189 @@ impl From<cinma_core::StreamCandidate> for StreamInfo {
 }
 
 #[derive(uniffi::Enum)]
+pub enum RankTier {
+    Best,
+    Recommended,
+    Good,
+    Fallback,
+}
+
+impl From<cinma_core::StreamTier> for RankTier {
+    fn from(t: cinma_core::StreamTier) -> Self {
+        match t {
+            cinma_core::StreamTier::Best => Self::Best,
+            cinma_core::StreamTier::Recommended => Self::Recommended,
+            cinma_core::StreamTier::Good => Self::Good,
+            cinma_core::StreamTier::Fallback => Self::Fallback,
+        }
+    }
+}
+
+#[derive(uniffi::Enum)]
+pub enum RankSafetyLevel {
+    Strict,
+    Standard,
+    Permissive,
+}
+
+impl From<RankSafetyLevel> for cinma_core::SafetyLevel {
+    fn from(s: RankSafetyLevel) -> Self {
+        match s {
+            RankSafetyLevel::Strict => Self::Strict,
+            RankSafetyLevel::Standard => Self::Standard,
+            RankSafetyLevel::Permissive => Self::Permissive,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct RankPreferencesInput {
+    /// "2160p" | "1080p" | "720p" | "480p"
+    pub max_resolution: String,
+    pub prefer_hdr: bool,
+    pub prefer_languages: Vec<String>,
+    pub safety_level: RankSafetyLevel,
+    pub min_seeders: u32,
+}
+
+impl TryFrom<RankPreferencesInput> for cinma_core::RankerPreferences {
+    type Error = CinmaError;
+
+    fn try_from(p: RankPreferencesInput) -> Result<Self, Self::Error> {
+        let max_resolution = match p.max_resolution.to_ascii_lowercase().as_str() {
+            "2160p" | "4k" => cinma_core::Resolution::Uhd2160,
+            "1080p" => cinma_core::Resolution::Fhd1080,
+            "720p" => cinma_core::Resolution::Hd720,
+            "480p" => cinma_core::Resolution::Sd480,
+            other => {
+                return Err(CinmaError::Invalid {
+                    message: format!("unknown max_resolution `{other}`"),
+                });
+            }
+        };
+        Ok(Self {
+            max_resolution,
+            prefer_hdr: p.prefer_hdr,
+            prefer_languages: p.prefer_languages,
+            safety_level: p.safety_level.into(),
+            min_seeders: p.min_seeders,
+        })
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct ScoreReasonInfo {
+    pub code: String,
+    pub detail: Option<String>,
+    pub points: i32,
+}
+
+impl From<cinma_core::ScoreReason> for ScoreReasonInfo {
+    fn from(r: cinma_core::ScoreReason) -> Self {
+        Self { code: r.code, detail: r.detail, points: r.points }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct ParsedStreamInfo {
+    pub resolution: String,
+    pub hdr_badges: Vec<String>,
+    pub codec: String,
+    pub audio: String,
+    pub source: String,
+    pub seeders: Option<u32>,
+    pub size_bytes: Option<u64>,
+    pub release_group: Option<String>,
+    pub languages: Vec<String>,
+    pub is_torrent: bool,
+    pub cached_debrid: bool,
+}
+
+impl From<cinma_core::ParsedStream> for ParsedStreamInfo {
+    fn from(p: cinma_core::ParsedStream) -> Self {
+        Self {
+            resolution: p.resolution.label().to_owned(),
+            hdr_badges: p.hdr.badges().into_iter().map(str::to_owned).collect(),
+            codec: p.codec.label().to_owned(),
+            audio: p.audio.label().to_owned(),
+            source: p.source.label().to_owned(),
+            seeders: p.seeders,
+            size_bytes: p.size_bytes,
+            release_group: p.release_group,
+            languages: p.languages,
+            is_torrent: p.is_torrent,
+            cached_debrid: p.cached_debrid,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct RankedStreamInfo {
+    pub stream: StreamInfo,
+    pub parsed: ParsedStreamInfo,
+    pub score: i32,
+    pub tier: RankTier,
+    pub reasons: Vec<ScoreReasonInfo>,
+}
+
+impl From<cinma_core::RankedStream> for RankedStreamInfo {
+    fn from(r: cinma_core::RankedStream) -> Self {
+        Self {
+            stream: cinma_core::StreamCandidate {
+                addon_name: r.addon_name,
+                stream: r.stream,
+            }
+            .into(),
+            parsed: r.parsed.into(),
+            score: r.score,
+            tier: r.tier.into(),
+            reasons: r.reasons.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct FilteredStreamInfo {
+    pub stream: StreamInfo,
+    pub reason: String,
+}
+
+impl From<cinma_core::FilteredOutStream> for FilteredStreamInfo {
+    fn from(f: cinma_core::FilteredOutStream) -> Self {
+        let reason = match f.reason {
+            cinma_core::FilterReason::FakeOrMalicious => "fake_or_malicious",
+            cinma_core::FilterReason::CamOrTelesync => "cam_or_telesync",
+            cinma_core::FilterReason::BelowMinSeeders => "below_min_seeders",
+            cinma_core::FilterReason::ExceedsMaxResolution => "exceeds_max_resolution",
+            cinma_core::FilterReason::NoPlayableSource => "no_playable_source",
+        };
+        Self {
+            stream: cinma_core::StreamCandidate {
+                addon_name: f.addon_name,
+                stream: f.stream,
+            }
+            .into(),
+            reason: reason.to_owned(),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct RankResultInfo {
+    pub ranked: Vec<RankedStreamInfo>,
+    pub filtered: Vec<FilteredStreamInfo>,
+}
+
+impl From<cinma_core::RankResult> for RankResultInfo {
+    fn from(r: cinma_core::RankResult) -> Self {
+        Self {
+            ranked: r.ranked.into_iter().map(Into::into).collect(),
+            filtered: r.filtered.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(uniffi::Enum)]
 pub enum PlaybackEndReason {
     Eof,
     Stopped,
@@ -665,6 +848,27 @@ impl CinmaCore {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    pub fn hardware_av1_supported(&self) -> bool {
+        self.inner.hardware_av1_supported()
+    }
+
+    pub fn rank_streams(
+        &self,
+        streams: Vec<StreamInfo>,
+        preferences: Option<RankPreferencesInput>,
+    ) -> Result<RankResultInfo, CinmaError> {
+        let prefs = preferences.map(TryInto::try_into).transpose()?;
+        let candidates = streams
+            .into_iter()
+            .map(|s| {
+                let stream: cinma_stremio::Stream = serde_json::from_str(&s.raw)
+                    .map_err(|e| CinmaError::Invalid { message: e.to_string() })?;
+                Ok(cinma_core::StreamCandidate { addon_name: s.addon_name, stream })
+            })
+            .collect::<Result<Vec<_>, CinmaError>>()?;
+        Ok(self.inner.rank_streams(candidates, prefs).into())
     }
 
     /// Creates a player. Blocking (loads libmpv on first use) — call off the

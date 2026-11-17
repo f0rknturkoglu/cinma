@@ -11,6 +11,7 @@ cinma-blobstore.workspace = true
 cinma-player.workspace = true
 cinma-stremio.workspace = true
 cinma-torrent.workspace = true
+cinma-ranker.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

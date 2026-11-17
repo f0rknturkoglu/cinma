@@ -9,6 +9,7 @@ members = [
     "crates/player-bridge",
     "crates/features/stremio",
     "crates/features/torrent",
+    "crates/features/ranker",
     "tools/uniffi-bindgen",
 ]
 default-members = [
@@ -20,6 +21,7 @@ default-members = [
     "crates/player-bridge",
     "crates/features/stremio",
     "crates/features/torrent",
+    "crates/features/ranker",
 ]
 
 [workspace.package]
@@ -36,6 +38,7 @@ cinma-queue = { path = "crates/queue" }
 cinma-player = { path = "crates/player-bridge" }
 cinma-stremio = { path = "crates/features/stremio" }
 cinma-torrent = { path = "crates/features/torrent" }
+cinma-ranker = { path = "crates/features/ranker" }
 uniffi = "0.32.2"
 rusqlite = "0.43.0"
 thiserror = "2.0.21"
