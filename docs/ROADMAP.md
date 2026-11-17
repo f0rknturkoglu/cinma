@@ -3,10 +3,10 @@
 For the next agent. **Phases 0–7 are built and were reviewed** (two rounds of fixes, 2026-11-17). This file says what is left: what the owner must test, what the owner must decide, and the next phases (UX polish, integrations, hardening). The original Phase 3–7 task lists are in git history (`git show a385643:docs/ROADMAP.md`).
 
 **Read first, in this order:**
-1. `CLAUDE.md`: the standing brief. §6 holds the targets; the relaxed values there are *proposed* and await the owner.
+1. `CLAUDE.md`: the standing brief. §6 holds the owner-approved targets (2026-11-17).
 2. `PROGRESS.md`: what exists, what was measured, and what each review fixed.
 3. `docs/RISKS.md`: open risks.
-4. `docs/adr/`: decisions. ADRs 0011–0016 are "proposed".
+4. `docs/adr/`: architecture decision records (`0010–0016` owner-reviewed 2026-11-17).
 5. This file.
 
 **Working rules (owner and brief):**
@@ -70,18 +70,18 @@ xcodebuild -project app/Cinma.xcodeproj -scheme Cinma -configuration Release -de
 
 ---
 
-## 3. Decisions the owner still has to make
+## 3. Owner decisions (2026-11-17 — settled)
 
-| # | Decision | Notes |
+| # | Decision | Outcome |
 |---|---|---|
-| 1 | **Relaxed targets** in CLAUDE.md §6 (Home with artwork ≤ 200 MB, idle CPU ≤ 0.5 %, 4K HDR < 20 % CPU, ≤ 700 MB) | The agent proposed the numbers; the owner only said "a little" |
-| 2 | **Accept ADRs 0011–0016**; confirm Phase 3 and ADR 0010 | 0010 and Phase 3 were stamped "accepted (owner)" by an earlier agent, unconfirmed |
-| 3 | **Streaming from RAM** instead of writing pieces to disk | SSD wear vs memory; an engine change (ADR 0009) |
-| 4 | **PiP:** floating mini-player panel (zero-copy) or frame-copy `AVSampleBufferDisplayLayer` | ADR 0011 §4 |
-| 5 | **Render path D1** (custom libmpv with macvk/libplacebo) for Dolby Vision and lower CPU | ADR 0004; depends on checklist item 8 |
-| 6 | **Post-torrent memory** (~113 MB, fragmentation): mimalloc/jemalloc trial or accept | PROGRESS Phase 1 risk 2 |
-| 7 | **Streaming cache:** keep "delete on stop", or bring back a quota with "keep watched" | The quota code exists but is dormant (ADR 0016) |
-| 8 | **Distribution:** stay ad-hoc signed, or get a Developer ID, notarize and bundle libmpv/FFmpeg | ADR 0015 |
+| 1 | **Relaxed targets** in `CLAUDE.md` §6 (`≤ 70 MB` empty, `≤ 200 MB` / `≤ 0.5 %` artwork idle, `< 20 %` / `≤ 700 MB` 4K HDR10) | **Approved.** Report if real media corpus samples exceed these bounds. |
+| 2 | **Phase 3 & ADRs `0010–0016`** | **Approved** with scope notes: `0010, 0011, 0012, 0014, 0016` accepted; `0013` §3 menu bar accepted (`§1–2` superseded by `0016`); `0015` backup + `libmpv` lookup accepted (packaging rewritten in Phase 10); `0011` PiP updated per item 4. |
+| 3 | **Torrent streaming storage** (disk vs RAM) | **Keep on disk** (delete on stop). 40–80 GB remux seeks need on-disk random access; measure real-world writes if needed later. |
+| 4 | **PiP method** (`ADR 0011` §4) | **Floating mini-player `NSPanel`** reusing `VideoLayer` (zero-copy, keeps HDR & subtitles), scheduled in Phase 8 or Phase 9. Skip frame-copy system PiP. |
+| 5 | **Render path D1** (`macvk` + custom `libmpv`/`libplacebo`, `ADR 0004`) | **Decide after owner corpus test** (DV/AV1/ASS). Stay on OpenGL until then; if DV P5 colours or CPU fail, build D1 in Phase 10 alongside bundled `libmpv`. |
+| 6 | **Post-torrent memory (~113 MB)** | **Trial `mimalloc` or `jemalloc` in Phase 10** with before/after measurements + ADR; accept status quo if gain is negligible. |
+| 7 | **Streaming cache quota & "keep watched"** | **Keep deleting streams on stop**; do not re-enable quota/keep-watched. Remove dormant code in Phase 10 (keep tables via migration). |
+| 8 | **Distribution & custom `libmpv`/FFmpeg bundling** (`ADR 0015`) | **Bundle minimal `libmpv` + FFmpeg inside the app in Phase 10** (avoid `brew upgrade` ABI breakage); ad-hoc signing suffices for personal use, drop `disable-library-validation` once libraries share one signing identity (Developer ID / notarization only if distributed externally). |
 
 ---
 
@@ -249,7 +249,7 @@ Each one is a new `Feature` (off by default, never constructed when off) or a pr
 | 10 | **Discord Rich Presence** | In-process IPC over Discord's local socket; off by default |
 | 11 | **VPN interface binding / kill switch** for torrent traffic | librqbit `bind_device_name` |
 | 12 | **App Intents / Shortcuts** (play the next episode, open a title) and Spotlight for the library | Optional |
-| 13 | **PiP / mini-player** | After decision §3 item 4 |
+| 13 | **PiP mini-player (`NSPanel`)** | Reuses `VideoLayer` (zero-copy, keeps HDR & subtitles; may also land in Phase 8) |
 
 Out of scope: Usenet.
 
@@ -257,9 +257,9 @@ Out of scope: Usenet.
 
 ## 9. Phase 10 — Hardening and release
 
-- **Real-swarm tuning** from checklist item 2; post-torrent memory (§3 item 6); idle CPU after torrent playback (~0.13 %, tokio/hyper timers suspected).
-- **Custom minimal libmpv/FFmpeg build** bundled in `Contents/Frameworks` (ADR 0005/0015). This is the natural moment for render path D1, Dolby Vision and lower 4K CPU.
-- **Signing:** hardened runtime; drop `disable-library-validation` once everything is signed with one identity; notarization if distributed.
+- **Real-swarm tuning** from checklist item 2; **post-torrent memory trial** (`mimalloc` vs `jemalloc` with before/after measurements + ADR; accept current if negligible); idle CPU after torrent playback (~0.13 %, tokio/hyper timers suspected).
+- **Minimal bundled `libmpv` + FFmpeg** in `Contents/Frameworks` (`ADR 0015`) so Homebrew upgrades cannot break ABI; pair with render path D1 (`macvk` + `libplacebo`) if owner corpus tests show DV P5 colour or CPU issues.
+- **Signing & code hygiene:** drop `disable-library-validation` as soon as bundled libraries share one signing identity (ad-hoc for personal use; Developer ID + notarization + hardened runtime only if distributed externally); **remove dormant disk-quota & `keep_watched` code** (leave schema tables intact via migration).
 - **Crash safety sweep:** kill -9 tests for yt-dlp mux, casting and restore, like the existing blob/queue/HTTP ones.
 - **Competitor comparison** (§2 of the brief) with `tools/measure.sh` against Stremio v5, IINA and Flux on the same Mac, written into PROGRESS.
 - **Optional local-only diagnostics:** a "Copy diagnostics" button (versions, recent errors). Never sent anywhere.

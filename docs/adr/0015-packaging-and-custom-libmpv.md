@@ -1,6 +1,6 @@
 # ADR 0015 — Packaging, Custom libmpv Bundle Precedence, and SQLite Backup
 
-**Status:** proposed (implemented in Phase 7; awaiting owner review)
+**Status:** partially accepted (owner, 2026-11-17: §1 `libmpv` lookup order and §2 backup/restore accepted; packaging/signing to be rewritten in Phase 10 with minimal bundled `libmpv`+FFmpeg, dropping `disable-library-validation`)
 
 ## 1. `libmpv` Lookup Precedence (ADR 0005 completion)
 - `crates/player-bridge/src/sys.rs` checks `CINMA_LIBMPV` → `@executable_path/../Frameworks/libmpv.2.dylib` (resolved via `std::env::current_exe()`) → `/opt/homebrew/lib/libmpv.2.dylib` → `/usr/local/lib/libmpv.2.dylib`.

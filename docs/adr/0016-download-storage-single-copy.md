@@ -1,6 +1,6 @@
 # ADR 0016: Download storage — one copy, finished files in the user's folders
 
-**Status:** proposed (implemented after the Phase 3–7 review; owner asked for "minimum SSD wear, maximum speed and durability")
+**Status:** accepted (owner, 2026-11-17; supersedes ADR 0013 §1–2, dormant quota code removed in Phase 10)
 
 ## Problem
 The Phase 5 build wrote most downloads twice or more:

@@ -1,10 +1,10 @@
 # PROGRESS
 
-## Status: Phases 0–7 built; review fixes done (2026-11-17). Owner sign-off on Phases 4–7 and ADRs 0011–0016 is still pending.
+## Status: Phases 0–7 built and owner-approved (2026-11-17). ADRs 0010, 0011, 0012, 0014, 0016 accepted; ADR 0013 §3 accepted (disk quota superseded by 0016); ADR 0015 backup/libmpv lookup accepted (packaging deferred to Phase 10); CLAUDE.md §6 targets owner-approved.
 
 **Next:** see `docs/ROADMAP.md`:
 - §2: the owner's test checklist;
-- §3: decisions still open;
+- §3 & §6: recorded owner decisions (2026-11-17);
 - §7–9: Phase 8 (UI/UX polish), Phase 9 (integrations and add-ons), Phase 10 (hardening and release).
 
 Two things are still unmeasured: real-swarm torrent TTFF/seek (the agent sandbox has no P2P) and real Chromecast/DLNA/Trakt round trips. See "Open items" below.
@@ -49,15 +49,12 @@ Commits `8c4bda8`…`356b7c6`. 118 Rust tests pass, clippy is clean, and the Rel
 
 Correction: the Phase 4 note below claims 7.3 % CPU for 4K HDR10. That figure did not reproduce; the measured value is ~17 %, about the same as Phase 1.
 
-### Open items (not done; owner decisions or owner-side tests)
-1. **Real-swarm torrent TTFF/seek.** Run `tools/measure-playback.sh <addon manifest url> movie <imdb id> 5` on a normal network.
+### Remaining items (for Phase 8–10 / owner-side tests)
+1. **Real-swarm torrent TTFF/seek.** Run `tools/measure-playback.sh <addon manifest url> movie <imdb id> 5` on a normal network (Phase 10 tuning if needed).
 2. **Real Chromecast/DLNA and Trakt/Simkl/AniList/MAL round trips.** The code is tested only against local mocks.
-3. **Media corpus.** Dolby Vision P5/P8/P7, AV1, ASS-heavy and multi-audio samples are missing (`tools/media-corpus.md`), so Phase 4's corpus checklist has not been run.
-4. **Streaming writes torrent pieces to disk** (librqbit storage, ADR 0009). They are deleted on stop, but streaming from RAM only would be an engine change. This is the owner's decision.
-5. **Memory after torrent playback** (~113 MB): deferred by the owner.
-6. **PiP:** the spike is done (ADR 0011). It needs a choice between a floating mini-player panel and a frame-copy PiP.
-7. **ADRs 0011–0016 are "proposed".** Phase 3 and ADR 0010 are marked "accepted (owner)" by the previous agent. The owner has not confirmed this.
-8. **Dormant code:** the disk quota and "keep watched" no longer have anything to manage (ADR 0016). Their UI is hidden.
+3. **Media corpus.** Owner to test Dolby Vision P5/P8/P7, AV1, ASS-heavy and multi-audio samples (`tools/media-corpus.md`). If DV P5 or CPU exceeds limits, enable D1 (`macvk`) with custom `libmpv` in Phase 10.
+4. **PiP mini-player (`NSPanel`):** zero-copy always-on-top mini-player selected by owner (`ADR 0011`), scheduled in Phase 8 or Phase 9.
+5. **Phase 10 hardening decisions recorded:** test `mimalloc`/`jemalloc` for post-torrent fragmentation (~113 MB), embed minimal `libmpv`+FFmpeg in `Contents/Frameworks` & drop `disable-library-validation`, and remove dormant disk-quota / `keep_watched` code (keep schema tables via migration).
 
 ## Review fixes, round 1 (2026-11-17): critical bugs
 An owner-requested review of Phases 3–7 found three critical bugs; all three are fixed and verified in the app.

@@ -1,6 +1,6 @@
 # ADR 0012 — Unified download engines: Segmented HTTP/1.1, Torrent download mode, and yt-dlp in-process muxing
 
-**Status:** proposed (implemented in Phase 5; awaiting owner review)
+**Status:** accepted (owner, 2026-11-17)
 
 ## 1. Segmented HTTP/1.1 engine (`crates/features/http`)
 - **HTTP/1.1 multi-connection client:** Uses a dedicated `reqwest::Client` built with `.http1_only()` (`CLAUDE.md` §5.4 — HTTP/2 multiplexing defeats parallel range streams), per-host concurrency limit (default 4 connections/host), and clean cancellation via `CancellationToken`.

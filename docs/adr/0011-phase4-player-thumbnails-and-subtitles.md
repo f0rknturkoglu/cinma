@@ -1,6 +1,6 @@
 # ADR 0011 — Phase 4: Seek-bar thumbnails, dedicated GL rendering, subtitle pipeline, and PiP spike
 
-**Status:** proposed (implemented in Phase 4; awaiting owner review)
+**Status:** accepted (owner, 2026-11-17; PiP updated per owner decision §4)
 
 Phase 4 completes playback (`CLAUDE.md` §5.2, §5.8, §5.9; `docs/ROADMAP.md` §7) while keeping the launch (< 250 ms) and idle (<= 40 MB) budgets intact.
 
@@ -25,7 +25,6 @@ Phase 4 completes playback (`CLAUDE.md` §5.2, §5.8, §5.9; `docs/ROADMAP.md` �
 - **Encoding & styling:** Inspect subtitle bytes for UTF-8 BOM, UTF-16 LE/BE BOM, valid UTF-8, or legacy single-byte encodings using `encoding_rs` — explicitly detecting Turkish `windows-1254` / `ISO-8859-9` and converting SRT/VTT/SUB to cached UTF-8 files under `data_dir/subtitles/`. ASS/SSA files keep their styling untouched unless the user explicitly enables `sub-ass-override` in settings.
 - **Profile preferences:** Stored in existing `profile_setting` SQLite table (`0002_schema.sql`), including language priority lists, dual-subtitle second language, SRT style overrides, custom font, and per-video `sub_delay` / `audio_delay` offsets.
 
-## 4. PiP feasibility spike (before building full PiP)
-- `AVPictureInPictureController` on macOS requires either an `AVPlayerLayer` or an `AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer:playbackDelegate:)` backed by `AVSampleBufferDisplayLayer`.
-- Because our proven render path (`ADR 0004`) renders libmpv + libass via OpenGL into a `CAOpenGLLayer`, `AVPictureInPictureController` cannot attach directly without a second frame-export/copy pipeline (`CVPixelBuffer` → `CMSampleBuffer` enqueueing into a hidden `AVSampleBufferDisplayLayer`), which adds per-frame copy cost and breaks PQ/EDR/libass parity unless synced carefully.
-- Alternatively, an AppKit always-on-top borderless mini-player `NSPanel` (floating window level, locked aspect ratio, corner resize) reuses our existing `VideoLayer` with zero frame copy and preserves subtitles/HDR. Full implementation awaits owner choice after Phase 4 report.
+## 4. PiP decision (updated 2026-11-17, owner)
+- `AVPictureInPictureController` on macOS requires either an `AVPlayerLayer` or an `AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer:playbackDelegate:)` backed by `AVSampleBufferDisplayLayer`, which would add a per-frame `CVPixelBuffer` → `CMSampleBuffer` copy pipeline over our OpenGL `CAOpenGLLayer` (`ADR 0004`).
+- **Owner decision:** Implement PiP as an AppKit always-on-top borderless mini-player `NSPanel` reusing `VideoLayer` with zero frame copy (preserving HDR and subtitles with no extra CPU cost), scheduled in Phase 8 or Phase 9. Do not build the frame-copy system PiP path.

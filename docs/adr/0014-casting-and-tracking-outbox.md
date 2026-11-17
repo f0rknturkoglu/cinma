@@ -1,6 +1,6 @@
 # ADR 0014 — Casting (Chromecast + DLNA) and Tracking Outbox + Profile PIN KDF
 
-**Status:** proposed (implemented in Phases 6–7; awaiting owner review)
+**Status:** accepted (owner, 2026-11-17)
 
 ## 1. On-demand LAN HTTP server for Casting (`crates/features/casting`)
 - No persistent HTTP daemon is ever started (`CLAUDE.md` §1.3). An in-process `tokio::net::TcpListener` (`http1`) spins up **only** while an active cast session runs, binds to the LAN interface with an ephemeral port and a per-session random URL path token, serves HTTP `Range` requests (`206 Partial Content`) over an `Arc<dyn ByteSource>` or local file, and shuts down immediately on `stop()`.

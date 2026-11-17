@@ -1,6 +1,6 @@
 # ADR 0013 — Disk & seeding policy, memory trim, and menu bar extra
 
-**Status:** proposed (implemented in Phase 5; awaiting owner review)
+**Status:** accepted for §3 (menu bar extra); §1–2 superseded by ADR 0016 (owner, 2026-11-17 — dormant quota / keep-watched code to be removed in Phase 10)
 
 ## 1. Migration `0005_disk_policy.sql`
 - `disk_entry`:
