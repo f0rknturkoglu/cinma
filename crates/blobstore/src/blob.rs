@@ -82,7 +82,9 @@ pub struct Blob {
     ranges: Mutex<RangeSet>,
     notify: Notify,
     listener: Mutex<Option<Arc<dyn PriorityListener>>>,
-    checkpoint_lock: Mutex<()>,
+    /// Held while writing the sidecar; `true` once the blob was removed, so a
+    /// late checkpoint can't resurrect deleted files.
+    checkpoint_lock: Mutex<bool>,
 }
 
 impl Blob {
@@ -137,7 +139,10 @@ impl Blob {
     /// Makes everything marked so far durable. Returns the durable byte count,
     /// which is what may be recorded elsewhere (e.g. a download row).
     pub fn checkpoint(&self) -> io::Result<u64> {
-        let _guard = self.checkpoint_lock.lock().map_err(|_| io::Error::other("poisoned"))?;
+        let removed = self.checkpoint_lock.lock().map_err(|_| io::Error::other("poisoned"))?;
+        if *removed {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "blob was removed"));
+        }
         // Snapshot first: everything in it was written before being marked.
         let snapshot = self.available();
         self.file.sync_data()?;
@@ -268,7 +273,16 @@ impl BlobStore {
     }
 
     pub fn remove(&self, id: &BlobId) -> io::Result<()> {
-        self.registry()?.remove(id);
+        let live = self.registry()?.remove(id).and_then(|w| w.upgrade());
+        // Block concurrent checkpoints and stop later ones from rewriting files.
+        let _removed = match &live {
+            Some(blob) => {
+                let mut guard = blob.checkpoint_lock.lock().map_err(|_| io::Error::other("poisoned"))?;
+                *guard = true;
+                Some(guard)
+            }
+            None => None,
+        };
         let (data_path, meta_path) = self.paths(id);
         for path in [meta_path, data_path] {
             match fs::remove_file(path) {
@@ -304,7 +318,7 @@ impl BlobStore {
             ranges: Mutex::new(ranges),
             notify: Notify::new(),
             listener: Mutex::new(None),
-            checkpoint_lock: Mutex::new(()),
+            checkpoint_lock: Mutex::new(false),
         }
     }
 
@@ -428,6 +442,8 @@ mod tests {
         assert_eq!(store.ids().unwrap(), vec![id.clone()]);
         assert!(Arc::ptr_eq(&blob, &store.open_blob(&id).unwrap()), "one live blob per id");
         store.remove(&id).unwrap();
+        assert!(store.ids().unwrap().is_empty());
+        assert!(blob.checkpoint().is_err(), "a removed blob can't be checkpointed back");
         assert!(store.ids().unwrap().is_empty());
     }
 

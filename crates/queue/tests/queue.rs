@@ -151,6 +151,24 @@ async fn rejects_kinds_without_engine_and_other_profiles() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn removing_an_active_download_deletes_all_its_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let (queue, _db, _store) = setup(dir.path(), 1);
+    queue
+        .register_engine(DownloadKind::Http, Arc::new(FakeEngine { delay: Duration::from_millis(5), report_every: 1, fail: false }))
+        .unwrap();
+    // A listener that calls back into the queue must not deadlock.
+    let reentrant = queue.clone();
+    queue.set_change_listener(Some(Arc::new(move |_| { let _ = reentrant.active_count(); }))).unwrap();
+    let id = queue.add(&new_download(1, "a", 0)).unwrap();
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    queue.remove(1, id, true).unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await; // engine notices cancel and checkpoints
+    let leftovers: Vec<_> = std::fs::read_dir(dir.path().join("blobs")).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert!(leftovers.is_empty(), "orphaned files: {leftovers:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn restart_requeues_active_and_resumes_from_blob() {
     let dir = tempfile::tempdir().unwrap();
     let id = {
@@ -215,8 +233,13 @@ fn kill_9_never_leaves_a_row_ahead_of_its_blob() {
         let stdout = child.stdout.take().unwrap();
         let mut lines = std::io::BufRead::lines(std::io::BufReader::new(stdout));
         assert!(lines.any(|l| l.is_ok_and(|l| l.trim() == "ready")), "child started");
-        // Wait (reading through a separate connection) until progress moved.
-        let last = 0;
+        // Wait (reading through a separate connection) until progress moved
+        // past where the previous round left it.
+        let last = Database::open(&dir.path().join("db.sqlite3"))
+            .ok()
+            .and_then(|db| db.downloads(1).ok())
+            .and_then(|rows| rows.first().map(|r| r.bytes_done))
+            .unwrap_or(0);
         for _ in 0..500 {
             std::thread::sleep(Duration::from_millis(10));
             if let Ok(db) = Database::open(&dir.path().join("db.sqlite3"))

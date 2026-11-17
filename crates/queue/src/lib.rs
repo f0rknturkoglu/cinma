@@ -196,10 +196,20 @@ impl Queue {
 
     /// Starts queued downloads while there is capacity and an engine for them.
     fn schedule(&self) -> Result<(), QueueError> {
+        let started = self.start_ready()?;
+        // Notify outside the lock: listeners may call back into the queue.
+        for id in started {
+            self.changed(id);
+        }
+        Ok(())
+    }
+
+    fn start_ready(&self) -> Result<Vec<i64>, QueueError> {
+        let mut started = Vec::new();
         let mut running = self.inner.running.lock().map_err(|_| QueueError::Poisoned)?;
         let free = self.inner.max_active.saturating_sub(running.len());
         if free == 0 {
-            return Ok(());
+            return Ok(started);
         }
         let engines = self.inner.engines.lock().map_err(|_| QueueError::Poisoned)?.clone();
         let candidates = self.db()?.next_queued_downloads(free + running.len())?;
@@ -227,9 +237,9 @@ impl Queue {
                 let result = engine.run(job).await;
                 queue.finish(id, generation, &cancel, result);
             });
-            self.changed(id);
+            started.push(id);
         }
-        Ok(())
+        Ok(started)
     }
 
     fn finish(&self, id: i64, generation: u64, cancel: &CancellationToken, result: Result<(), String>) {

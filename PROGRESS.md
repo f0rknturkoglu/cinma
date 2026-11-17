@@ -9,7 +9,7 @@
   - `busy_timeout` 5 s.
 - **Settings and feature toggles**: `addons` and `torrent`, stored in `app_setting`.
   - A disabled feature is never constructed: tested that no runtime, HTTP client or torrent session gets created.
-  - Turning torrent off during playback stops the session; the playing torrent stops receiving data.
+  - Turning torrent off during playback stops the session, so the playing torrent stops receiving data. This is unit-tested in Rust; there's no UI toggle yet, so it hasn't been run in the app.
 - **BlobStore** (ADR 0009):
   - sparse files plus a durable ranges sidecar;
   - write and mark-available are separate steps;
@@ -28,7 +28,10 @@
 - **Command registry**: every menu item, the player keys and the `stremio://` deep link go through command ids.
   - Bindings: defaults plus user overrides (`keybinding.*`); conflicts within a context are rejected.
   - Launch builds the menu from static defaults (no DB) and rebuilds with the user's bindings once the core is open.
-  - Verified in the app: menu, player keys (← / → / Esc), and the `stremio://` link installing Cinemeta.
+  - Verified in the app:
+    - the menu, rebuilt from the registry (listed via accessibility);
+    - player keys ← / → / Esc resolving through the registry;
+    - a `stremio://` link installing Cinemeta, driven through the app's URL handler by a dev hook. macOS's own open-URL path is not exercised.
 - **Core event stream**: `AddonsChanged` and `KeyBindingsChanged`, the only two with consumers. A Swift listener refreshes the addon label and the menu.
 - `stremio://` URL scheme registered in Info.plist, so macOS may offer Cinma for Stremio links.
 
@@ -37,8 +40,14 @@
 |---|---|---|
 | Launch, first frame (median of 5) | 154 ms | < 250 ms ✅ |
 | Idle footprint | 25 MB | ≤ 40 MB ✅ |
-| Idle CPU | ~0 % (≤ 0.07 %, the `ps` resolution) | ~0 % ✅ |
-| Tests | 59 Rust tests (incl. 2 kill -9 suites), clippy clean, Swift build warning-free | — |
+| Idle CPU, before any playback | ~0 % (≤ 0.07 %, the `ps` resolution) | ~0 % ✅ |
+| Idle CPU, after a torrent playback is closed | ~0.13 % (0.04 s CPU in 30 s, 15 s after close); cause not identified (tokio/hyper timers suspected) | ~0 % ⚠️ |
+| Tests | 61 Rust tests (incl. 2 kill -9 suites), clippy clean, Swift build warning-free | — |
+
+### Re-verified after the refactor
+- Torrent slice end to end on loopback: TTFF 205 ms, seek 1.3 s; streamed data cleared on close.
+- Run on a copy of a data dir written by the Phase 1 build: v1 → v2 migration kept the addon and enabled it for profile 1.
+- Debug build: launches and plays a torrent; Info.plist merge OK.
 
 ### Open decisions for the owner
 1. ADR 0008 schema (proposed).
