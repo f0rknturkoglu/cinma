@@ -42,7 +42,7 @@
 | Idle footprint | 25 MB | ≤ 40 MB ✅ |
 | Idle CPU, before any playback | ~0 % (≤ 0.07 %, the `ps` resolution) | ~0 % ✅ |
 | Idle CPU, after a torrent playback is closed | ~0.13 % (0.04 s CPU in 30 s, 15 s after close); cause not identified (tokio/hyper timers suspected) | ~0 % ⚠️ |
-| Tests | 61 Rust tests (incl. 2 kill -9 suites), clippy clean, Swift build warning-free | — |
+| Tests | 60 Rust tests (incl. 2 kill -9 suites), clippy clean, Swift build warning-free | — |
 
 ### Re-verified after the refactor
 - Torrent slice end to end on loopback: TTFF 205 ms, seek 1.3 s; streamed data cleared on close.
