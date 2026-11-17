@@ -472,10 +472,13 @@ version = "0.1.0"
 dependencies = [
  "cinma-blobstore",
  "cinma-db",
+ "cinma-metadata",
  "cinma-player",
  "cinma-ranker",
  "cinma-stremio",
  "cinma-torrent",
+ "reqwest",
+ "security-framework",
  "serde",
  "serde_json",
  "tempfile",
@@ -502,6 +505,20 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "uniffi",
+]
+
+[[package]]
+name = "cinma-metadata"
+version = "0.1.0"
+dependencies = [
+ "cinma-db",
+ "cinma-stremio",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
 ]
 
 [[package]]

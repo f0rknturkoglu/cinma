@@ -6,6 +6,14 @@ use crate::{Database, DbError};
 
 pub type ProfileId = i64;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileRow {
+    pub id: ProfileId,
+    pub name: String,
+    pub avatar: Option<String>,
+    pub has_pin: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddonRow {
     pub id: String,
@@ -160,6 +168,21 @@ impl Database {
 
     // ---- profiles ----
 
+    pub fn profiles(&self) -> Result<Vec<ProfileRow>, DbError> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id, name, avatar, pin_hash IS NOT NULL FROM profile ORDER BY id")?;
+        let rows = stmt.query_map([], |r| {
+            Ok(ProfileRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                avatar: r.get(2)?,
+                has_pin: r.get::<_, i64>(3)? != 0,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn profile_exists(&self, profile: ProfileId) -> Result<bool, DbError> {
         Ok(self
             .conn
@@ -169,8 +192,44 @@ impl Database {
     }
 
     pub fn create_profile(&self, name: &str) -> Result<ProfileId, DbError> {
-        self.conn.execute("INSERT INTO profile (name) VALUES (?1)", [name])?;
+        self.create_profile_with_avatar(name, None)
+    }
+
+    pub fn create_profile_with_avatar(
+        &self,
+        name: &str,
+        avatar: Option<&str>,
+    ) -> Result<ProfileId, DbError> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(DbError::Invalid("profile name cannot be empty".into()));
+        }
+        self.conn.execute(
+            "INSERT INTO profile (name, avatar) VALUES (?1, ?2)",
+            params![trimmed, avatar],
+        )?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn rename_profile(&self, id: ProfileId, name: &str) -> Result<(), DbError> {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(DbError::Invalid("profile name cannot be empty".into()));
+        }
+        self.conn
+            .execute("UPDATE profile SET name = ?2 WHERE id = ?1", params![id, trimmed])?;
+        Ok(())
+    }
+
+    pub fn delete_profile(&self, id: ProfileId) -> Result<(), DbError> {
+        let count: i64 =
+            self.conn
+                .query_row("SELECT count(*) FROM profile", [], |r| r.get(0))?;
+        if count <= 1 {
+            return Err(DbError::Invalid("cannot delete the last profile".into()));
+        }
+        self.conn.execute("DELETE FROM profile WHERE id = ?1", [id])?;
+        Ok(())
     }
 
     // ---- addons ----
@@ -234,6 +293,19 @@ impl Database {
     /// Uninstalls globally (all profiles).
     pub fn remove_addon(&self, id: &str) -> Result<(), DbError> {
         self.conn.execute("DELETE FROM addon WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Updates addon `position` in user order.
+    pub fn reorder_addons(&mut self, ordered_ids: &[String]) -> Result<(), DbError> {
+        let tx = self.conn.transaction()?;
+        for (pos, id) in ordered_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE addon SET position = ?2 WHERE id = ?1",
+                params![id, pos as i64],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 

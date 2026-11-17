@@ -7,10 +7,14 @@ use crate::{Core, CoreError};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoreEvent {
-    /// Installed/enabled addons changed (install, deep link, toggle).
+    /// Installed/enabled addons changed (install, deep link, toggle, reorder).
     AddonsChanged,
     /// A key binding was changed; menus should refresh their shortcuts.
     KeyBindingsChanged,
+    /// Active profile or profile list changed.
+    ProfileChanged,
+    /// Library or watch progress changed.
+    LibraryChanged,
 }
 
 pub trait CoreEventListener: Send + Sync {

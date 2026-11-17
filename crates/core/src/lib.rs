@@ -6,14 +6,19 @@
 mod addons;
 mod commands;
 mod events;
+mod keychain;
+mod library;
+mod metadata;
 mod playback;
 mod settings;
+mod trailers;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use cinma_db::{Database, DbError, ProfileId};
+use cinma_metadata::TmdbClient;
 use cinma_stremio::AddonClient;
 use cinma_torrent::{RqbitEngine, TorrentConfig};
 
@@ -21,6 +26,8 @@ pub use addons::{
     AddonCatalog, CatalogBatch, CatalogBatchListener, CatalogPage, InstalledAddon, MetaResult,
     StreamBatch, StreamBatchListener, StreamCandidate,
 };
+pub use cinma_db::{LibraryItemRow, ProfileRow, WatchProgressRow};
+pub use cinma_metadata::UpcomingEpisode;
 pub use cinma_ranker::{
     FilterReason, FilteredOutStream, MachineCapabilities, ParsedStream, RankResult, RankedStream,
     RankerPreferences, Resolution, SafetyLevel, ScoreReason, StreamTier,
@@ -30,7 +37,10 @@ pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
 };
 pub use events::{CoreEvent, CoreEventListener};
+pub use library::WatchProgressInput;
+pub use metadata::RichMetaResult;
 pub use settings::Feature;
+pub use trailers::YtdlpStatus;
 pub use cinma_player::{EndReason, PlayerEvent, PlayerEvents, UpdateCallback};
 pub use playback::Playback;
 
@@ -52,6 +62,8 @@ pub enum CoreError {
     Torrent(#[from] cinma_torrent::TorrentError),
     #[error("player: {0}")]
     Player(#[from] cinma_player::PlayerError),
+    #[error("metadata: {0}")]
+    Metadata(#[from] cinma_metadata::MetadataError),
     #[error("{0}")]
     Invalid(String),
     #[error("feature `{0}` is turned off")]
@@ -67,6 +79,8 @@ pub struct Core {
     db: Mutex<Database>,
     runtime: OnceLock<tokio::runtime::Runtime>,
     http: Mutex<Option<AddonClient>>,
+    tmdb: Mutex<Option<TmdbClient>>,
+    tmdb_key_override: Mutex<Option<Option<String>>>,
     torrents: Mutex<Option<Arc<RqbitEngine>>>,
     listeners: Mutex<Vec<Arc<dyn CoreEventListener>>>,
 }
@@ -82,6 +96,8 @@ impl Core {
             db: Mutex::new(db),
             runtime: OnceLock::new(),
             http: Mutex::new(None),
+            tmdb: Mutex::new(None),
+            tmdb_key_override: Mutex::new(None),
             torrents: Mutex::new(None),
             listeners: Mutex::new(Vec::new()),
         }))

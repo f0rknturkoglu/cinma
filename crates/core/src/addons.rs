@@ -135,6 +135,15 @@ impl Core {
         Ok(())
     }
 
+    pub fn reorder_addons(&self, ordered_ids: Vec<String>) -> Result<(), CoreError> {
+        self.db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .reorder_addons(&ordered_ids)?;
+        self.emit(CoreEvent::AddonsChanged);
+        Ok(())
+    }
+
     /// Catalogs declared by enabled addons in user order.
     pub fn catalogs(&self) -> Result<Vec<AddonCatalog>, CoreError> {
         self.require(Feature::Addons)?;

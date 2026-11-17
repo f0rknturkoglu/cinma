@@ -32,7 +32,7 @@ impl From<CoreError> for CinmaError {
         match error {
             CoreError::Database(_) => Self::Database { message },
             CoreError::Io(_) => Self::Io { message },
-            CoreError::Addon(_) => Self::Network { message },
+            CoreError::Addon(_) | CoreError::Metadata(_) => Self::Network { message },
             CoreError::Torrent(_) => Self::Torrent { message },
             CoreError::Player(_) => Self::Player { message },
             CoreError::Invalid(_) | CoreError::FeatureDisabled(_) => Self::Invalid { message },
@@ -88,6 +88,8 @@ pub fn parse_deep_link(url: String) -> Option<CommandInvocation> {
 pub enum CoreEventKind {
     AddonsChanged,
     KeyBindingsChanged,
+    ProfileChanged,
+    LibraryChanged,
 }
 
 /// Implemented in Swift. Called on whichever thread raised the event.
@@ -103,12 +105,162 @@ impl cinma_core::CoreEventListener for EventAdapter {
         self.0.on_event(match event {
             CoreEvent::AddonsChanged => CoreEventKind::AddonsChanged,
             CoreEvent::KeyBindingsChanged => CoreEventKind::KeyBindingsChanged,
+            CoreEvent::ProfileChanged => CoreEventKind::ProfileChanged,
+            CoreEvent::LibraryChanged => CoreEventKind::LibraryChanged,
         });
     }
 }
 
 fn feature(name: &str) -> Result<Feature, CinmaError> {
     Feature::from_name(name).ok_or_else(|| CinmaError::Invalid { message: format!("unknown feature {name}") })
+}
+
+#[derive(uniffi::Record)]
+pub struct ProfileInfo {
+    pub id: i64,
+    pub name: String,
+    pub avatar: Option<String>,
+    pub has_pin: bool,
+}
+
+impl From<cinma_core::ProfileRow> for ProfileInfo {
+    fn from(p: cinma_core::ProfileRow) -> Self {
+        Self { id: p.id, name: p.name, avatar: p.avatar, has_pin: p.has_pin }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct LibraryItemInfo {
+    pub meta_id: String,
+    pub media_type: String,
+    pub name: String,
+    pub poster: Option<String>,
+    pub added_at: i64,
+}
+
+impl From<cinma_core::LibraryItemRow> for LibraryItemInfo {
+    fn from(r: cinma_core::LibraryItemRow) -> Self {
+        Self {
+            meta_id: r.meta_id,
+            media_type: r.media_type,
+            name: r.name,
+            poster: r.poster,
+            added_at: r.added_at,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct WatchProgressInfo {
+    pub video_id: String,
+    pub meta_id: String,
+    pub media_type: String,
+    pub title: String,
+    pub artwork: Option<String>,
+    pub season: Option<i64>,
+    pub episode: Option<i64>,
+    pub position_s: f64,
+    pub duration_s: f64,
+    pub watched: bool,
+    pub updated_at: i64,
+}
+
+impl From<cinma_core::WatchProgressRow> for WatchProgressInfo {
+    fn from(r: cinma_core::WatchProgressRow) -> Self {
+        Self {
+            video_id: r.video_id,
+            meta_id: r.meta_id,
+            media_type: r.media_type,
+            title: r.title,
+            artwork: r.artwork,
+            season: r.season,
+            episode: r.episode,
+            position_s: r.position_s,
+            duration_s: r.duration_s,
+            watched: r.watched,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct WatchProgressInputFfi {
+    pub video_id: String,
+    pub meta_id: String,
+    pub media_type: String,
+    pub title: String,
+    pub artwork: Option<String>,
+    pub season: Option<i64>,
+    pub episode: Option<i64>,
+    pub position_s: f64,
+    pub duration_s: f64,
+}
+
+#[derive(uniffi::Record)]
+pub struct UpcomingEpisodeInfo {
+    pub show_id: String,
+    pub show_name: String,
+    pub show_poster: Option<String>,
+    pub season: u32,
+    pub episode: u32,
+    pub episode_name: String,
+    pub air_date: String,
+    pub overview: Option<String>,
+    pub still: Option<String>,
+}
+
+impl From<cinma_core::UpcomingEpisode> for UpcomingEpisodeInfo {
+    fn from(u: cinma_core::UpcomingEpisode) -> Self {
+        Self {
+            show_id: u.show_id,
+            show_name: u.show_name,
+            show_poster: u.show_poster,
+            season: u.season,
+            episode: u.episode,
+            episode_name: u.episode_name,
+            air_date: u.air_date,
+            overview: u.overview,
+            still: u.still,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct RichMetaInfo {
+    pub source: String,
+    pub meta: MetaInfo,
+    pub season_numbers: Vec<u32>,
+    pub next_episode: Option<UpcomingEpisodeInfo>,
+}
+
+impl From<cinma_core::RichMetaResult> for RichMetaInfo {
+    fn from(r: cinma_core::RichMetaResult) -> Self {
+        let source = r.source.clone();
+        let meta_res = cinma_core::MetaResult {
+            addon_id: r.source,
+            addon_name: source.clone(),
+            meta: r.meta,
+        };
+        Self {
+            source,
+            meta: meta_res.into(),
+            season_numbers: r.season_numbers,
+            next_episode: r.next_episode.map(Into::into),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct YtdlpStatusInfo {
+    pub available: bool,
+    pub path: Option<String>,
+    pub managed: bool,
+}
+
+impl From<cinma_core::YtdlpStatus> for YtdlpStatusInfo {
+    fn from(s: cinma_core::YtdlpStatus) -> Self {
+        Self { available: s.available, path: s.path, managed: s.managed }
+    }
 }
 
 #[derive(uniffi::Record)]
@@ -732,6 +884,205 @@ impl CinmaCore {
     /// Enables/disables an installed addon for the active profile.
     pub fn set_addon_enabled(&self, id: String, enabled: bool) -> Result<(), CinmaError> {
         Ok(self.inner.set_addon_enabled(&id, enabled)?)
+    }
+
+    pub fn reorder_addons(&self, ordered_ids: Vec<String>) -> Result<(), CinmaError> {
+        Ok(self.inner.reorder_addons(ordered_ids)?)
+    }
+
+    pub fn onboarding_completed(&self) -> Result<bool, CinmaError> {
+        Ok(self.inner.onboarding_completed()?)
+    }
+
+    pub fn set_onboarding_completed(&self, completed: bool) -> Result<(), CinmaError> {
+        Ok(self.inner.set_onboarding_completed(completed)?)
+    }
+
+    pub fn profiles(&self) -> Result<Vec<ProfileInfo>, CinmaError> {
+        Ok(self.inner.profiles()?.into_iter().map(Into::into).collect())
+    }
+
+    pub fn active_profile_id(&self) -> Result<i64, CinmaError> {
+        Ok(self.inner.active_profile()?)
+    }
+
+    pub fn set_active_profile(&self, id: i64) -> Result<(), CinmaError> {
+        Ok(self.inner.set_active_profile(id)?)
+    }
+
+    pub fn create_profile(&self, name: String, avatar: Option<String>) -> Result<i64, CinmaError> {
+        Ok(self.inner.create_profile(name, avatar)?)
+    }
+
+    pub fn rename_profile(&self, id: i64, name: String) -> Result<(), CinmaError> {
+        Ok(self.inner.rename_profile(id, name)?)
+    }
+
+    pub fn delete_profile(&self, id: i64) -> Result<(), CinmaError> {
+        Ok(self.inner.delete_profile(id)?)
+    }
+
+    pub fn library_items(&self) -> Result<Vec<LibraryItemInfo>, CinmaError> {
+        Ok(self.inner.library_items()?.into_iter().map(Into::into).collect())
+    }
+
+    pub fn is_in_library(&self, meta_id: String, media_type: String) -> Result<bool, CinmaError> {
+        Ok(self.inner.is_in_library(&meta_id, &media_type)?)
+    }
+
+    pub fn add_to_library(
+        &self,
+        meta_id: String,
+        media_type: String,
+        name: String,
+        poster: Option<String>,
+    ) -> Result<(), CinmaError> {
+        Ok(self.inner.add_to_library(meta_id, media_type, name, poster)?)
+    }
+
+    pub fn remove_from_library(&self, meta_id: String, media_type: String) -> Result<(), CinmaError> {
+        Ok(self.inner.remove_from_library(&meta_id, &media_type)?)
+    }
+
+    pub fn continue_watching(&self, limit: u32) -> Result<Vec<WatchProgressInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .continue_watching(limit as usize)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn get_watch_progress(&self, video_id: String) -> Result<Option<WatchProgressInfo>, CinmaError> {
+        Ok(self.inner.get_watch_progress(&video_id)?.map(Into::into))
+    }
+
+    pub fn progress_for_meta(&self, meta_id: String) -> Result<Vec<WatchProgressInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .progress_for_meta(&meta_id)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn save_watch_progress(&self, input: WatchProgressInputFfi) -> Result<(), CinmaError> {
+        Ok(self.inner.save_watch_progress(cinma_core::WatchProgressInput {
+            video_id: input.video_id,
+            meta_id: input.meta_id,
+            media_type: input.media_type,
+            title: input.title,
+            artwork: input.artwork,
+            season: input.season,
+            episode: input.episode,
+            position_s: input.position_s,
+            duration_s: input.duration_s,
+        })?)
+    }
+
+    pub fn set_watched(
+        &self,
+        video_id: String,
+        meta_id: String,
+        media_type: String,
+        title: String,
+        watched: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self.inner.set_watched(video_id, meta_id, media_type, title, watched)?)
+    }
+
+    pub fn has_tmdb_key(&self) -> Result<bool, CinmaError> {
+        Ok(self.inner.has_tmdb_key()?)
+    }
+
+    pub fn set_tmdb_key(&self, key: Option<String>) -> Result<(), CinmaError> {
+        Ok(self.inner.set_tmdb_key(key)?)
+    }
+
+    pub async fn verify_tmdb_key(&self, key: String) -> Result<(), CinmaError> {
+        Ok(self.inner.verify_tmdb_key(key).await?)
+    }
+
+    pub fn metadata_language(&self) -> Result<String, CinmaError> {
+        Ok(self.inner.metadata_language()?)
+    }
+
+    pub fn set_metadata_language(&self, lang: String) -> Result<(), CinmaError> {
+        Ok(self.inner.set_metadata_language(&lang)?)
+    }
+
+    pub fn cached_trending(&self, media_type: String) -> Result<Vec<MetaPreviewInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .cached_trending(&media_type)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn trending(&self, media_type: String) -> Result<Vec<MetaPreviewInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .trending(media_type)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn search_tmdb(
+        &self,
+        query: String,
+        media_type: Option<String>,
+    ) -> Result<Vec<MetaPreviewInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .search_tmdb(query, media_type)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn rich_meta(&self, media_type: String, id: String) -> Result<RichMetaInfo, CinmaError> {
+        Ok(self.inner.rich_meta(media_type, id).await?.into())
+    }
+
+    pub async fn season_episodes(
+        &self,
+        media_type: String,
+        meta_id: String,
+        season: u32,
+    ) -> Result<Vec<MetaVideoInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .season_episodes(media_type, meta_id, season)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn calendar_entries(&self) -> Result<Vec<UpcomingEpisodeInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .calendar_entries()
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn ytdlp_status(&self) -> YtdlpStatusInfo {
+        self.inner.ytdlp_status().into()
+    }
+
+    pub async fn extract_trailer_url(&self, source: String) -> Result<String, CinmaError> {
+        Ok(self.inner.extract_trailer_url(source).await?)
+    }
+
+    pub async fn install_or_update_ytdlp(&self) -> Result<String, CinmaError> {
+        Ok(self.inner.install_or_update_ytdlp().await?)
     }
 
     pub fn subscribe(&self, listener: Arc<dyn CoreEventListener>) -> Result<(), CinmaError> {

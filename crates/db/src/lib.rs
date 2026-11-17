@@ -7,6 +7,8 @@
 #![forbid(unsafe_code)]
 
 mod repo;
+mod repo_library;
+mod repo_meta;
 
 use std::path::Path;
 
@@ -16,12 +18,18 @@ use rusqlite::Connection;
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_init.sql"),
     include_str!("../migrations/0002_core_schema.sql"),
+    include_str!("../migrations/0003_metadata.sql"),
+    include_str!("../migrations/0004_library_and_progress.sql"),
 ];
 
 /// Schema version this build understands.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 
-pub use repo::{AddonRow, DownloadKind, DownloadRow, DownloadState, NewDownload, ProfileId};
+pub use repo::{
+    AddonRow, DownloadKind, DownloadRow, DownloadState, NewDownload, ProfileId, ProfileRow,
+};
+pub use repo_library::{LibraryItemRow, WatchProgressRow};
+pub use repo_meta::{IdMapEntry, MediaKind};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {

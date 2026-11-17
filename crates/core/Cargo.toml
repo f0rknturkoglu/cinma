@@ -12,10 +12,13 @@ cinma-player.workspace = true
 cinma-stremio.workspace = true
 cinma-torrent.workspace = true
 cinma-ranker.workspace = true
+cinma-metadata.workspace = true
+reqwest.workspace = true
+security-framework.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "process"] }
 
 [dev-dependencies]
 tempfile.workspace = true
