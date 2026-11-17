@@ -192,6 +192,23 @@ impl Database {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
+    pub fn watched_items(
+        &self,
+        profile: ProfileId,
+        limit: usize,
+    ) -> Result<Vec<WatchProgressRow>, DbError> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT profile_id, video_id, meta_id, media_type, title, artwork,
+                    season, episode, position_s, duration_s, watched, updated_at
+             FROM watch_progress
+             WHERE profile_id = ?1 AND watched = 1
+             ORDER BY updated_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![profile, limit as i64], progress_from_row)?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
     pub fn progress_for_meta(
         &self,
         profile: ProfileId,

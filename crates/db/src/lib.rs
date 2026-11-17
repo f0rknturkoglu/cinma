@@ -7,8 +7,10 @@
 #![forbid(unsafe_code)]
 
 mod repo;
+mod repo_disk;
 mod repo_library;
 mod repo_meta;
+mod repo_outbox;
 
 use std::path::Path;
 
@@ -20,6 +22,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0002_core_schema.sql"),
     include_str!("../migrations/0003_metadata.sql"),
     include_str!("../migrations/0004_library_and_progress.sql"),
+    include_str!("../migrations/0005_disk_policy.sql"),
+    include_str!("../migrations/0006_tracking_outbox.sql"),
 ];
 
 /// Schema version this build understands.
@@ -28,8 +32,10 @@ pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 pub use repo::{
     AddonRow, DownloadKind, DownloadRow, DownloadState, NewDownload, ProfileId, ProfileRow,
 };
+pub use repo_disk::{DiskEntryRow, DiskKind, KeepRuleRow};
 pub use repo_library::{LibraryItemRow, WatchProgressRow};
 pub use repo_meta::{IdMapEntry, MediaKind};
+pub use repo_outbox::{AdapterStateRow, OutboxRow};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
@@ -78,6 +84,36 @@ impl Database {
 
     pub fn connection(&self) -> &Connection {
         &self.conn
+    }
+
+    /// Exports an online WAL-consistent snapshot to `dest` (uses SQLite `VACUUM INTO`).
+    pub fn backup_to(&self, dest: &Path) -> Result<(), DbError> {
+        if dest.exists() {
+            let _ = std::fs::remove_file(dest);
+        }
+        let path_str = dest
+            .to_str()
+            .ok_or_else(|| DbError::Invalid("non-UTF-8 backup path".into()))?;
+        self.conn.execute("VACUUM INTO ?1", [path_str])?;
+        Ok(())
+    }
+
+    /// Validates that `candidate` is an intact Cinma SQLite backup at a compatible schema version.
+    pub fn validate_backup_file(candidate: &Path) -> Result<u32, DbError> {
+        let conn =
+            Connection::open_with_flags(candidate, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let check: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+        if check != "ok" {
+            return Err(DbError::Invalid(format!("backup integrity check: {check}")));
+        }
+        let ver = user_version(&conn)?;
+        if ver == 0 || ver > SCHEMA_VERSION {
+            return Err(DbError::FutureSchema {
+                found: ver,
+                supported: SCHEMA_VERSION,
+            });
+        }
+        Ok(ver)
     }
 }
 

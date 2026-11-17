@@ -200,6 +200,18 @@ impl Playback {
         Ok(())
     }
 
+    /// Streams an active, paused, or completed unified download via `Blob::source()`.
+    pub fn play_download(&self, download_id: i64) -> Result<(), CoreError> {
+        self.reset_media_state();
+        self.player.begin_load();
+        let source = self.core.download_byte_source(download_id)?;
+        if let Ok(mut guard) = self.source.lock() {
+            *guard = Some(Arc::clone(&source));
+        }
+        self.player.load_source(source)?;
+        Ok(())
+    }
+
     fn reset_media_state(&self) {
         self.cancel_prefetch();
         if let Ok(mut g) = self.source.lock() {
@@ -377,25 +389,42 @@ impl Playback {
         &self.player
     }
 
-    /// Destroys mpv, cancels prefetching, and stops torrent activity so the
-    /// app goes back to idle.
+    /// Destroys mpv, cancels prefetching, and stops torrent activity (unless
+    /// a background torrent download is active) so the app goes back to idle
+    /// and trims native heap pages.
     pub async fn stop(&self) -> Result<(), CoreError> {
         self.reset_media_state();
         self.player.shutdown();
-        let engine = self
+        let has_torrent_download = self
             .core
-            .torrents
-            .lock()
-            .map_err(|_| CoreError::Poisoned)?
-            .clone();
-        if let Some(engine) = engine {
-            self.core
-                .spawn(async move {
-                    engine.release_all().await;
-                    Ok(())
+            .downloads()
+            .map(|rows| {
+                rows.iter().any(|r| {
+                    r.kind == cinma_db::DownloadKind::Torrent
+                        && matches!(
+                            r.state,
+                            cinma_db::DownloadState::Active | cinma_db::DownloadState::Queued
+                        )
                 })
-                .await?;
+            })
+            .unwrap_or(false);
+        if !has_torrent_download {
+            let engine = self
+                .core
+                .torrents
+                .lock()
+                .map_err(|_| CoreError::Poisoned)?
+                .clone();
+            if let Some(engine) = engine {
+                self.core
+                    .spawn(async move {
+                        engine.release_all().await;
+                        Ok(())
+                    })
+                    .await?;
+            }
         }
+        cinma_player::release_heap_pressure();
         Ok(())
     }
 }

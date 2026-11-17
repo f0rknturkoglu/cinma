@@ -247,6 +247,28 @@ impl Database {
         Ok(())
     }
 
+    pub fn set_profile_pin_hash(
+        &self,
+        id: ProfileId,
+        pin_hash: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE profile SET pin_hash = ?2 WHERE id = ?1",
+            params![id, pin_hash],
+        )?;
+        Ok(())
+    }
+
+    pub fn profile_pin_hash(&self, id: ProfileId) -> Result<Option<String>, DbError> {
+        Ok(self
+            .conn
+            .query_row("SELECT pin_hash FROM profile WHERE id = ?1", [id], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .flatten())
+    }
+
     // ---- addons ----
 
     /// Installed addons in user order, with this profile's enabled flag.
@@ -427,6 +449,26 @@ impl Database {
             "UPDATE download SET state = 'queued', updated_at = unixepoch() WHERE state = 'active'",
             [],
         )?)
+    }
+
+    pub fn has_pending_downloads(&self) -> Result<bool, DbError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT 1 FROM download WHERE state IN ('queued', 'active') LIMIT 1",
+                [],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    pub fn all_active_or_queued_blob_ids(&self) -> Result<Vec<String>, DbError> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT blob_id FROM download WHERE blob_id IS NOT NULL AND state IN ('queued', 'active', 'paused')",
+        )?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     pub fn delete_download(&self, profile: ProfileId, id: i64) -> Result<(), DbError> {

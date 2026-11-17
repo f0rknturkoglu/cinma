@@ -12,15 +12,26 @@ pub enum Feature {
     Addons,
     /// Torrent streaming (librqbit session, DHT).
     Torrent,
+    /// On-demand Chromecast & DLNA LAN casting (off by default).
+    Casting,
+    /// External tracking adapters (Trakt, Simkl, AniList, MAL, Letterboxd — off by default).
+    Tracking,
 }
 
 impl Feature {
-    pub const ALL: [Feature; 2] = [Feature::Addons, Feature::Torrent];
+    pub const ALL: [Feature; 4] = [
+        Feature::Addons,
+        Feature::Torrent,
+        Feature::Casting,
+        Feature::Tracking,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
             Feature::Addons => "addons",
             Feature::Torrent => "torrent",
+            Feature::Casting => "casting",
+            Feature::Tracking => "tracking",
         }
     }
 
@@ -33,7 +44,7 @@ impl Feature {
     }
 
     fn default_enabled(self) -> bool {
-        true
+        matches!(self, Feature::Addons | Feature::Torrent)
     }
 }
 
@@ -85,6 +96,26 @@ impl Core {
                 }
                 Feature::Addons => {
                     self.http.lock().map_err(|_| CoreError::Poisoned)?.take();
+                }
+                Feature::Casting => {
+                    let cast = self
+                        .active_cast
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .take();
+                    if let Some(session) = cast {
+                        self.spawn(async move {
+                            let _ = session.stop().await;
+                            Ok(())
+                        })
+                        .await?;
+                    }
+                }
+                Feature::Tracking => {
+                    self.tracking_client
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .take();
                 }
             }
         }

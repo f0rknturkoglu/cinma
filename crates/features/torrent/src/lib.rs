@@ -5,10 +5,14 @@
 
 #![forbid(unsafe_code)]
 
+mod download;
+
 use std::collections::HashSet;
 use std::future::Future;
 use std::io::{self, SeekFrom};
 use std::net::SocketAddr;
+use std::num::NonZeroU32;
+use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -18,12 +22,13 @@ use cinma_blobstore::{
     ByteSource, CancellationToken, OPENSUBTITLES_CHUNK_SIZE, RangeSet, SourceReader,
     cancelled_error,
 };
+pub use download::{SeedingPolicy, TorrentDownloadEngine, TorrentSourceSpec};
 use librqbit::dht::DhtPersistenceConfig;
+use librqbit::limits::LimitsConfig;
 use librqbit::{
     AddTorrent, AddTorrentOptions, AddTorrentResponse, ConnectionOptions, DhtSessionConfig,
-    ManagedTorrent, PeerConnectionOptions, Session, SessionOptions,
+    ManagedTorrent, PeerConnectionOptions, Session, SessionOptions, SessionPersistenceConfig,
 };
-use std::os::unix::fs::FileExt;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -101,19 +106,55 @@ pub struct TorrentConfig {
     pub local_only: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct TorrentPolicy {
+    pub fastresume: bool,
+    pub upload_bps: Option<u32>,
+    pub download_bps: Option<u32>,
+    pub seeding: SeedingPolicy,
+    pub delete_on_release: bool,
+}
+
+impl Default for TorrentPolicy {
+    fn default() -> Self {
+        Self {
+            fastresume: false,
+            upload_bps: None,
+            download_bps: None,
+            seeding: SeedingPolicy::Off,
+            delete_on_release: true,
+        }
+    }
+}
+
 pub struct RqbitEngine {
     config: TorrentConfig,
+    policy: Mutex<TorrentPolicy>,
     runtime: Handle,
     session: Mutex<Option<Arc<Session>>>,
 }
 
 impl RqbitEngine {
     pub fn new(config: TorrentConfig, runtime: Handle) -> Self {
+        Self::with_policy(config, runtime, TorrentPolicy::default())
+    }
+
+    pub fn with_policy(config: TorrentConfig, runtime: Handle, policy: TorrentPolicy) -> Self {
         Self {
             config,
+            policy: Mutex::new(policy),
             runtime,
             session: Mutex::new(None),
         }
+    }
+
+    pub async fn update_policy(&self, policy: TorrentPolicy) {
+        let mut g = self.policy.lock().await;
+        *g = policy;
+    }
+
+    pub fn downloads_dir(&self) -> PathBuf {
+        self.config.root.join("downloads")
     }
 
     async fn session(&self) -> Result<Arc<Session>, TorrentError> {
@@ -121,14 +162,29 @@ impl RqbitEngine {
         if let Some(session) = guard.as_ref() {
             return Ok(Arc::clone(session));
         }
-        let downloads = self.config.root.join("downloads");
+        let policy = self.policy.lock().await.clone();
+        let downloads = self.downloads_dir();
         std::fs::create_dir_all(&downloads).map_err(|e| TorrentError::Engine(e.to_string()))?;
+        let session_dir = self.config.root.join("session");
+        if policy.fastresume {
+            let _ = std::fs::create_dir_all(&session_dir);
+        }
+        let upload_bps = match policy.seeding {
+            SeedingPolicy::Off => policy.upload_bps.or(Some(1024)), // minimal protocol chatter only
+            _ => policy.upload_bps,
+        };
         let options = SessionOptions {
-            fastresume: false,
-            persistence: None,
+            fastresume: policy.fastresume,
+            persistence: policy.fastresume.then_some(SessionPersistenceConfig::Json {
+                folder: Some(session_dir),
+            }),
             dht: (!self.config.local_only).then(|| dht_config(self.config.root.join("dht.json"))),
             disable_local_service_discovery: self.config.local_only,
             peer_limit: Some(80),
+            ratelimits: LimitsConfig {
+                upload_bps: upload_bps.and_then(NonZeroU32::new),
+                download_bps: policy.download_bps.and_then(NonZeroU32::new),
+            },
             connect: Some(ConnectionOptions {
                 enable_tcp: true,
                 proxy_url: None,
@@ -148,6 +204,13 @@ impl RqbitEngine {
     }
 
     async fn open(&self, request: TorrentFileRequest) -> Result<Arc<dyn ByteSource>, TorrentError> {
+        self.open_with_handle(request).await.map(|(_, s)| s)
+    }
+
+    pub(crate) async fn open_with_handle(
+        &self,
+        request: TorrentFileRequest,
+    ) -> Result<(Arc<ManagedTorrent>, Arc<dyn ByteSource>), TorrentError> {
         let info_hash = normalize_info_hash(&request.info_hash)?;
         let session = self.session().await?;
         let mut trackers = request.trackers.clone();
@@ -276,34 +339,40 @@ impl RqbitEngine {
             len,
             Arc::clone(&available),
         ))));
-        Ok(Arc::new(TorrentSource {
-            handle,
-            file_idx,
-            len,
-            name,
-            filename,
-            disk_path,
-            available,
-            runtime: self.runtime.clone(),
-            warmup,
-        }))
+        Ok((
+            Arc::clone(&handle),
+            Arc::new(TorrentSource {
+                handle,
+                file_idx,
+                len,
+                name,
+                filename,
+                disk_path,
+                available,
+                runtime: self.runtime.clone(),
+                warmup,
+            }),
+        ))
     }
 
-    /// Stops the session and deletes streamed data. Phase 1 has no disk
-    /// policy yet (§5.12, Phase 5), so nothing is kept between plays.
+    /// Stops the session. Under Phase 5 DiskPolicy (`delete_on_release == false`),
+    /// downloaded files stay managed by LRU quota instead of unconditional delete.
     async fn release(&self) {
+        let delete = self.policy.lock().await.delete_on_release;
         let session = self.session.lock().await.take();
         if let Some(session) = session {
             session.stop().await;
             drop(session);
-            let downloads = self.config.root.join("downloads");
-            if let Err(e) = tokio::fs::remove_dir_all(&downloads).await
-                && e.kind() != io::ErrorKind::NotFound
-            {
-                eprintln!(
-                    "[cinma] torrent: could not clear {}: {e}",
-                    downloads.display()
-                );
+            if delete {
+                let downloads = self.config.root.join("downloads");
+                if let Err(e) = tokio::fs::remove_dir_all(&downloads).await
+                    && e.kind() != io::ErrorKind::NotFound
+                {
+                    eprintln!(
+                        "[cinma] torrent: could not clear {}: {e}",
+                        downloads.display()
+                    );
+                }
             }
         }
     }

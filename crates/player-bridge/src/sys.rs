@@ -200,6 +200,17 @@ fn load() -> Result<Api, String> {
     if let Ok(path) = std::env::var("CINMA_LIBMPV") {
         candidates.push(path);
     }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(macos_dir) = exe.parent()
+        && let Some(contents_dir) = macos_dir.parent()
+    {
+        candidates.push(
+            contents_dir
+                .join("Frameworks/libmpv.2.dylib")
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
     candidates.extend(DEFAULT_PATHS.iter().map(|s| (*s).to_owned()));
     let mut errors = Vec::new();
     for path in &candidates {

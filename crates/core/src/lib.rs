@@ -5,11 +5,15 @@
 
 mod addons;
 mod commands;
+mod disk;
+mod downloads;
 mod events;
+mod integrations;
 mod keychain;
 mod library;
 mod metadata;
 mod playback;
+mod security_and_backup;
 mod settings;
 mod subtitles;
 mod trailers;
@@ -18,16 +22,23 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+use cinma_blobstore::BlobStore;
+use cinma_casting::ActiveCastSession;
 use cinma_db::{Database, DbError, ProfileId};
 use cinma_metadata::TmdbClient;
+use cinma_queue::Queue;
 use cinma_stremio::AddonClient;
-use cinma_torrent::{RqbitEngine, TorrentConfig};
+use cinma_torrent::{RqbitEngine, TorrentConfig, TorrentDownloadEngine};
+use cinma_tracking::TrackingClient;
 
 pub use addons::{
     AddonCatalog, CatalogBatch, CatalogBatchListener, CatalogPage, InstalledAddon, MetaResult,
     StreamBatch, StreamBatchListener, StreamCandidate,
 };
-pub use cinma_db::{LibraryItemRow, ProfileRow, WatchProgressRow};
+pub use cinma_casting::{CastDevice, CastKind};
+pub use cinma_db::{
+    DownloadKind, DownloadRow, DownloadState, LibraryItemRow, ProfileRow, WatchProgressRow,
+};
 pub use cinma_metadata::UpcomingEpisode;
 pub use cinma_player::{
     Chapter, EndReason, MediaTrack, PlayerConfig, PlayerEvent, PlayerEvents, PlayerStats,
@@ -39,10 +50,14 @@ pub use cinma_ranker::{
 };
 pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo};
 pub use cinma_subtitles::{PreparedSubtitle, SubtitleCandidate, normalize_lang_code};
+pub use cinma_tracking::{TraktDeviceCode, TraktRecommendation, letterboxd::LetterboxdEntry};
 pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
 };
+pub use disk::{DiskPolicySettings, DiskUsageSummary};
+pub use downloads::YtdlpSourceSpec;
 pub use events::{CoreEvent, CoreEventListener};
+pub use integrations::{AdapterStatus, StremioImportResult};
 pub use library::WatchProgressInput;
 pub use metadata::RichMetaResult;
 pub use playback::{NextEpisodePrefetch, Playback, VideoFileIdentity};
@@ -82,12 +97,17 @@ const ACTIVE_PROFILE_KEY: &str = "profile.active";
 
 pub struct Core {
     data_dir: PathBuf,
-    db: Mutex<Database>,
+    db: Arc<Mutex<Database>>,
     runtime: OnceLock<tokio::runtime::Runtime>,
     http: Mutex<Option<AddonClient>>,
     tmdb: Mutex<Option<TmdbClient>>,
     tmdb_key_override: Mutex<Option<Option<String>>>,
     torrents: Mutex<Option<Arc<RqbitEngine>>>,
+    blob_store: Mutex<Option<Arc<BlobStore>>>,
+    queue: Mutex<Option<Arc<Queue>>>,
+    torrent_download_engine: Mutex<Option<Arc<TorrentDownloadEngine>>>,
+    active_cast: Mutex<Option<Arc<ActiveCastSession>>>,
+    tracking_client: Mutex<Option<TrackingClient>>,
     listeners: Mutex<Vec<Arc<dyn CoreEventListener>>>,
 }
 
@@ -99,12 +119,17 @@ impl Core {
         let db = Database::open(&data_dir.join(DB_FILE_NAME))?;
         Ok(Arc::new(Self {
             data_dir: data_dir.to_path_buf(),
-            db: Mutex::new(db),
+            db: Arc::new(Mutex::new(db)),
             runtime: OnceLock::new(),
             http: Mutex::new(None),
             tmdb: Mutex::new(None),
             tmdb_key_override: Mutex::new(None),
             torrents: Mutex::new(None),
+            blob_store: Mutex::new(None),
+            queue: Mutex::new(None),
+            torrent_download_engine: Mutex::new(None),
+            active_cast: Mutex::new(None),
+            tracking_client: Mutex::new(None),
             listeners: Mutex::new(Vec::new()),
         }))
     }
@@ -178,13 +203,15 @@ impl Core {
             .ok()
             .map(|v| v.split(',').filter_map(|p| p.trim().parse().ok()).collect())
             .unwrap_or_default();
-        let engine = Arc::new(RqbitEngine::new(
+        let policy = self.disk_policy_settings()?.torrent_policy(false);
+        let engine = Arc::new(RqbitEngine::with_policy(
             TorrentConfig {
                 root: self.data_dir.join("torrents"),
                 extra_peers,
                 local_only: false,
             },
             self.runtime()?.handle().clone(),
+            policy,
         ));
         *slot = Some(Arc::clone(&engine));
         Ok(engine)
@@ -212,12 +239,10 @@ mod tests {
     fn disabled_features_are_never_constructed() {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::open(dir.path()).unwrap();
-        for feature in Feature::ALL {
-            assert!(
-                core.feature_enabled(feature).unwrap(),
-                "{feature:?} defaults on"
-            );
-        }
+        assert!(core.feature_enabled(Feature::Addons).unwrap());
+        assert!(core.feature_enabled(Feature::Torrent).unwrap());
+        assert!(!core.feature_enabled(Feature::Casting).unwrap());
+        assert!(!core.feature_enabled(Feature::Tracking).unwrap());
         let rt = tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap();

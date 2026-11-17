@@ -197,6 +197,17 @@ impl Core {
                 input.duration_s.max(0.0),
                 watched,
             )?;
+        if watched {
+            let _ = self.enqueue_watch_sync(
+                profile,
+                &input.meta_id,
+                &input.media_type,
+                &input.title,
+                input.season.and_then(|s| u32::try_from(s).ok()),
+                input.episode.and_then(|e| u32::try_from(e).ok()),
+                100.0,
+            );
+        }
         self.emit(CoreEvent::LibraryChanged);
         Ok(())
     }
@@ -236,6 +247,17 @@ impl Core {
             watched,
         )?;
         drop(db);
+        if watched {
+            let _ = self.enqueue_watch_sync(
+                profile,
+                &meta_id,
+                &media_type,
+                &title,
+                season.and_then(|s| u32::try_from(s).ok()),
+                episode.and_then(|e| u32::try_from(e).ok()),
+                100.0,
+            );
+        }
         self.emit(CoreEvent::LibraryChanged);
         Ok(())
     }

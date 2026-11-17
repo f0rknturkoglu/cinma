@@ -7,12 +7,16 @@ publish.workspace = true
 
 [dependencies]
 cinma-blobstore.workspace = true
+cinma-queue.workspace = true
 librqbit.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 anyhow.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "time", "fs"] }
 thiserror.workspace = true
 
 [dev-dependencies]
+cinma-db.workspace = true
 librqbit.workspace = true
 anyhow.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal"] }

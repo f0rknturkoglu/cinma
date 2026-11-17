@@ -155,3 +155,98 @@ fn streams_head_tail_and_middle_from_local_seeder() {
         "streamed data is cleared on release"
     );
 }
+
+#[test]
+fn torrent_download_engine_completes_via_queue_on_local_seeder() {
+    use cinma_blobstore::{BlobId, BlobStore};
+    use cinma_db::{Database, DownloadKind, DownloadState, NewDownload};
+    use cinma_queue::Queue;
+    use cinma_torrent::{SeedingPolicy, TorrentDownloadEngine, TorrentPolicy, TorrentSourceSpec};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let seed_dir = dir.path().join("seed");
+    std::fs::create_dir_all(&seed_dir).unwrap();
+    let data = content();
+
+    let (seeder, info_hash, addr) = runtime.block_on(start_seeder(&seed_dir, &data));
+    let engine = Arc::new(RqbitEngine::with_policy(
+        TorrentConfig {
+            root: dir.path().join("dl_root"),
+            extra_peers: vec![addr],
+            local_only: true,
+        },
+        runtime.handle().clone(),
+        TorrentPolicy {
+            fastresume: true,
+            upload_bps: None,
+            download_bps: None,
+            seeding: SeedingPolicy::Off,
+            delete_on_release: false,
+        },
+    ));
+    let db = Arc::new(std::sync::Mutex::new(
+        Database::open(&dir.path().join("db.sqlite3")).unwrap(),
+    ));
+    let store = Arc::new(BlobStore::open(&dir.path().join("blobs")).unwrap());
+    let queue = Queue::new(
+        Arc::clone(&db),
+        Arc::clone(&store),
+        runtime.handle().clone(),
+        1,
+    )
+    .unwrap();
+    let dl_engine = Arc::new(TorrentDownloadEngine::new(
+        Arc::clone(&engine),
+        SeedingPolicy::Off,
+    ));
+    queue
+        .register_engine(DownloadKind::Torrent, dl_engine)
+        .unwrap();
+
+    let spec = serde_json::to_string(&TorrentSourceSpec {
+        info_hash,
+        file_idx: None,
+        trackers: vec![],
+        meta_id: Some("tt1".into()),
+        media_type: Some("movie".into()),
+    })
+    .unwrap();
+    let id = queue
+        .add(&NewDownload {
+            profile_id: 1,
+            kind: DownloadKind::Torrent,
+            title: "movie.mkv".into(),
+            source_json: spec,
+            priority: 1,
+        })
+        .unwrap();
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let completed = loop {
+        let row = db.lock().unwrap().download(1, id).unwrap().unwrap();
+        if row.state == DownloadState::Completed {
+            break row;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "torrent download timed out: {row:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    };
+
+    let blob = store
+        .open_blob(&BlobId::parse(completed.blob_id.as_deref().unwrap()).unwrap())
+        .unwrap();
+    assert!(blob.is_complete());
+    assert_eq!(blob.size(), FILE_LEN as u64);
+
+    runtime.block_on(async {
+        engine.release_all().await;
+        seeder.stop().await;
+    });
+}

@@ -2,6 +2,7 @@
 //! small event-driven player handle. Rendering uses the libmpv render API
 //! into the host's `CAOpenGLLayer` (docs/adr/0004).
 
+pub mod mux;
 mod render;
 mod stream;
 mod sys;
@@ -847,6 +848,19 @@ impl Drop for Player {
         drop(self.events_thread.lock().map(|mut t| t.take()));
     }
 }
+
+pub fn release_heap_pressure() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        unsafe extern "C" {
+            fn malloc_zone_pressure_relief(zone: *mut c_void, goal: usize) -> usize;
+        }
+        let _ = malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
+    }
+}
+
+/// Checks whether a local `Contents/Frameworks/libmpv.2.dylib` or Homebrew dylib exists.
+pub use sys::api as ensure_libmpv_available;
 
 fn cstring(s: &str) -> Result<CString, PlayerError> {
     CString::new(s).map_err(|_| PlayerError::Mpv(format!("NUL in argument: {s:?}")))

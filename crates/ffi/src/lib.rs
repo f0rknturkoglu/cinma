@@ -92,6 +92,9 @@ pub enum CoreEventKind {
     KeyBindingsChanged,
     ProfileChanged,
     LibraryChanged,
+    DownloadsChanged,
+    CastChanged,
+    TrackingChanged,
 }
 
 /// Implemented in Swift. Called on whichever thread raised the event.
@@ -109,6 +112,9 @@ impl cinma_core::CoreEventListener for EventAdapter {
             CoreEvent::KeyBindingsChanged => CoreEventKind::KeyBindingsChanged,
             CoreEvent::ProfileChanged => CoreEventKind::ProfileChanged,
             CoreEvent::LibraryChanged => CoreEventKind::LibraryChanged,
+            CoreEvent::DownloadsChanged => CoreEventKind::DownloadsChanged,
+            CoreEvent::CastChanged => CoreEventKind::CastChanged,
+            CoreEvent::TrackingChanged => CoreEventKind::TrackingChanged,
         });
     }
 }
@@ -1701,6 +1707,565 @@ impl CinmaCore {
     pub fn resolve_shader_paths(&self, preset: String) -> Result<Vec<String>, CinmaError> {
         Ok(self.inner.resolve_shader_paths(&preset)?)
     }
+
+    // ---- Phase 5: Unified Downloads, Disk Policy & Menu Bar ----
+
+    pub fn add_http_download(
+        &self,
+        title: String,
+        url: String,
+        meta_id: Option<String>,
+        media_type: Option<String>,
+        priority: i64,
+    ) -> Result<i64, CinmaError> {
+        Ok(self.inner.add_http_download(
+            title,
+            url,
+            std::collections::HashMap::new(),
+            meta_id,
+            media_type,
+            priority,
+        )?)
+    }
+
+    pub fn add_torrent_download(
+        &self,
+        title: String,
+        stream: StreamInfo,
+        meta_id: Option<String>,
+        media_type: Option<String>,
+        priority: i64,
+    ) -> Result<i64, CinmaError> {
+        let parsed: cinma_stremio::Stream =
+            serde_json::from_str(&stream.raw).map_err(|e| CinmaError::Invalid {
+                message: e.to_string(),
+            })?;
+        let trackers = parsed.trackers();
+        let info_hash = parsed.info_hash.ok_or_else(|| CinmaError::Invalid {
+            message: "stream has no infoHash".into(),
+        })?;
+        Ok(self.inner.add_torrent_download(
+            title,
+            info_hash,
+            parsed.file_idx.map(|i| i as usize),
+            trackers,
+            meta_id,
+            media_type,
+            priority,
+        )?)
+    }
+
+    pub fn add_ytdlp_download(
+        &self,
+        title: String,
+        url: String,
+        max_height: Option<u32>,
+        audio_only: bool,
+        priority: i64,
+    ) -> Result<i64, CinmaError> {
+        Ok(self
+            .inner
+            .add_ytdlp_download(title, url, max_height, audio_only, priority)?)
+    }
+
+    pub fn downloads(&self) -> Result<Vec<DownloadInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .downloads()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn pause_download(&self, id: i64) -> Result<(), CinmaError> {
+        Ok(self.inner.pause_download(id)?)
+    }
+
+    pub fn resume_download(&self, id: i64) -> Result<(), CinmaError> {
+        Ok(self.inner.resume_download(id)?)
+    }
+
+    pub fn remove_download(&self, id: i64, delete_data: bool) -> Result<(), CinmaError> {
+        Ok(self.inner.remove_download(id, delete_data)?)
+    }
+
+    pub fn has_pending_downloads(&self) -> Result<bool, CinmaError> {
+        Ok(self.inner.has_pending_downloads()?)
+    }
+
+    pub fn menubar_enabled(&self) -> Result<bool, CinmaError> {
+        Ok(self.inner.menubar_enabled()?)
+    }
+
+    pub fn set_menubar_enabled(&self, enabled: bool) -> Result<(), CinmaError> {
+        Ok(self.inner.set_menubar_enabled(enabled)?)
+    }
+
+    pub fn disk_policy_settings(&self) -> Result<DiskPolicySettingsInfo, CinmaError> {
+        Ok(self.inner.disk_policy_settings()?.into())
+    }
+
+    pub fn set_disk_policy_settings(&self, s: DiskPolicySettingsInfo) -> Result<(), CinmaError> {
+        let mut current = self.inner.disk_policy_settings()?;
+        current.cache_quota_mb = s.cache_quota_mb;
+        current.keep_watched_global = s.keep_watched_global;
+        current.seeding_mode = s.seeding_mode;
+        current.seeding_ratio = s.seeding_ratio;
+        current.seeding_minutes = s.seeding_minutes;
+        current.upload_limit_kbps = s.upload_limit_kbps;
+        Ok(self.inner.set_disk_policy_settings(&current)?)
+    }
+
+    pub fn set_item_keep_watched(
+        &self,
+        meta_id: String,
+        media_type: String,
+        keep: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .set_item_keep_watched(&meta_id, &media_type, keep)?)
+    }
+
+    pub fn item_keep_watched(
+        &self,
+        meta_id: String,
+        media_type: String,
+    ) -> Result<bool, CinmaError> {
+        Ok(self.inner.item_keep_watched(&meta_id, &media_type)?)
+    }
+
+    pub fn disk_usage_summary(&self) -> Result<DiskUsageSummaryInfo, CinmaError> {
+        Ok(self.inner.disk_usage_summary()?.into())
+    }
+
+    pub fn enforce_disk_quota(&self) -> Result<u64, CinmaError> {
+        Ok(self.inner.enforce_disk_quota()?)
+    }
+
+    // ---- Phase 6: Casting & Tracking Integrations ----
+
+    pub async fn discover_cast_devices(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<Vec<CastDeviceInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .discover_cast_devices(timeout_ms)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn cast_download(
+        &self,
+        device: CastDeviceInfo,
+        download_id: i64,
+        title: String,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .cast_download(device.try_into()?, download_id, title)
+            .await?)
+    }
+
+    pub async fn cast_local_file(
+        &self,
+        device: CastDeviceInfo,
+        path: String,
+        title: String,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .cast_local_file(device.try_into()?, path, title)
+            .await?)
+    }
+
+    pub async fn cast_stream(
+        &self,
+        device: CastDeviceInfo,
+        stream: StreamInfo,
+        title: String,
+    ) -> Result<(), CinmaError> {
+        let parsed: cinma_stremio::Stream =
+            serde_json::from_str(&stream.raw).map_err(|e| CinmaError::Invalid {
+                message: e.to_string(),
+            })?;
+        Ok(self
+            .inner
+            .cast_stream(device.try_into()?, parsed, title)
+            .await?)
+    }
+
+    pub async fn cast_play(&self) -> Result<(), CinmaError> {
+        Ok(self.inner.cast_play().await?)
+    }
+
+    pub async fn cast_pause(&self) -> Result<(), CinmaError> {
+        Ok(self.inner.cast_pause().await?)
+    }
+
+    pub async fn cast_seek(&self, seconds: f64) -> Result<(), CinmaError> {
+        Ok(self.inner.cast_seek(seconds).await?)
+    }
+
+    pub async fn cast_stop(&self) -> Result<(), CinmaError> {
+        Ok(self.inner.cast_stop().await?)
+    }
+
+    pub fn active_cast_device(&self) -> Option<CastDeviceInfo> {
+        self.inner.active_cast_device().map(Into::into)
+    }
+
+    pub fn tracking_adapters(&self) -> Result<Vec<AdapterStatusInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .tracking_adapters()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn set_tracking_adapter_enabled(
+        &self,
+        adapter: String,
+        enabled: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self.inner.set_tracking_adapter_enabled(&adapter, enabled)?)
+    }
+
+    pub fn set_tracking_token(
+        &self,
+        adapter: String,
+        token: Option<String>,
+    ) -> Result<(), CinmaError> {
+        Ok(self.inner.set_tracking_token(&adapter, token.as_deref())?)
+    }
+
+    pub fn set_tracking_app_credentials(
+        &self,
+        adapter: String,
+        client_id: String,
+        client_secret: Option<String>,
+    ) -> Result<(), CinmaError> {
+        Ok(self.inner.set_tracking_app_credentials(
+            &adapter,
+            &client_id,
+            client_secret.as_deref(),
+        )?)
+    }
+
+    pub async fn trakt_start_device_auth(
+        &self,
+        client_id: String,
+    ) -> Result<TraktDeviceCodeInfo, CinmaError> {
+        Ok(self.inner.trakt_start_device_auth(client_id).await?.into())
+    }
+
+    pub async fn trakt_poll_device_auth(
+        &self,
+        client_id: String,
+        client_secret: String,
+        device_code: String,
+    ) -> Result<bool, CinmaError> {
+        Ok(self
+            .inner
+            .trakt_poll_device_auth(client_id, client_secret, device_code)
+            .await?)
+    }
+
+    pub async fn drain_tracking_outbox(&self) -> Result<u32, CinmaError> {
+        Ok(self.inner.drain_tracking_outbox().await?)
+    }
+
+    pub fn backfill_tracking(&self) -> Result<u32, CinmaError> {
+        Ok(self.inner.backfill_tracking()?)
+    }
+
+    pub async fn trakt_recommendations(&self) -> Result<Vec<TraktRecommendationInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .trakt_recommendations()
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn letterboxd_rss(
+        &self,
+        username: String,
+    ) -> Result<Vec<LetterboxdEntryInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .letterboxd_rss(username)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn export_letterboxd_csv(&self, dest_path: String) -> Result<u32, CinmaError> {
+        Ok(self
+            .inner
+            .export_letterboxd_csv(&PathBuf::from(dest_path))? as u32)
+    }
+
+    pub fn seed_anime_id_map(&self) -> Result<u32, CinmaError> {
+        Ok(self.inner.seed_anime_id_map()? as u32)
+    }
+
+    pub async fn refresh_anime_id_map(&self, url: String) -> Result<u32, CinmaError> {
+        Ok(self.inner.refresh_anime_id_map(url).await? as u32)
+    }
+
+    pub async fn import_stremio_account(
+        &self,
+        email: String,
+        password: String,
+    ) -> Result<StremioImportResultInfo, CinmaError> {
+        Ok(self
+            .inner
+            .import_stremio_account(email, password)
+            .await?
+            .into())
+    }
+
+    // ---- Phase 7: Profile PINs & SQLite Backup / Restore ----
+
+    pub fn set_profile_pin(&self, profile_id: i64, pin: Option<String>) -> Result<(), CinmaError> {
+        Ok(self.inner.set_profile_pin(profile_id, pin.as_deref())?)
+    }
+
+    pub fn verify_profile_pin(&self, profile_id: i64, pin: String) -> Result<bool, CinmaError> {
+        Ok(self.inner.verify_profile_pin(profile_id, &pin)?)
+    }
+
+    pub fn export_backup(&self, dest_path: String) -> Result<(), CinmaError> {
+        Ok(self.inner.export_backup(&PathBuf::from(dest_path))?)
+    }
+
+    pub fn import_backup(&self, src_path: String) -> Result<u32, CinmaError> {
+        Ok(self.inner.import_backup(&PathBuf::from(src_path))?)
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct DownloadInfo {
+    pub id: i64,
+    pub kind: String,
+    pub title: String,
+    pub state: String,
+    pub priority: i64,
+    pub bytes_total: Option<u64>,
+    pub bytes_done: u64,
+    pub error: Option<String>,
+    pub can_play_now: bool,
+}
+
+impl From<cinma_core::DownloadRow> for DownloadInfo {
+    fn from(r: cinma_core::DownloadRow) -> Self {
+        Self {
+            id: r.id,
+            kind: r.kind.as_str().to_owned(),
+            title: r.title,
+            state: r.state.as_str().to_owned(),
+            priority: r.priority,
+            bytes_total: r.bytes_total,
+            bytes_done: r.bytes_done,
+            error: r.error,
+            can_play_now: r.blob_id.is_some(),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct DiskPolicySettingsInfo {
+    pub cache_quota_mb: u64,
+    pub keep_watched_global: bool,
+    pub seeding_mode: String,
+    pub seeding_ratio: f64,
+    pub seeding_minutes: u64,
+    pub upload_limit_kbps: u32,
+}
+
+impl From<cinma_core::DiskPolicySettings> for DiskPolicySettingsInfo {
+    fn from(s: cinma_core::DiskPolicySettings) -> Self {
+        Self {
+            cache_quota_mb: s.cache_quota_mb,
+            keep_watched_global: s.keep_watched_global,
+            seeding_mode: s.seeding_mode,
+            seeding_ratio: s.seeding_ratio,
+            seeding_minutes: s.seeding_minutes,
+            upload_limit_kbps: s.upload_limit_kbps,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct DiskUsageSummaryInfo {
+    pub total_bytes: u64,
+    pub kept_bytes: u64,
+    pub evictable_bytes: u64,
+    pub entry_count: u32,
+}
+
+impl From<cinma_core::DiskUsageSummary> for DiskUsageSummaryInfo {
+    fn from(s: cinma_core::DiskUsageSummary) -> Self {
+        Self {
+            total_bytes: s.total_bytes,
+            kept_bytes: s.kept_bytes,
+            evictable_bytes: s.evictable_bytes,
+            entry_count: s.entry_count,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct CastDeviceInfo {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+    pub control_url: Option<String>,
+}
+
+impl From<cinma_core::CastDevice> for CastDeviceInfo {
+    fn from(d: cinma_core::CastDevice) -> Self {
+        Self {
+            id: d.id,
+            kind: match d.kind {
+                cinma_core::CastKind::Chromecast => "chromecast".to_owned(),
+                cinma_core::CastKind::Dlna => "dlna".to_owned(),
+            },
+            name: d.name,
+            host: d.host,
+            port: d.port,
+            control_url: d.control_url,
+        }
+    }
+}
+
+impl TryFrom<CastDeviceInfo> for cinma_core::CastDevice {
+    type Error = CinmaError;
+    fn try_from(d: CastDeviceInfo) -> Result<Self, Self::Error> {
+        let kind = match d.kind.as_str() {
+            "chromecast" => cinma_core::CastKind::Chromecast,
+            "dlna" => cinma_core::CastKind::Dlna,
+            other => {
+                return Err(CinmaError::Invalid {
+                    message: format!("unknown cast kind `{other}`"),
+                });
+            }
+        };
+        Ok(Self {
+            id: d.id,
+            kind,
+            name: d.name,
+            host: d.host,
+            port: d.port,
+            control_url: d.control_url,
+        })
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct TraktDeviceCodeInfo {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_url: String,
+    pub expires_in: u64,
+    pub interval: u64,
+}
+
+impl From<cinma_core::TraktDeviceCode> for TraktDeviceCodeInfo {
+    fn from(c: cinma_core::TraktDeviceCode) -> Self {
+        Self {
+            device_code: c.device_code,
+            user_code: c.user_code,
+            verification_url: c.verification_url,
+            expires_in: c.expires_in,
+            interval: c.interval,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct AdapterStatusInfo {
+    pub adapter: String,
+    pub enabled: bool,
+    pub connected: bool,
+    pub last_sync_at: Option<i64>,
+    pub outbox_pending: i64,
+}
+
+impl From<cinma_core::AdapterStatus> for AdapterStatusInfo {
+    fn from(a: cinma_core::AdapterStatus) -> Self {
+        Self {
+            adapter: a.adapter,
+            enabled: a.enabled,
+            connected: a.connected,
+            last_sync_at: a.last_sync_at,
+            outbox_pending: a.outbox_pending,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct TraktRecommendationInfo {
+    pub title: String,
+    pub year: Option<u32>,
+    pub imdb_id: Option<String>,
+    pub tmdb_id: Option<i64>,
+}
+
+impl From<cinma_core::TraktRecommendation> for TraktRecommendationInfo {
+    fn from(r: cinma_core::TraktRecommendation) -> Self {
+        Self {
+            title: r.title,
+            year: r.year,
+            imdb_id: r.imdb_id,
+            tmdb_id: r.tmdb_id,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct LetterboxdEntryInfo {
+    pub title: String,
+    pub year: Option<u32>,
+    pub watched_date: Option<String>,
+    pub rating: Option<f32>,
+    pub link: Option<String>,
+}
+
+impl From<cinma_core::LetterboxdEntry> for LetterboxdEntryInfo {
+    fn from(e: cinma_core::LetterboxdEntry) -> Self {
+        Self {
+            title: e.title,
+            year: e.year,
+            watched_date: e.watched_date,
+            rating: e.rating,
+            link: e.link,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct StremioImportResultInfo {
+    pub addons_imported: u32,
+    pub library_imported: u32,
+}
+
+impl From<cinma_core::StremioImportResult> for StremioImportResultInfo {
+    fn from(r: cinma_core::StremioImportResult) -> Self {
+        Self {
+            addons_imported: r.addons_imported,
+            library_imported: r.library_imported,
+        }
+    }
 }
 
 #[derive(uniffi::Object)]
@@ -1721,6 +2286,11 @@ impl PlaybackSession {
     /// Plays a local file or URL directly (debug / render tests).
     pub fn play_url(&self, url: String) -> Result<(), CinmaError> {
         Ok(self.inner.play_url(&url)?)
+    }
+
+    /// Streams an active, paused, or completed download directly via `Blob::source()`.
+    pub fn play_download(&self, download_id: i64) -> Result<(), CinmaError> {
+        Ok(self.inner.play_download(download_id)?)
     }
 
     pub fn toggle_pause(&self) -> Result<(), CinmaError> {

@@ -15,6 +15,12 @@ pub enum CoreEvent {
     ProfileChanged,
     /// Library or watch progress changed.
     LibraryChanged,
+    /// Download queue changed (added, progressed, paused, completed, removed).
+    DownloadsChanged,
+    /// Active LAN cast session changed.
+    CastChanged,
+    /// Tracking adapter state / outbox changed.
+    TrackingChanged,
 }
 
 pub trait CoreEventListener: Send + Sync {

@@ -74,3 +74,18 @@ pub fn get_opensubtitles_token() -> Result<Option<String>, CoreError> {
 pub fn set_opensubtitles_token(token: Option<&str>) -> Result<(), CoreError> {
     write_secret(OPENSUBTITLES_TOKEN_ACCOUNT, token)
 }
+
+pub fn get_tracking_token(profile_id: i64, adapter: &str) -> Result<Option<String>, CoreError> {
+    let account = format!("tracking.p{profile_id}.{adapter}");
+    let env_name = format!("CINMA_TRACKING_{}_TOKEN", adapter.to_ascii_uppercase());
+    read_secret(&account, Some(&env_name))
+}
+
+pub fn set_tracking_token(
+    profile_id: i64,
+    adapter: &str,
+    token: Option<&str>,
+) -> Result<(), CoreError> {
+    let account = format!("tracking.p{profile_id}.{adapter}");
+    write_secret(&account, token)
+}

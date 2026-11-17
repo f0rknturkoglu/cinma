@@ -467,19 +467,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "cinma-casting"
+version = "0.1.0"
+dependencies = [
+ "cinma-blobstore",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "cinma-core"
 version = "0.1.0"
 dependencies = [
  "cinma-blobstore",
+ "cinma-casting",
  "cinma-db",
+ "cinma-http",
  "cinma-metadata",
  "cinma-player",
+ "cinma-queue",
  "cinma-ranker",
  "cinma-stremio",
  "cinma-subtitles",
  "cinma-torrent",
+ "cinma-tracking",
  "encoding_rs",
  "reqwest",
+ "ring",
  "security-framework",
  "serde",
  "serde_json",
@@ -507,6 +528,22 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "uniffi",
+]
+
+[[package]]
+name = "cinma-http"
+version = "0.1.0"
+dependencies = [
+ "cinma-blobstore",
+ "cinma-db",
+ "cinma-queue",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -584,8 +621,23 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cinma-blobstore",
+ "cinma-db",
+ "cinma-queue",
  "librqbit",
+ "serde",
+ "serde_json",
  "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "cinma-tracking"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "tokio",
 ]
@@ -2621,6 +2673,7 @@ checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
