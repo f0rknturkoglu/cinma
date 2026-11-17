@@ -1,6 +1,39 @@
 # PROGRESS
 
-## Status: Phases 0–3 done and accepted. Phase 4 complete (awaiting owner acceptance & PiP decision before Phase 5).
+## Status: Phases 0–7 complete (end-to-end roadmap built & verified; risks documented in `docs/RISKS.md`).
+
+## Phases 5, 6 & 7 — Unified Downloads, Integrations, Security & Packaging ✅
+
+### Done in Phase 5 (Unified Download Manager, Disk Policy & Menu Bar)
+- **ADRs & Migrations**: `docs/adr/0012-download-engines-and-http.md`, `docs/adr/0013-disk-policy-and-menubar.md`, `0005_disk_policy.sql` (`disk_entry`, `keep_rule`).
+- **Engines & Unified Queue (`cinma-http`, `cinma-torrent::download`, `cinma-player::mux`, `cinma-core::downloads`)**:
+  - Segmented HTTP/1.1 downloader (`http1_only`, dynamic gap splitting, per-host cap, `ETag`/`Last-Modified` validators, `PriorityListener` read-cursor steering, verified against real `kill -9`).
+  - Full torrent download engine with `fastresume`, upload/download caps, seeding policy (`off` / `ratio` / `minutes`), and Darwin `malloc_zone_pressure_relief` on stop.
+  - `yt-dlp -J` download engine (video+audio, capped height, M4A audio-only) + in-process FFmpeg muxing (`remux_files` via `dlopen` `libavformat.63`/`libavcodec.63`).
+  - Live mid-download **Play Now** via `Blob::source()` -> `Playback::play_download`.
+- **Disk Policy & Menu Bar (`Core::disk`, `DownloadsViewController`, `MenuBarController`)**:
+  - `NSTableView` + `NSTableViewDiffableDataSource` queue UI, per-item & global "Keep Offline" rules, LRU quota eviction, `NSStatusItem` menu bar extra with `ProcessInfo` App Nap activity only while downloads are active, and `applicationShouldTerminateAfterLastWindowClosed` toggleable behavior.
+
+### Done in Phase 6 (Optional Integrations — Off by Default, Zero Idle Cost)
+- **ADR & Migration**: `docs/adr/0014-casting-and-tracking-outbox.md`, `0006_tracking_outbox.sql` (`sync_outbox`, `sync_adapter_state`).
+- **Casting (`cinma-casting`, `IntegrationsView.swift`)**: On-demand SSDP (DLNA AVTransport) & `dns-sd` (Chromecast CastV2 TLS/protobuf) discovery + ephemeral LAN HTTP `Range` server active *only* during cast sessions; Player HUD Cast device picker + remote play/pause/seek/stop. AirPlay video limitation recorded in `docs/RISKS.md`.
+- **Tracking & Imports (`cinma-tracking`, `Core::integrations`)**: SQLite outbox + exponential backoff worker, Keychain per-profile tokens, Trakt device-code OAuth/scrobble/recommendations, Simkl, AniList GraphQL, MAL, Letterboxd RSS & CSV export, bundled Anime ID starter map, and one-time Stremio addon + library import.
+
+### Done in Phase 7 (Polish, Security, Backup & Packaging)
+- **ADR**: `docs/adr/0015-packaging-and-custom-libmpv.md`.
+- **Security & Backup (`Core::security_and_backup`)**: Profile PINs hashed/verified with `PBKDF2-HMAC-SHA256` (`ring`, 100k iterations, random 16B salt) + PIN prompt/management in `ProfilePickerView`; SQLite online snapshot export (`VACUUM INTO`) & integrity-validated live restore UI in Settings.
+- **UX, Accessibility & Packaging (`DesignSystem.swift`, `SheetsAndSettings.swift`, `tools/package-release.sh`, `Cinma.entitlements`)**: Actionable friendly errors (`FriendlyError`), polished 3-step Onboarding, VoiceOver accessibility labels, `Contents/Frameworks/libmpv.2.dylib`-first loader path, and signed `.app` packaging script.
+
+### Verification & Measurements (Phases 5–7)
+- **`cargo fmt --check` & `cargo clippy --all-targets -- -D warnings`:** passed (0 warnings).
+- **`cargo test`:** **100 Rust tests pass**, 0 failed, 0 ignored across all workspace crates (`blobstore`, `db`, `player`, `queue`, `http`, `torrent`, `casting`, `tracking`, `stremio`, `metadata`, `ranker`, `subtitles`, `core`).
+- **Release `xcodebuild` (`Cinma.app`):** succeeded with **0 errors and 0 warnings**.
+- **Launch & Idle (`tools/measure.sh`, Release, 5 runs):**
+  - Median first frame: **181.8 ms** (< 250 ms target ✅)
+  - Median idle `phys_footprint`: **30.0 MB** (≤ 40 MB target ✅), RSS **100.6 MB**
+  - Median idle CPU: **0.00 %** (~0% target ✅)
+- **Closed-window Menu Bar idle:** `28 MB` `phys_footprint`, `0.0 %` CPU.
+- **Packaged Bundle (`tools/package-release.sh` -> `dist/Cinma.app`):** `codesign --verify --deep --strict` clean; 1080p MKV playback smoke test (`CINMA_AUTOPLAY=file:...`) TTFF **401.5 ms**, seek **88.6 ms**, `gamma=bt.1886 hdr=false`, exit 0.
 
 ## Phase 4 — Player complete (awaiting acceptance)
 

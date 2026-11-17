@@ -13,7 +13,7 @@ enum HDRProbe {
             if let meta, meta.isHdr { return true }
             let text = "\(stream.name ?? "") \(stream.title ?? "")".lowercased()
             return text.contains("hdr") || text.contains("dolby") || text.contains("hlg")
-        case .trailer:
+        case .trailer, .download:
             return false
         case .file(let url):
             let asset = AVURLAsset(url: url)

@@ -272,12 +272,13 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         infoLabel.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
         infoLabel.textColor = CinemaTheme.textPrimary
 
+        let castBtn = makeIconButton("tv.and.mediabox", tooltip: String(localized: "Cast to LAN Device"), action: #selector(openCastSheet(_:)))
         let streamsBtn = makeIconButton("rectangle.stack", tooltip: String(localized: "Switch Stream"), action: #selector(showStreamSwitcher(_:)))
         let statsBtn = makeIconButton("info.circle", tooltip: String(localized: "Playback Stats (I)"), action: #selector(toggleStats))
         let shotBtn = makeIconButton("camera", tooltip: String(localized: "Screenshot (S)"), action: #selector(takeScreenshot))
         let moreBtn = makeIconButton("ellipsis.circle", tooltip: String(localized: "Video, A/B Loop & Sleep Timer"), action: #selector(showMoreMenu(_:)))
 
-        let rightStack = NSStackView(views: [infoLabel, streamsBtn, statsBtn, shotBtn, moreBtn])
+        let rightStack = NSStackView(views: [infoLabel, castBtn, streamsBtn, statsBtn, shotBtn, moreBtn])
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = 8
@@ -486,6 +487,11 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
             subField.stringValue = ""
             subField.isHidden = true
             infoLabel.stringValue = String(localized: "Trailer")
+        case .download(_, let title):
+            titleField.stringValue = title
+            subField.stringValue = ""
+            subField.isHidden = true
+            infoLabel.stringValue = String(localized: "Offline Buffer")
         }
     }
 
@@ -564,10 +570,12 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
                     try session.playUrl(url: url.path)
                 case .trailer(let url, _):
                     try session.playUrl(url: url)
+                case .download(let id, _):
+                    try session.playDownload(downloadId: id)
                 }
             } catch {
                 await MainActor.run {
-                    self.statusLabel.stringValue = String(localized: "Playback failed: \(error.localizedDescription)")
+                    self.statusLabel.stringValue = FriendlyError.explain(error)
                 }
             }
         }
@@ -1241,6 +1249,19 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
     @objc private func selectSpeedItem(_ sender: NSMenuItem) {
         if let val = sender.representedObject as? Double { setSpeed(val) }
+    }
+
+    @objc private func openCastSheet(_ sender: NSButton) {
+        showHudAndCancelTimer()
+        var holder: NSHostingController<CastDeviceSheetView>?
+        let titleText = titleField.stringValue.isEmpty ? "Cinma" : titleField.stringValue
+        let vc = NSHostingController(
+            rootView: CastDeviceSheetView(core: core, request: request, title: titleText) { [weak self] in
+                if let vc = holder { self?.dismiss(vc) }
+            }
+        )
+        holder = vc
+        presentAsSheet(vc)
     }
 
     @objc private func showMoreMenu(_ sender: NSButton) {

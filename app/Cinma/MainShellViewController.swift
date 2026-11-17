@@ -11,6 +11,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         case discover = 1
         case library = 2
         case calendar = 3
+        case downloads = 4
     }
 
     private let core: CinmaCore
@@ -38,6 +39,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
     private lazy var calendarVC = CalendarViewController(core: core) { [weak self] item in
         self?.openDetail(item)
     }
+    private lazy var downloadsVC = DownloadsViewController(core: core, onPlay: onPlay)
 
     private var activeTab: Tab = .home
     private var detailVC: TitleDetailViewController?
@@ -116,6 +118,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
             (.discover, String(localized: "Discover")),
             (.library, String(localized: "Library")),
             (.calendar, String(localized: "Calendar")),
+            (.downloads, String(localized: "Downloads")),
         ]
         tabButtons = titles.map { tab, title in
             let btn = NSButton(title: title, target: self, action: #selector(tabButtonClicked(_:)))
@@ -123,6 +126,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
             btn.isBordered = false
             btn.wantsLayer = true
             btn.layer?.cornerRadius = 17
+            btn.setAccessibilityLabel(title)
             btn.translatesAutoresizingMaskIntoConstraints = false
             btn.heightAnchor.constraint(equalToConstant: 34).isActive = true
             btn.widthAnchor.constraint(greaterThanOrEqualToConstant: 78).isActive = true
@@ -221,6 +225,9 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         case .calendar:
             calendarVC.reload()
             target = calendarVC
+        case .downloads:
+            downloadsVC.reload()
+            target = downloadsVC
         }
         showChild(target)
     }
@@ -327,6 +334,14 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         libraryVC.reload()
     }
 
+    func handleDownloadsChanged() {
+        downloadsVC.reload()
+    }
+
+    func openDownloadsTab() {
+        switchToTab(.downloads)
+    }
+
     private func refreshProfileBadge() {
         let profiles = (try? core.profiles()) ?? []
         let activeId = (try? core.activeProfileId()) ?? 1
@@ -362,12 +377,22 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
     @objc private func showProfileMenu(_ sender: NSButton) {
         let menu = NSMenu()
         menu.addItem(withTitle: String(localized: "Addons…"), action: #selector(openAddons), keyEquivalent: "")
+        menu.addItem(withTitle: String(localized: "Integrations…"), action: #selector(openIntegrations), keyEquivalent: "")
         menu.addItem(withTitle: String(localized: "Profiles…"), action: #selector(openProfiles), keyEquivalent: "")
         menu.addItem(withTitle: String(localized: "Settings…"), action: #selector(openSettings), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: String(localized: "Open File…"), action: #selector(openFile), keyEquivalent: "")
         for item in menu.items { item.target = self }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc func openIntegrations() {
+        var holder: NSHostingController<IntegrationsSheetView>?
+        let vc = NSHostingController(rootView: IntegrationsSheetView(core: core) { [weak self] in
+            if let vc = holder { self?.dismiss(vc) }
+        })
+        holder = vc
+        presentAsSheet(vc)
     }
 
     @objc func openAddons() {

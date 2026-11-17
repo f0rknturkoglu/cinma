@@ -25,6 +25,7 @@ final class TitleDetailViewController: NSViewController {
     private let overviewLabel = NSTextField(wrappingLabelWithString: "")
     private let castLabel = NSTextField(wrappingLabelWithString: "")
     private var libraryButton: NSButton?
+    private var keepOfflineButton: NSButton?
     private var trailerButton: NSButton?
 
     private let seasonsStack = NSStackView()
@@ -118,6 +119,13 @@ final class TitleDetailViewController: NSViewController {
             target: self,
             action: #selector(toggleLibrary)
         )
+        let keepBtn = CinemaTheme.makePillButton(
+            title: String(localized: "Keep Offline"),
+            symbol: "pin",
+            primary: false,
+            target: self,
+            action: #selector(toggleKeepOffline)
+        )
         let trBtn = CinemaTheme.makePillButton(
             title: String(localized: "Trailer"),
             symbol: "film",
@@ -127,13 +135,14 @@ final class TitleDetailViewController: NSViewController {
         )
         trBtn.isHidden = true
         libraryButton = libBtn
+        keepOfflineButton = keepBtn
         trailerButton = trBtn
-        for b in [backBtn, libBtn, trBtn] {
+        for b in [backBtn, libBtn, keepBtn, trBtn] {
             b.translatesAutoresizingMaskIntoConstraints = false
             b.heightAnchor.constraint(equalToConstant: 36).isActive = true
             b.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
         }
-        let topBar = NSStackView(views: [backBtn, libBtn, trBtn])
+        let topBar = NSStackView(views: [backBtn, libBtn, keepBtn, trBtn])
         topBar.spacing = 10
         topBar.translatesAutoresizingMaskIntoConstraints = false
 
@@ -511,11 +520,14 @@ final class TitleDetailViewController: NSViewController {
                 let all = try await core.streamsIncremental(mediaType: mediaType, id: videoId, observer: collector)
                 guard !Task.isCancelled, let self else { return }
                 self.accumulatedStreams = all
+                if all.isEmpty {
+                    self.streamStatusLabel.stringValue = String(localized: "No playable streams found from enabled addons. Check Addons or try another source.")
+                }
                 self.renderRankedStreams()
             } catch {
                 guard !Task.isCancelled, let self else { return }
                 if self.accumulatedStreams.isEmpty {
-                    self.streamStatusLabel.stringValue = error.localizedDescription
+                    self.streamStatusLabel.stringValue = FriendlyError.explain(error)
                 }
             }
         }
@@ -623,8 +635,25 @@ final class TitleDetailViewController: NSViewController {
         playBtn.identifier = NSUserInterfaceItemIdentifier(item.stream.raw)
         playBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
         playBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
+        playBtn.setAccessibilityLabel("\(String(localized: "Play")) \(item.parsed.resolution) \(item.stream.addonName)")
 
-        let vStack = NSStackView(views: [topRow, statsLabel, whyLabel, playBtn])
+        let dlBtn = CinemaTheme.makePillButton(
+            title: String(localized: "Download"),
+            symbol: "arrow.down.circle",
+            primary: false,
+            target: self,
+            action: #selector(downloadStreamClicked(_:))
+        )
+        dlBtn.identifier = NSUserInterfaceItemIdentifier(item.stream.raw)
+        dlBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        dlBtn.widthAnchor.constraint(greaterThanOrEqualToConstant: 110).isActive = true
+        dlBtn.setAccessibilityLabel("\(String(localized: "Download")) \(item.parsed.resolution) \(item.stream.addonName)")
+
+        let actionsRow = NSStackView(views: [playBtn, dlBtn])
+        actionsRow.orientation = .horizontal
+        actionsRow.spacing = 8
+
+        let vStack = NSStackView(views: [topRow, statsLabel, whyLabel, actionsRow])
         vStack.orientation = .vertical
         vStack.alignment = .leading
         vStack.spacing = 8
@@ -678,6 +707,59 @@ final class TitleDetailViewController: NSViewController {
             systemSymbolName: saved ? "checkmark" : "plus",
             accessibilityDescription: nil
         )
+        let kept = (try? core.itemKeepWatched(metaId: metaId, mediaType: mediaType)) ?? false
+        keepOfflineButton?.title = kept ? String(localized: "Kept Offline") : String(localized: "Keep Offline")
+        keepOfflineButton?.image = NSImage(
+            systemSymbolName: kept ? "pin.fill" : "pin",
+            accessibilityDescription: nil
+        )
+    }
+
+    @objc private func toggleKeepOffline() {
+        let meta = richMeta?.meta
+        let metaId = meta?.id ?? preview.id
+        let mediaType = meta?.mediaType ?? preview.mediaType
+        let kept = (try? core.itemKeepWatched(metaId: metaId, mediaType: mediaType)) ?? false
+        try? core.setItemKeepWatched(metaId: metaId, mediaType: mediaType, keep: !kept)
+        refreshLibraryButton()
+    }
+
+    @objc private func downloadStreamClicked(_ sender: NSButton) {
+        guard let raw = sender.identifier?.rawValue,
+              let stream = accumulatedStreams.first(where: { $0.raw == raw })
+        else { return }
+        let meta = richMeta?.meta
+        let metaId = meta?.id ?? preview.id
+        let mediaType = meta?.mediaType ?? preview.mediaType
+        let baseTitle = meta?.name ?? preview.name
+        let epSuffix = selectedEpisode.map { " S\($0.season ?? selectedSeason)E\($0.episode ?? $0.number ?? 0)" } ?? ""
+        let title = "\(baseTitle)\(epSuffix)"
+        do {
+            if stream.infoHash != nil {
+                _ = try core.addTorrentDownload(
+                    title: title,
+                    stream: stream,
+                    metaId: metaId,
+                    mediaType: mediaType,
+                    priority: 10
+                )
+            } else if let url = stream.url, url.hasPrefix("http") {
+                _ = try core.addHttpDownload(
+                    title: title,
+                    url: url,
+                    metaId: metaId,
+                    mediaType: mediaType,
+                    priority: 10
+                )
+            } else {
+                streamStatusLabel.stringValue = String(localized: "This stream source cannot be queued for offline download.")
+                return
+            }
+            sender.title = String(localized: "Queued")
+            sender.isEnabled = false
+        } catch {
+            streamStatusLabel.stringValue = FriendlyError.explain(error)
+        }
     }
 
     @objc private func goBack() { onBack() }

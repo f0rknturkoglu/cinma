@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Addon Manager (SwiftUI leaf view)
 
@@ -137,6 +138,10 @@ struct ProfilePickerView: View {
     @State private var activeId: Int64 = 1
     @State private var newName = ""
     @State private var errorText = ""
+    @State private var pinPromptProfile: ProfileInfo?
+    @State private var pinEntry = ""
+    @State private var pinEditProfile: ProfileInfo?
+    @State private var newPin = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -159,8 +164,15 @@ struct ProfilePickerView: View {
                                     .foregroundStyle(profile.id == activeId ? Color.black : Color.white)
                             }
                         VStack(alignment: .leading) {
-                            Text(profile.name)
-                                .font(.headline)
+                            HStack(spacing: 6) {
+                                Text(profile.name)
+                                    .font(.headline)
+                                if profile.hasPin {
+                                    Image(systemName: "lock.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                             if profile.id == activeId {
                                 Text(String(localized: "Active"))
                                     .font(.caption)
@@ -168,11 +180,22 @@ struct ProfilePickerView: View {
                             }
                         }
                         Spacer()
+                        Button(profile.hasPin ? String(localized: "PIN…") : String(localized: "Set PIN")) {
+                            pinEditProfile = profile
+                            newPin = ""
+                            errorText = ""
+                        }
                         if profile.id != activeId {
                             Button(String(localized: "Switch")) {
-                                try? core.setActiveProfile(id: profile.id)
-                                reload()
-                                onDismiss()
+                                if profile.hasPin {
+                                    pinPromptProfile = profile
+                                    pinEntry = ""
+                                    errorText = ""
+                                } else {
+                                    try? core.setActiveProfile(id: profile.id)
+                                    reload()
+                                    onDismiss()
+                                }
                             }
                         }
                         if profiles.count > 1 {
@@ -186,9 +209,39 @@ struct ProfilePickerView: View {
                             } label: {
                                 Image(systemName: "trash")
                             }
+                            .accessibilityLabel("\(String(localized: "Delete")) \(profile.name)")
                         }
                     }
                     .padding(.vertical, 4)
+                }
+            }
+
+            if let target = pinPromptProfile {
+                HStack(spacing: 8) {
+                    Text("\(String(localized: "Enter PIN for")) \(target.name):")
+                        .font(.caption)
+                    SecureField(String(localized: "PIN"), text: $pinEntry)
+                        .frame(width: 120)
+                        .onSubmit { verifyAndSwitch(target) }
+                    Button(String(localized: "Unlock")) { verifyAndSwitch(target) }
+                    Button(String(localized: "Cancel")) { pinPromptProfile = nil }
+                }
+            } else if let editing = pinEditProfile {
+                HStack(spacing: 8) {
+                    Text("\(String(localized: "PIN for")) \(editing.name):")
+                        .font(.caption)
+                    SecureField(String(localized: "4+ digits"), text: $newPin)
+                        .frame(width: 120)
+                        .onSubmit { savePin(editing) }
+                    Button(String(localized: "Save PIN")) { savePin(editing) }
+                    if editing.hasPin {
+                        Button(String(localized: "Remove PIN"), role: .destructive) {
+                            try? core.setProfilePin(profileId: editing.id, pin: nil)
+                            pinEditProfile = nil
+                            reload()
+                        }
+                    }
+                    Button(String(localized: "Cancel")) { pinEditProfile = nil }
                 }
             }
 
@@ -207,8 +260,34 @@ struct ProfilePickerView: View {
             }
         }
         .padding(24)
-        .frame(width: 440, height: 380)
+        .frame(width: 500, height: 420)
         .onAppear(perform: reload)
+    }
+
+    private func verifyAndSwitch(_ profile: ProfileInfo) {
+        do {
+            if try core.verifyProfilePin(profileId: profile.id, pin: pinEntry) {
+                try core.setActiveProfile(id: profile.id)
+                pinPromptProfile = nil
+                reload()
+                onDismiss()
+            } else {
+                errorText = String(localized: "Incorrect PIN")
+            }
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func savePin(_ profile: ProfileInfo) {
+        do {
+            try core.setProfilePin(profileId: profile.id, pin: newPin)
+            pinEditProfile = nil
+            newPin = ""
+            reload()
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 
     private func reload() {
@@ -239,35 +318,55 @@ struct OnboardingView: View {
 
     @State private var addonUrl = ""
     @State private var tmdbKey = ""
+    @State private var language = "tr-TR"
+    @State private var keepMenuBar = true
     @State private var status = ""
     @State private var busy = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             Text(String(localized: "Welcome to Cinma"))
                 .font(.largeTitle.bold())
-            Text(String(localized: "Cinma ships without built-in content sources. Add a Stremio addon by URL and optionally your free TMDB API key for rich Turkish/English artwork and calendars."))
+            Text(String(localized: "Cinma ships without built-in content sources. Set up your addons, optional TMDB metadata key, and preferences below — you can skip or change everything anytime."))
                 .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(String(localized: "Stremio Addon URL (optional)"))
+            VStack(alignment: .leading, spacing: 6) {
+                Label(String(localized: "1. Stremio Addon URL (optional)"), systemImage: "puzzlepiece.extension")
                     .font(.headline)
                 HStack {
                     TextField("https://…/manifest.json", text: $addonUrl)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(String(localized: "Stremio addon manifest URL"))
                     Button(String(localized: "Install"), action: installAddon)
                         .disabled(busy || addonUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(String(localized: "TMDB API Key (optional, stored in Keychain)"))
+            VStack(alignment: .leading, spacing: 6) {
+                Label(String(localized: "2. TMDB API Key (optional, saved to Keychain)"), systemImage: "key.fill")
                     .font(.headline)
                 SecureField("TMDB v3 API key", text: $tmdbKey)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(String(localized: "TMDB API Key"))
                 Text(String(localized: "If skipped, Cinma uses installed metadata addons (such as Cinemeta) as fallback."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label(String(localized: "3. Preferences"), systemImage: "slider.horizontal.3")
+                    .font(.headline)
+                Picker(String(localized: "Metadata Language"), selection: $language) {
+                    Text("Türkçe (tr-TR)").tag("tr-TR")
+                    Text("English (en-US)").tag("en-US")
+                }
+                .onChange(of: language) { _, val in
+                    try? core.setMetadataLanguage(lang: val)
+                }
+                Toggle(String(localized: "Keep downloads running in Menu Bar when closed"), isOn: $keepMenuBar)
+                    .onChange(of: keepMenuBar) { _, val in
+                        try? core.setMenubarEnabled(enabled: val)
+                    }
             }
 
             if !status.isEmpty {
@@ -283,6 +382,7 @@ struct OnboardingView: View {
                     try? core.setOnboardingCompleted(completed: true)
                     onFinish()
                 }
+                .accessibilityLabel(String(localized: "Skip setup"))
                 Spacer()
                 Button(String(localized: "Continue")) {
                     saveAndContinue()
@@ -290,10 +390,11 @@ struct OnboardingView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.orange)
                 .disabled(busy)
+                .accessibilityLabel(String(localized: "Save and continue to Cinma"))
             }
         }
         .padding(28)
-        .frame(width: 540, height: 420)
+        .frame(width: 560, height: 470)
     }
 
     private func installAddon() {
@@ -336,6 +437,23 @@ struct SettingsView: View {
     @State private var language = "tr-TR"
     @State private var addonsEnabled = true
     @State private var torrentEnabled = true
+    @State private var castingEnabled = false
+    @State private var trackingEnabled = false
+    @State private var menubarEnabled = true
+    @State private var diskPolicy = DiskPolicySettingsInfo(
+        cacheQuotaMb: 10_240,
+        keepWatchedGlobal: false,
+        seedingMode: "off",
+        seedingRatio: 1.0,
+        seedingMinutes: 60,
+        uploadLimitKbps: 0
+    )
+    @State private var diskUsage = DiskUsageSummaryInfo(
+        totalBytes: 0,
+        keptBytes: 0,
+        evictableBytes: 0,
+        entryCount: 0
+    )
     @State private var ytdlpStatus = YtdlpStatusInfo(available: false, path: nil, managed: false)
     @State private var subSettings = SubtitleSettingsFfi(
         preferredLangs: ["tur", "eng"],
@@ -490,6 +608,75 @@ struct SettingsView: View {
                     .onChange(of: torrentEnabled) { _, val in
                         Task { try? await core.setFeatureEnabled(name: "torrent", enabled: val) }
                     }
+                Toggle(String(localized: "LAN Casting (Chromecast / DLNA)"), isOn: $castingEnabled)
+                    .onChange(of: castingEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "casting", enabled: val) }
+                    }
+                Toggle(String(localized: "Watch Tracking (Trakt / Simkl / AniList / MAL)"), isOn: $trackingEnabled)
+                    .onChange(of: trackingEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "tracking", enabled: val) }
+                    }
+            }
+
+            Section(String(localized: "Downloads, Disk Policy & Menu Bar")) {
+                Toggle(String(localized: "Keep Running in Menu Bar when Window Closes"), isOn: $menubarEnabled)
+                    .onChange(of: menubarEnabled) { _, val in
+                        try? core.setMenubarEnabled(enabled: val)
+                    }
+                Picker(String(localized: "Cache & Download Quota"), selection: $diskPolicy.cacheQuotaMb) {
+                    Text("5 GB").tag(UInt64(5_120))
+                    Text("10 GB").tag(UInt64(10_240))
+                    Text("25 GB").tag(UInt64(25_600))
+                    Text("50 GB").tag(UInt64(51_200))
+                    Text(String(localized: "Unlimited")).tag(UInt64(0))
+                }
+                .onChange(of: diskPolicy.cacheQuotaMb) { _, _ in saveDiskPolicy() }
+
+                Toggle(String(localized: "Keep Watched Titles Offline by Default"), isOn: $diskPolicy.keepWatchedGlobal)
+                    .onChange(of: diskPolicy.keepWatchedGlobal) { _, _ in saveDiskPolicy() }
+
+                Picker(String(localized: "Torrent Seeding Policy"), selection: $diskPolicy.seedingMode) {
+                    Text(String(localized: "Off (stop after finish)")).tag("off")
+                    Text(String(localized: "Target Ratio")).tag("ratio")
+                    Text(String(localized: "Time Limit (minutes)")).tag("minutes")
+                }
+                .onChange(of: diskPolicy.seedingMode) { _, _ in saveDiskPolicy() }
+
+                if diskPolicy.seedingMode == "ratio" {
+                    Stepper("\(String(localized: "Seed Ratio")): \(String(format: "%.1f", diskPolicy.seedingRatio))", value: $diskPolicy.seedingRatio, in: 0.2...5.0, step: 0.2)
+                        .onChange(of: diskPolicy.seedingRatio) { _, _ in saveDiskPolicy() }
+                } else if diskPolicy.seedingMode == "minutes" {
+                    Stepper("\(String(localized: "Seed Duration")): \(diskPolicy.seedingMinutes) min", value: $diskPolicy.seedingMinutes, in: 5...720, step: 15)
+                        .onChange(of: diskPolicy.seedingMinutes) { _, _ in saveDiskPolicy() }
+                }
+
+                Stepper("\(String(localized: "Upload Limit")): \(diskPolicy.uploadLimitKbps == 0 ? String(localized: "Unlimited") : "\(diskPolicy.uploadLimitKbps) KB/s")", value: $diskPolicy.uploadLimitKbps, in: 0...50_000, step: 512)
+                    .onChange(of: diskPolicy.uploadLimitKbps) { _, _ in saveDiskPolicy() }
+
+                HStack {
+                    let totalStr = ByteCountFormatter.string(fromByteCount: Int64(diskUsage.totalBytes), countStyle: .file)
+                    let keptStr = ByteCountFormatter.string(fromByteCount: Int64(diskUsage.keptBytes), countStyle: .file)
+                    Text("\(String(localized: "Tracked")): \(totalStr) · \(String(localized: "Kept")): \(keptStr)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(String(localized: "Trim Cache Now")) {
+                        let freed = (try? core.enforceDiskQuota()) ?? 0
+                        diskUsage = (try? core.diskUsageSummary()) ?? diskUsage
+                        let freedStr = ByteCountFormatter.string(fromByteCount: Int64(freed), countStyle: .file)
+                        status = "\(String(localized: "Freed")) \(freedStr)"
+                    }
+                }
+            }
+
+            Section(String(localized: "Backup & Restore (SQLite)")) {
+                HStack {
+                    Button(String(localized: "Export Backup…")) { exportBackup() }
+                    Button(String(localized: "Restore Backup…")) { restoreBackup() }
+                }
+                Text(String(localized: "Exports a consistent snapshot of profiles, library, progress, addons, and settings. Secrets stay in macOS Keychain."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section(String(localized: "Trailers (yt-dlp)")) {
@@ -576,6 +763,11 @@ struct SettingsView: View {
         language = (try? core.metadataLanguage()) ?? "tr-TR"
         addonsEnabled = (try? core.featureEnabled(name: "addons")) ?? true
         torrentEnabled = (try? core.featureEnabled(name: "torrent")) ?? true
+        castingEnabled = (try? core.featureEnabled(name: "casting")) ?? false
+        trackingEnabled = (try? core.featureEnabled(name: "tracking")) ?? false
+        menubarEnabled = (try? core.menubarEnabled()) ?? true
+        if let dp = try? core.diskPolicySettings() { diskPolicy = dp }
+        if let du = try? core.diskUsageSummary() { diskUsage = du }
         ytdlpStatus = core.ytdlpStatus()
         if let s = try? core.subtitleSettings() {
             subSettings = s
@@ -605,6 +797,36 @@ struct SettingsView: View {
 
     private func savePlayerPrefs() {
         try? core.setPlayerPreferences(prefs: playerPrefs)
+    }
+
+    private func saveDiskPolicy() {
+        try? core.setDiskPolicySettings(s: diskPolicy)
+    }
+
+    private func exportBackup() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "cinma-backup.sqlite3"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try core.exportBackup(destPath: url.path)
+            status = "\(String(localized: "Backup saved to")) \(url.lastPathComponent)"
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
+    private func restoreBackup() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let schema = try core.importBackup(srcPath: url.path)
+            reload()
+            status = "\(String(localized: "Restored backup (schema")) v\(schema))"
+        } catch {
+            status = error.localizedDescription
+        }
     }
 
     private func saveTmdbKey() {

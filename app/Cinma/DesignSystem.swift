@@ -20,6 +20,27 @@ enum PlayRequest: Sendable {
     case stream(StreamInfo, metadata: PlaybackMetadata? = nil)
     case file(URL)
     case trailer(url: String, title: String)
+    case download(id: Int64, title: String)
+}
+
+enum FriendlyError {
+    static func explain(_ error: Error) -> String {
+        let raw = error.localizedDescription
+        let lower = raw.lowercased()
+        if lower.contains("no peers") || lower.contains("timed out waiting for torrent metadata") {
+            return String(localized: "No active peers found for this torrent. Try another stream with more seeders.")
+        }
+        if lower.contains("404") || lower.contains("410") || lower.contains("connection refused") || lower.contains("dns") {
+            return String(localized: "Stream or addon server is unreachable right now. Switch streams or check addon status.")
+        }
+        if lower.contains("yt-dlp is not installed") {
+            return String(localized: "yt-dlp is not installed yet. Install it from Settings → Trailers & Web Downloads.")
+        }
+        if lower.contains("feature `") && lower.contains("turned off") {
+            return String(localized: "This feature is turned off in Settings. Enable it to continue.")
+        }
+        return raw
+    }
 }
 
 @MainActor

@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var home: HomeViewController?
     private var core: CinmaCore?
     private var shell: MainShellViewController?
+    private var menuBar: MenuBarController?
     private var pendingLinks: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -30,8 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Becomes `false` once the menu bar extra exists (Phase 5).
-        true
+        !(menuBar?.isInstalled ?? false)
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { reopenMainWindow() }
+        return true
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
@@ -40,6 +45,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         ImagePipeline.shared.clearMemoryCache()
+        // When keeping Cinma in the menu bar with no open window, release heavy
+        // browse/detail view hierarchy so idle closed-window footprint stays low.
+        if menuBar?.isInstalled == true, (try? core?.hasPendingDownloads()) == false {
+            window?.contentViewController = nil
+            shell = nil
+            home = nil
+        }
+    }
+
+    private func reopenMainWindow() {
+        if let window, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+        let targetWindow: NSWindow
+        if let existing = window {
+            targetWindow = existing
+        } else {
+            let placeholder = HomeViewController()
+            home = placeholder
+            let w = MainWindow.make(content: placeholder)
+            w.delegate = self
+            window = w
+            targetWindow = w
+        }
+        if core != nil {
+            showBrowse()
+        }
+        targetWindow.makeKeyAndOrderFront(nil)
+        NSApp.activate()
     }
 
     /// Opens the Rust core off the main thread (it touches disk).
@@ -61,6 +97,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             try? core.subscribe(listener: CoreEventSink { [weak self] event in
                 Task { @MainActor in self?.handle(event) }
             })
+            let bar = MenuBarController(
+                core: core,
+                onShowWindow: { [weak self] in self?.reopenMainWindow() },
+                onShowDownloads: { [weak self] in
+                    self?.reopenMainWindow()
+                    self?.shell?.openDownloadsTab()
+                }
+            )
+            bar.syncEnabledState()
+            self.menuBar = bar
             rebuildMenu()
             showBrowse()
             let links = pendingLinks + [DevAutomation.openURL].compactMap { $0 }
@@ -99,6 +145,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .keyBindingsChanged: rebuildMenu()
         case .profileChanged: shell?.handleProfileChanged()
         case .libraryChanged: shell?.handleLibraryChanged()
+        case .downloadsChanged:
+            menuBar?.syncEnabledState()
+            shell?.handleDownloadsChanged()
+        case .castChanged, .trackingChanged:
+            break
         }
     }
 
