@@ -1,17 +1,31 @@
-//! Byte sources the player reads from.
+//! Byte storage and the sources the player reads from.
 //!
-//! Phase 1 keeps this deliberately small: a [`ByteSource`] hands out
-//! independent [`SourceReader`]s, and every blocking read can be cancelled.
-//! Sparse blobs, availability bitmaps and head/tail priority arrive in Phase 2;
-//! composable sources (archive playback) wrap a `ByteSource` in another one.
+//! * [`ByteSource`] / [`SourceReader`]: what the player bridge consumes. A
+//!   source can wrap another source (slot for archive playback, §5.1).
+//! * [`BlobStore`] / [`Blob`]: sparse files with durable availability ranges
+//!   that engines write into (docs/adr/0009).
+//! * [`fetch_order`]: head/tail-first fetch planning for engines.
+//!
+//! Every blocking read is cancellable and wakes on data or cancel, never by
+//! polling.
 
 #![forbid(unsafe_code)]
 
-use std::io;
-use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
+mod blob;
+mod plan;
+mod ranges;
+mod wait;
 
+use std::io;
+use std::sync::{Arc, Mutex};
+
+use tokio::sync::Notify;
 pub use tokio_util::sync::CancellationToken;
+
+pub use blob::{Blob, BlobId, BlobStore, DEFAULT_READAHEAD, PriorityListener, ReadHint};
+pub use plan::{HEAD_BYTES, TAIL_BYTES, fetch_order};
+pub use ranges::RangeSet;
+use wait::wait_until;
 
 /// Something with a known size that can be read at arbitrary offsets.
 pub trait ByteSource: Send + Sync + 'static {
@@ -36,26 +50,26 @@ pub fn cancelled_error() -> io::Error {
 
 /// In-memory source whose bytes become readable progressively. Reads past the
 /// available prefix block, like a torrent piece that hasn't arrived. Used in
-/// tests and as a reference implementation.
+/// tests.
 pub struct MemorySource {
     data: Arc<Vec<u8>>,
-    available: Arc<(Mutex<u64>, Condvar)>,
+    available: Arc<(Mutex<u64>, Notify)>,
 }
 
 impl MemorySource {
     pub fn new(data: Vec<u8>, available: u64) -> Self {
         Self {
             data: Arc::new(data),
-            available: Arc::new((Mutex::new(available), Condvar::new())),
+            available: Arc::new((Mutex::new(available), Notify::new())),
         }
     }
 
     pub fn set_available(&self, available: u64) {
-        let (lock, cvar) = &*self.available;
+        let (lock, notify) = &*self.available;
         if let Ok(mut guard) = lock.lock() {
             *guard = available;
-            cvar.notify_all();
         }
+        notify.notify_waiters();
     }
 }
 
@@ -78,7 +92,7 @@ impl ByteSource for MemorySource {
 
 struct MemoryReader {
     data: Arc<Vec<u8>>,
-    available: Arc<(Mutex<u64>, Condvar)>,
+    available: Arc<(Mutex<u64>, Notify)>,
 }
 
 impl SourceReader for MemoryReader {
@@ -92,19 +106,11 @@ impl SourceReader for MemoryReader {
         if offset >= size || buf.is_empty() {
             return Ok(0);
         }
-        let (lock, cvar) = &*self.available;
-        let mut available = lock.lock().map_err(|_| io::Error::other("poisoned"))?;
-        while *available <= offset {
-            if cancel.is_cancelled() {
-                return Err(cancelled_error());
-            }
-            // Condvar can't observe the token; wake periodically to check it.
-            available = cvar
-                .wait_timeout(available, Duration::from_millis(5))
-                .map_err(|_| io::Error::other("poisoned"))?
-                .0;
-        }
-        let end = (*available).min(size).min(offset + buf.len() as u64);
+        let (lock, notify) = &*self.available;
+        let available = wait_until(notify, cancel, || {
+            lock.lock().ok().map(|a| *a).filter(|&a| a > offset)
+        })?;
+        let end = available.min(size).min(offset + buf.len() as u64);
         let n = (end - offset) as usize;
         let start = offset as usize;
         buf[..n].copy_from_slice(&self.data[start..start + n]);
@@ -118,6 +124,7 @@ mod tests {
     use super::*;
     use std::sync::mpsc;
     use std::thread;
+    use std::time::Duration;
 
     fn bytes(n: usize) -> Vec<u8> {
         (0..n).map(|i| (i % 251) as u8).collect()

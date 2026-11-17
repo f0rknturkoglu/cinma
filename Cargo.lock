@@ -459,6 +459,10 @@ dependencies = [
 name = "cinma-blobstore"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
  "tokio-util",
 ]
 
