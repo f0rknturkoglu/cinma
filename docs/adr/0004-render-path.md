@@ -1,29 +1,44 @@
-# ADR 0004 — Render path: gpu-next + macvk embedded via `wid`
+# ADR 0004 — Render path: libmpv render API on `CAOpenGLLayer` (EDR)
 
-**Status:** accepted, provisional (Dolby Vision untested — no P5/P8 samples yet)
+**Status:** accepted (Phase 1). Provisional on Dolby Vision (no P5/P8 samples yet).
 
-## Options measured (Phase 1 spikes, Homebrew libmpv 0.42 / libplacebo 7.387 / MoltenVK 1.4.2)
+## What was tried
 
-Clip: generated 4K HEVC Main10 HDR10 (PQ, BT.2020, 1000-nit mastering), 24 fps, `hwdec=videotoolbox`.
-Machine: M4 Pro, built-in Liquid Retina XDR. CPU = process CPU time over 5 s of steady playback.
+Homebrew libmpv 0.42 (libplacebo 7.387, MoltenVK 1.4.2), M4 Pro, built-in XDR display.
 
-| | A: `vo=gpu-next`, `gpu-context=macvk`, `wid=<NSView*>` | B: `vo=libmpv` render API on `CAOpenGLLayer` (EDR) |
-|---|---|---|
-| Embeds in our view | yes — mpv adds its own Metal layer under our `NSView` | yes — we own the layer |
-| hwdec | videotoolbox | videotoolbox |
-| CPU (one core) | ~14 % | ~15 % |
-| Dropped / delayed frames | 0 / 0 | 0 / 0 |
-| HDR | automatic: PQ swapchain (`HDR10_ST2084`), `CAEDRMetadata` 1000 nits, "HDR: active" | manual: we must set layer colorspace + `target-trc/prim/peak` per file (IINA-style) |
-| Issues | first init spends ~260 ms enumerating Vulkan extensions (once per player) | `INVALID_OPERATION` on texture creation; OpenGL is deprecated |
-| Our code | ~0 (pass a pointer) | ~150 lines of GL + per-file HDR logic |
+**A — `vo=gpu-next`, `gpu-context=macvk`, `wid=<pointer>`: does not embed.**
+mpv ignores `wid` on macOS and opens its own borderless window ("<file> - mpv"),
+whether `wid` is an `NSView*` or a `CAMetalLayer*`. The first spike looked like it
+worked only because the screenshot captured mpv's window rather than ours. libmpv 0.42 also
+ships no Vulkan/Metal render API (only `render_gl.h`, `render_d3d11.h`), so there is
+no supported way to put gpu-next output into our view.
+
+**B — `vo=libmpv` + OpenGL render API into our `CAOpenGLLayer`: works.**
+The video sits in our window under our own controls.
+
+## Measurements (option B, in the app, Release)
+
+| Clip | hwdec | CPU (process, one core) | EDR | Notes |
+|---|---|---|---|---|
+| 4K HEVC Main10 HDR10 (PQ, 24 fps, generated) | videotoolbox | ~19 % | engaged: layer in `itur_2100_PQ`, 16-bit float FB, screen headroom 7.3 (potential 16) | 0 dropped frames in the spike |
+| 1080p H.264 SDR (30 fps, generated) | videotoolbox | ~21 % | n/a | |
+
+The spike version of A measured ~14 % (in its own window), and the B spike ~15 %.
 
 ## Decision
 
-**A (gpu-next + macvk via `wid`)**. Same CPU, HDR/EDR handled by libplacebo with metadata passthrough, far less code, no deprecated API. Everything mpv-related can live in Rust; Swift only provides an `NSView`.
+**B.** It is the only path that renders into our UI with the stock libmpv. It is IINA's proven approach.
 
-## Consequences
+- `VideoLayer` (Swift) owns one CGL context and a 64-bit float pixel format, with `wantsExtendedDynamicRangeContent`.
+- mpv's render context is created inside the first `draw` with that context current.
+- On `video-params/gamma` = `pq` or `hlg`, the layer switches to `itur_2100_PQ` and mpv to `target-trc=pq`, `target-prim=bt.2020`.
+- Teardown order is: `render_free` (GL context current), then `quit`, then `mpv_terminate_destroy` on the event thread.
 
-- All mpv calls (create/initialize/loadfile/terminate) happen off the main thread; mpv's macOS code dispatches to the main queue itself, so the main thread must never block on mpv.
-- The host `NSView` must outlive the mpv handle.
-- Both paths are above the §6 target (< 10 % for 4K HDR10). Re-measure in Phase 4 with real content and `video-sync`/`interpolation` settings; the synthetic clip is high-entropy.
-- Dolby Vision P5/P8 must be checked once samples are available (`tools/media-corpus.md`); revisit this ADR if libplacebo/MoltenVK mishandles them.
+## Consequences / follow-ups
+
+- OpenGL is deprecated. If Apple removes it, the options are a custom libmpv with a Metal/Vulkan render API, or vo=gpu-next with a patched `wid` for macvk. Revisit this together with the custom libmpv build (ADR 0005).
+- Playback CPU (~20 %) is above the §6 target (< 10 % for 4K HDR10). Phase 4 should look at:
+  - drawing on a dedicated CA/GL thread (`isAsynchronous`) instead of the main thread;
+  - avoiding the float FB for SDR;
+  - `video-sync` and the per-frame callback cost.
+- Playback footprint is 470–630 MB (GPU surfaces, demuxer cache). Phase 4 should tune it.

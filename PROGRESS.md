@@ -1,36 +1,49 @@
 # PROGRESS
 
-## Current phase: 0 — Skeleton (built; awaiting owner review)
+## Current phase: 1 — Vertical slice (built; awaiting owner review)
 
-### Done
-- Rust workspace: `cinma-core`, `cinma-db`, `cinma-ffi` (+ `tools/uniffi-bindgen`). 7 tests green.
-- SQLite: WAL, `STRICT` tables, transactional migrations over `user_version`, refuses newer schemas. Migration 0001 is a scaffold (`profile`, `app_setting`) — the real schema is Phase 2.
-- UniFFI wiring: `CinmaCore.open(dataDir:)`, `schemaVersion()`, `coreVersion()`; opened off the main thread after the first frame.
-- AppKit app: manual `main.swift`, no storyboard, no SwiftUI; dark #0B0B0D window; programmatic main menu.
-- String Catalog (`Localizable.xcstrings`) with English + Turkish; verified `tr.lproj` in bundle and Turkish UI.
-- `tools/build-core.sh`, `tools/measure.sh`, ADRs 0001–0003.
+### Done in Phase 1
+- **Addon client** (`cinma-stremio`): manifest/stream parsing (Torrentio-shaped fixtures), `stremio://` and URL normalization, `supports()` by type and idPrefix. Installed addons persist as JSON in `app_setting` (`addons.v1`); real tables come with the Phase 2 schema.
+- **Streams**: every installed addon that serves the type/id is queried in parallel. Results keep addon order. Ranking is Phase 3.
+- **Torrent** (`cinma-torrent`, librqbit behind `TorrentEngine`):
+  - lazy session; DHT state under the data dir; with no `fileIdx`, the largest video file is picked;
+  - `release_all` on stop, so idle CPU goes back to ~0 % and no sockets stay open;
+  - offline loopback test (ADR 0006).
+- **ByteSource** (`cinma-blobstore`): readers with cancellable blocking reads. Sparse blobs and bitmaps are Phase 2.
+- **Player bridge** (`cinma-player`):
+  - libmpv is dlopened on first playback, never linked (ADR 0005);
+  - the `cinma://` protocol uses `mpv_stream_cb_add_ro` with read, seek, size, close and cancel; no localhost server;
+  - the event thread blocks on `mpv_wait_event`, with no polling;
+  - render API on `CAOpenGLLayer` with EDR/HDR switching (ADR 0004).
+- **App**: Phase-1 screen (install addon → find streams → double-click to play, plus Open File…) and a player with a control bar (space, ←/→ ±10 s, Esc). English and Turkish strings.
+- **Tools**: `tools/measure-playback.sh` (TTFF and seek through the real app); env-driven dev automation (`DevAutomation.swift`); a `local_seed` example.
 
-### Measured (M4 Pro, macOS 27.3, Release, direct exec, warm, median of 7)
+### Measured
 | Metric | Value | Target |
 |---|---|---|
-| First frame | 150.5 ms (other runs: 158, ~160) | < 150 ms (Phase 0): **not met as written** — at the OS floor / < 250 ms (§6): met |
-| Core ready (DB open) | 162 ms | — |
-| RSS | 82.3 MB | ≤ 70 MB — below the AppKit floor, see ADR 0003 |
-| phys_footprint | 20.0 MB | — |
-| Idle CPU | 0.0 % | ~0 % |
-| Bundle size | 0.7 MB | — |
+| Launch, first frame (median of 7) | 158 ms | < 250 ms ✅ (floor ~152 ms) |
+| Idle footprint, window open | 25 MB | ≤ 40 MB ✅ |
+| Idle CPU, before and after playback | ~0 % | ~0 % ✅ |
+| TTFF, loopback seeder at 6 MB/s, from play click (median of 5) | 237 ms | — |
+| Seek into undownloaded region, loopback 6 MB/s (median) | 979 ms | — |
+| **TTFF / seek on a real swarm** | **not measured** | < 5 s / < 2 s |
+| 4K HDR10 playback CPU | ~19 % | < 10 % ❌ (Phase 4) |
+| Footprint after a torrent playback ends | ~113 MB | ≤ 40 MB ❌ (Phase 2) |
 
-Bare-AppKit floor on the same machine: ~152 ms, 77.5 MB RSS, 17 MB footprint.
-"First frame" = first main-queue turn after `makeKeyAndOrderFront` (approximate; same method for the floor app). M4 Pro, not the M1 baseline. Launch via `open` (LaunchServices) is ~15–30 ms slower than direct exec.
+Real-swarm numbers are missing because the agent's sandbox proxies outbound TCP, so it can't reach BitTorrent peers. To measure on a normal network:
+`tools/measure-playback.sh <addon manifest url> movie <imdb id> 5`
 
-### Open questions for the owner
-1. ADR 0003: accept launch as "overhead over AppKit floor" (Phase 0 < 150 ms exit not met as written)?
-2. ADR 0003: switch memory targets to phys_footprint?
-3. ADR 0002 defaults (macOS 15 minimum, unsandboxed, ad-hoc signing, system SQLite).
+### Risks / open items
+1. **Real-swarm TTFF and seek** are unverified. librqbit streams with a 32 MB window ahead of the cursor and prioritizes the first and last pieces. Whether that meets < 5 s / < 2 s on real swarms is unknown.
+2. **Memory after torrent playback**: footprint stays at ~113 MB, while the live heap is only 13.5 MB. The rest is malloc fragmentation in the small zone; `malloc_zone_pressure_relief` frees ~0. Phase 2 candidates: mimalloc as the global allocator, or bounding librqbit's buffers (ADR first).
+3. **Playback CPU** is ~20 %. **Playback footprint** is 470–630 MB. Both are Phase 4 (ADR 0004).
+4. **OpenGL render path** is deprecated. **Homebrew libmpv** is a stand-in until a custom build (ADRs 0004, 0005).
+5. Rendering happens on the main thread. A long `mpv_render_context_render` would stall the UI. Move it to a dedicated thread in Phase 4.
 
-### Next: Phase 1 — vertical slice
-Addon by URL → streams → librqbit → BlobStore → `mpv_stream_cb` → video on screen; render-path ADR.
+### Next: Phase 2 — Core solid
+BlobStore (sparse files, bitmaps, head/tail, composable sources), unified queue skeleton, DB schema with `profile_id` (addon tables included), settings and feature toggles, command registry, event stream, kill -9 test.
 
-### Risks
-- Launch target is at the OS floor; regressions show up as noise first. Watch the "overhead over floor".
-- libmpv custom build (minimal FFmpeg + libplacebo + MoltenVK?) is the biggest unknown for Phase 1.
+---
+
+## Phase 0 — Skeleton ✅ (accepted 2026-11-17)
+Rust workspace, UniFFI wiring, SQLite migrations, AppKit shell, String Catalog, `tools/measure.sh`. Launch 150–160 ms, matching the bare-AppKit floor of ~152 ms. Idle footprint 20 MB. ADRs 0001–0003.
