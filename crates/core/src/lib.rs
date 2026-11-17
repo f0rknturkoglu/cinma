@@ -140,6 +140,9 @@ impl Core {
         // Deliver watch events queued before the last quit (no-op when the
         // feature is off or the outbox is empty: no runtime is started then).
         core.kick_tracking_sync();
+        // Downloads interrupted by a quit or crash continue on their own
+        // (no runtime is started when nothing is pending).
+        core.resume_pending_downloads();
         Ok(core)
     }
 

@@ -327,6 +327,7 @@ impl HttpDownloadEngine {
         let cp_cancel = job.cancel.clone();
         let cp_abort = abort_all.clone();
         let cp_blob = Arc::clone(blob);
+        let cp_progress = job.progress_reporter();
 
         let mut handles = Vec::with_capacity(worker_count);
         for _ in 0..worker_count {
@@ -384,7 +385,8 @@ impl HttpDownloadEngine {
                     () = cp_cancel.cancelled() => break,
                     () = cp_abort.cancelled() => break,
                     () = tokio::time::sleep(CHECKPOINT_INTERVAL) => {
-                        let _ = cp_blob.checkpoint();
+                        // Checkpoint first, then the row (UI progress).
+                        let _ = cp_progress.report(&cp_blob);
                     }
                 }
             }

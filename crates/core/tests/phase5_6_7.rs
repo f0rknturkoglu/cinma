@@ -618,3 +618,75 @@ fn ytdlp_single_track_goes_through_http_engine_into_the_audio_folder() {
         "single copy"
     );
 }
+
+#[test]
+fn pending_downloads_resume_when_the_app_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("Movies");
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let body: Vec<u8> = (0..(64 * 1024)).map(|i| (i % 97) as u8).collect();
+    let served = body.clone();
+    let url = rt.block_on(async move {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let body = served.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let n = sock.read(&mut buf).await.unwrap_or(0);
+                    let head = buf[..n].starts_with(b"HEAD");
+                    let hdr = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = sock.write_all(hdr.as_bytes()).await;
+                    if !head {
+                        let _ = sock.write_all(&body).await;
+                    }
+                });
+            }
+        });
+        format!("http://{addr}/clip.mkv")
+    });
+
+    // A download left "active" by a previous run that died.
+    {
+        let core = Core::open(dir.path()).unwrap();
+        let mut policy = core.disk_policy_settings().unwrap();
+        policy.movie_folder = Some(out.to_string_lossy().into_owned());
+        core.set_disk_policy_settings(&policy).unwrap();
+        drop(core);
+        let db = cinma_db::Database::open(&dir.path().join("cinma.sqlite3")).unwrap();
+        let id = db
+            .insert_download(&cinma_db::NewDownload {
+                profile_id: 1,
+                kind: cinma_db::DownloadKind::Http,
+                title: "Clip".into(),
+                source_json: format!("{{\"url\":\"{url}\"}}"),
+                priority: 1,
+            })
+            .unwrap();
+        db.set_download_state(id, cinma_db::DownloadState::Active, None)
+            .unwrap();
+    }
+
+    // Opening the core is enough: nobody touches the queue.
+    let core = Core::open(dir.path()).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let row = core.downloads().unwrap().pop().unwrap();
+        if row.state == cinma_db::DownloadState::Completed && row.blob_id.is_none() {
+            assert_eq!(std::fs::read(out.join("Clip.mkv")).unwrap(), body);
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "did not resume: {row:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+}

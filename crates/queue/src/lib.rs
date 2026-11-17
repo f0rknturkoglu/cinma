@@ -71,7 +71,33 @@ impl Job {
     }
 }
 
+/// A `'static` handle for reporting a job's progress from spawned tasks.
+#[derive(Clone)]
+pub struct ProgressReporter {
+    id: i64,
+    db: Arc<Mutex<Database>>,
+}
+
+impl ProgressReporter {
+    /// Same contract as [`Job::report_progress`]: checkpoint, then the row.
+    pub fn report(&self, blob: &Blob) -> Result<u64, QueueError> {
+        let durable = blob.checkpoint()?;
+        self.db
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .set_download_progress(self.id, durable)?;
+        Ok(durable)
+    }
+}
+
 impl Job {
+    pub fn progress_reporter(&self) -> ProgressReporter {
+        ProgressReporter {
+            id: self.download.id,
+            db: Arc::clone(&self.db),
+        }
+    }
+
     /// The same job with a different source description (an engine that
     /// resolves its source, like yt-dlp, hands the result to another engine).
     pub fn with_source_json(mut self, source_json: String) -> Job {

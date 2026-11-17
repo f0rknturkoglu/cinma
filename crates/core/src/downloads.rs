@@ -418,6 +418,7 @@ fn finalize_completed_download(core: &Core, id: i64) {
     let finalizer = Finalizer {
         db: Arc::clone(&core.db),
         store,
+        meta_dir: Some(core.data_dir.join("blobs")),
     };
     if let Err(e) = finalizer.finish_blob(id, &blob_id, &dest) {
         eprintln!(
@@ -435,6 +436,8 @@ fn finalize_completed_download(core: &Core, id: i64) {
 pub(crate) struct Finalizer {
     db: Arc<std::sync::Mutex<cinma_db::Database>>,
     store: Arc<BlobStore>,
+    /// Where the HTTP engine keeps `http_<id>.json` resume validators.
+    meta_dir: Option<PathBuf>,
 }
 
 impl Finalizer {
@@ -447,6 +450,10 @@ impl Finalizer {
         self.store
             .finalize_to(blob, dest)
             .map_err(|e| e.to_string())?;
+        // The HTTP engine's resume validator is no longer needed.
+        if let Some(meta) = self.meta_dir.as_ref() {
+            let _ = std::fs::remove_file(meta.join(format!("http_{id}.json")));
+        }
         self.db
             .lock()
             .map_err(|_| "poisoned".to_owned())?
@@ -511,6 +518,7 @@ impl Core {
         let finalizer = Finalizer {
             db: Arc::clone(&self.db),
             store: self.blob_store()?,
+            meta_dir: Some(self.data_dir.join("blobs")),
         };
 
         // The listener goes in first so no completion is missed; it moves
@@ -802,6 +810,20 @@ impl Core {
                     pick(&settings.movie_folder, default_video_folder())
                 }
             }
+        }
+    }
+
+    /// Starts the queue if downloads are waiting (queued, or active before a
+    /// crash). Errors are logged: launch must not fail because of a download.
+    pub fn resume_pending_downloads(self: &Arc<Self>) {
+        let pending = self
+            .db
+            .lock()
+            .ok()
+            .and_then(|db| db.has_pending_downloads().ok())
+            .unwrap_or(false);
+        if pending && let Err(e) = self.queue() {
+            eprintln!("[cinma] could not resume downloads: {e}");
         }
     }
 

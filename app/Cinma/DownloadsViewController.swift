@@ -16,6 +16,8 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
 
     private var dataSource: NSTableViewDiffableDataSource<Int, Int64>?
     private var rowsById: [Int64: DownloadInfo] = [:]
+    /// Refreshes progress while this screen is visible and something downloads.
+    private var progressTask: Task<Void, Never>?
 
     private static let titleColId = NSUserInterfaceItemIdentifier("title")
     private static let stateColId = NSUserInterfaceItemIdentifier("state")
@@ -43,6 +45,8 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
 
         usageLabel.font = .monospacedDigitSystemFont(ofSize: 12.5, weight: .medium)
         usageLabel.textColor = CinemaTheme.textSecondary
+        usageLabel.lineBreakMode = .byTruncatingMiddle
+        usageLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let addBtn = CinemaTheme.makePillButton(
             title: String(localized: "Add URL / yt-dlp…"),
@@ -107,6 +111,36 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
         reload()
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        reload()
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        progressTask?.cancel()
+        progressTask = nil
+    }
+
+    /// Runs only while visible with an active download; stops by itself.
+    private func updateProgressRefresh(hasActive: Bool) {
+        guard hasActive, view.window != nil else {
+            progressTask?.cancel()
+            progressTask = nil
+            return
+        }
+        guard progressTask == nil else { return }
+        progressTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled, let self else { return }
+                self.progressTask = nil
+                self.reload()
+                if self.progressTask == nil { return }
+            }
+        }
+    }
+
     private func setupTable() {
         tableView.backgroundColor = .clear
         tableView.usesAlternatingRowBackgroundColors = false
@@ -145,14 +179,21 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
         let items = (try? core.downloads()) ?? []
         var byId: [Int64: DownloadInfo] = [:]
         for item in items { byId[item.id] = item }
+        // Rows whose content changed (progress, state) must be redrawn: the
+        // snapshot only holds ids.
+        let changed = items.filter { old in rowsById[old.id].map { $0 != old } ?? false }.map(\.id)
         rowsById = byId
 
         var snapshot = NSDiffableDataSourceSnapshot<Int, Int64>()
         snapshot.appendSections([0])
         snapshot.appendItems(items.map(\.id), toSection: 0)
+        if !changed.isEmpty {
+            snapshot.reloadItems(changed)
+        }
         dataSource?.apply(snapshot, animatingDifferences: !CinemaTheme.reduceMotion)
 
         emptyLabel.isHidden = !items.isEmpty
+        updateProgressRefresh(hasActive: items.contains { $0.state == "active" })
         refreshUsageSummary()
     }
 
