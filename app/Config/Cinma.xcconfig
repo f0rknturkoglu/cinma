@@ -1,0 +1,45 @@
+// Build settings for Cinma, applied at project level (all targets, all configs).
+
+SDKROOT = macosx
+MACOSX_DEPLOYMENT_TARGET = 15.0          // keep in sync with tools/build-core.sh
+ARCHS = arm64                            // Apple Silicon only; Rust core is arm64-only
+SWIFT_VERSION = 6.0
+
+PRODUCT_NAME = $(TARGET_NAME)
+PRODUCT_BUNDLE_IDENTIFIER = app.cinma.mac
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_KEY_NSPrincipalClass = NSApplication
+INFOPLIST_KEY_CFBundleDisplayName = Cinma
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.entertainment
+
+// Personal app: ad-hoc signed, not sandboxed (see docs/adr/0002).
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual
+ENABLE_HARDENED_RUNTIME = NO
+ENABLE_APP_SANDBOX = NO
+ENABLE_USER_SCRIPT_SANDBOXING = NO       // the Rust build phase writes into app/Generated
+
+SWIFT_EMIT_LOC_STRINGS = YES
+LOCALIZATION_PREFERS_STRING_CATALOGS = YES
+
+// Rust core (produced by tools/build-core.sh).
+SWIFT_INCLUDE_PATHS = $(PROJECT_DIR)/Generated/include
+LIBRARY_SEARCH_PATHS = $(PROJECT_DIR)/Generated/lib
+OTHER_LDFLAGS = -lcinma_ffi -lsqlite3    // from `cargo rustc -- --print native-static-libs`
+
+ALWAYS_SEARCH_USER_PATHS = NO
+CLANG_ENABLE_MODULES = YES
+DEAD_CODE_STRIPPING = YES
+
+SWIFT_COMPILATION_MODE[config=Release] = wholemodule
+SWIFT_OPTIMIZATION_LEVEL[config=Debug] = -Onone
+SWIFT_OPTIMIZATION_LEVEL[config=Release] = -O
+SWIFT_ACTIVE_COMPILATION_CONDITIONS[config=Debug] = DEBUG
+GCC_OPTIMIZATION_LEVEL[config=Debug] = 0
+DEBUG_INFORMATION_FORMAT[config=Debug] = dwarf
+DEBUG_INFORMATION_FORMAT[config=Release] = dwarf-with-dsym
+ONLY_ACTIVE_ARCH[config=Debug] = YES
+ENABLE_TESTABILITY[config=Debug] = YES

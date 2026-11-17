@@ -1,0 +1,6 @@
+/target/
+/build/
+/app/Generated/
+xcuserdata/
+*.xcuserstate
+.DS_Store

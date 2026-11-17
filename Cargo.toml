@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/db", "crates/ffi", "tools/uniffi-bindgen"]
+default-members = ["crates/core", "crates/db", "crates/ffi"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[workspace.dependencies]
+cinma-core = { path = "crates/core" }
+cinma-db = { path = "crates/db" }
+uniffi = "0.32.2"
+rusqlite = "0.43.0"
+thiserror = "2.0.21"
+tempfile = "3.27.0"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"

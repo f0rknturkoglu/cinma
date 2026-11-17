@@ -1,0 +1,225 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA0000000000000000000020 /* cinma_ffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000012 /* cinma_ffi.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		AA0000000000000000000010 /* Cinma.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cinma.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000012 /* cinma_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = cinma_ffi.swift; sourceTree = "<group>"; };
+		AA0000000000000000000013 /* Cinma.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Cinma.xcconfig; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA0000000000000000000011 /* Cinma */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Cinma; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA0000000000000000000042 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA0000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000011 /* Cinma */,
+				AA0000000000000000000004 /* Generated */,
+				AA0000000000000000000005 /* Config */,
+				AA0000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000010 /* Cinma.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000004 /* Generated */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000012 /* cinma_ffi.swift */,
+			);
+			path = Generated;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000005 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000013 /* Cinma.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA0000000000000000000030 /* Cinma */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000051 /* Build configuration list for PBXNativeTarget "Cinma" */;
+			buildPhases = (
+				AA0000000000000000000040 /* Build Rust core */,
+				AA0000000000000000000041 /* Sources */,
+				AA0000000000000000000042 /* Frameworks */,
+				AA0000000000000000000043 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000011 /* Cinma */,
+			);
+			name = Cinma;
+			productName = Cinma;
+			productReference = AA0000000000000000000010 /* Cinma.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA0000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2720;
+				LastUpgradeCheck = 2720;
+				TargetAttributes = {
+					AA0000000000000000000030 = {
+						CreatedOnToolsVersion = 27.2;
+					};
+				};
+			};
+			buildConfigurationList = AA0000000000000000000050 /* Build configuration list for PBXProject "Cinma" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				tr,
+				Base,
+			);
+			mainGroup = AA0000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AA0000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0000000000000000000030 /* Cinma */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA0000000000000000000043 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA0000000000000000000040 /* Build Rust core */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust core";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(PROJECT_DIR)/Generated/cinma_ffi.swift",
+				"$(PROJECT_DIR)/Generated/include/module.modulemap",
+				"$(PROJECT_DIR)/Generated/include/cinma_ffiFFI.h",
+				"$(PROJECT_DIR)/Generated/lib/libcinma_ffi.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "exec \"$PROJECT_DIR/../tools/build-core.sh\" \"$CONFIGURATION\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA0000000000000000000041 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000020 /* cinma_ffi.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000060 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000013 /* Cinma.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		AA0000000000000000000061 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000013 /* Cinma.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		AA0000000000000000000062 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		AA0000000000000000000063 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA0000000000000000000050 /* Build configuration list for PBXProject "Cinma" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000060 /* Debug */,
+				AA0000000000000000000061 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000051 /* Build configuration list for PBXNativeTarget "Cinma" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000062 /* Debug */,
+				AA0000000000000000000063 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = AA0000000000000000000001 /* Project object */;
+}
