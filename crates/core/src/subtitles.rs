@@ -30,6 +30,10 @@ pub struct SubtitleSettings {
     pub srt_font: Option<String>,
     pub srt_font_size: u32,
     pub srt_color: Option<String>,
+    pub srt_border_size: u32,
+    pub srt_border_color: Option<String>,
+    pub srt_back_color: Option<String>,
+    pub srt_bold: bool,
     pub srt_pos: u32,
     pub ass_override: bool,
 }
@@ -42,7 +46,11 @@ impl Default for SubtitleSettings {
             dual_secondary_lang: Some("eng".to_owned()),
             srt_font: None,
             srt_font_size: 46,
-            srt_color: None,
+            srt_color: Some("#FFFFFF".to_owned()),
+            srt_border_size: 3,
+            srt_border_color: Some("#000000".to_owned()),
+            srt_back_color: None,
+            srt_bold: false,
             srt_pos: 95,
             ass_override: false,
         }

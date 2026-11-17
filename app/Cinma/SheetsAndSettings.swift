@@ -501,7 +501,11 @@ struct SettingsView: View {
         dualSecondaryLang: "eng",
         srtFont: nil,
         srtFontSize: 46,
-        srtColor: nil,
+        srtColor: "#FFFFFF",
+        srtBorderSize: 3,
+        srtBorderColor: "#000000",
+        srtBackColor: nil,
+        srtBold: false,
         srtPos: 95,
         assOverride: false
     )
@@ -740,6 +744,35 @@ struct SettingsView: View {
                 }
                 Stepper("\(String(localized: "SRT Font Size")): \(subSettings.srtFontSize) px", value: $subSettings.srtFontSize, in: 20...84, step: 2)
                     .onChange(of: subSettings.srtFontSize) { _, _ in saveSubSettings() }
+                Picker(
+                    String(localized: "Text Color"),
+                    selection: Binding(
+                        get: { (subSettings.srtColor ?? "#FFFFFF").uppercased() },
+                        set: {
+                            subSettings.srtColor = $0
+                            saveSubSettings()
+                        }
+                    )
+                ) {
+                    Text(String(localized: "White")).tag("#FFFFFF")
+                    Text(String(localized: "Yellow")).tag("#FFD54F")
+                    Text(String(localized: "Amber")).tag("#FFC107")
+                    Text(String(localized: "Cyan")).tag("#67E8F9")
+                }
+                Stepper("\(String(localized: "Black Outline")): \(subSettings.srtBorderSize) px", value: $subSettings.srtBorderSize, in: 0...8, step: 1)
+                    .onChange(of: subSettings.srtBorderSize) { _, _ in saveSubSettings() }
+                Toggle(
+                    String(localized: "Background Box"),
+                    isOn: Binding(
+                        get: { subSettings.srtBackColor?.isEmpty == false && subSettings.srtBackColor != "#00000000" },
+                        set: {
+                            subSettings.srtBackColor = $0 ? "#99000000" : nil
+                            saveSubSettings()
+                        }
+                    )
+                )
+                Toggle(String(localized: "Bold"), isOn: $subSettings.srtBold)
+                    .onChange(of: subSettings.srtBold) { _, _ in saveSubSettings() }
                 Stepper("\(String(localized: "SRT Position")): \(subSettings.srtPos)%", value: $subSettings.srtPos, in: 10...100, step: 5)
                     .onChange(of: subSettings.srtPos) { _, _ in saveSubSettings() }
                 Toggle(String(localized: "Override ASS/SSA Script Styling"), isOn: $subSettings.assOverride)

@@ -615,11 +615,16 @@ impl Player {
         self.set_property_str("audio-delay", &format!("{seconds:.3}"))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_subtitle_style(
         &self,
         font: Option<&str>,
         font_size: Option<u32>,
         color_hex: Option<&str>,
+        border_size: Option<u32>,
+        border_color_hex: Option<&str>,
+        back_color_hex: Option<&str>,
+        bold: bool,
         pos: Option<u32>,
         ass_override: bool,
     ) -> Result<(), PlayerError> {
@@ -629,9 +634,25 @@ impl Player {
         if let Some(size) = font_size {
             self.set_property_str("sub-font-size", &size.clamp(14, 96).to_string())?;
         }
-        if let Some(color) = color_hex.filter(|s| !s.trim().is_empty()) {
-            self.set_property_str("sub-color", color)?;
+        let color = color_hex
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("#FFFFFF");
+        self.set_property_str("sub-color", color)?;
+        if let Some(b_size) = border_size {
+            self.set_property_str("sub-border-size", &b_size.clamp(0, 8).to_string())?;
         }
+        let b_color = border_color_hex
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("#000000");
+        self.set_property_str("sub-border-color", b_color)?;
+        let bg_color = back_color_hex
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("#00000000");
+        self.set_property_str("sub-back-color", bg_color)?;
+        self.set_property_str("sub-bold", if bold { "yes" } else { "no" })?;
         if let Some(pos) = pos {
             self.set_property_str("sub-pos", &pos.clamp(5, 100).to_string())?;
         }

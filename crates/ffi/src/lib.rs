@@ -954,6 +954,10 @@ pub struct SubtitleSettingsFfi {
     pub srt_font: Option<String>,
     pub srt_font_size: u32,
     pub srt_color: Option<String>,
+    pub srt_border_size: u32,
+    pub srt_border_color: Option<String>,
+    pub srt_back_color: Option<String>,
+    pub srt_bold: bool,
     pub srt_pos: u32,
     pub ass_override: bool,
 }
@@ -967,6 +971,10 @@ impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
             srt_font: s.srt_font,
             srt_font_size: s.srt_font_size,
             srt_color: s.srt_color,
+            srt_border_size: s.srt_border_size,
+            srt_border_color: s.srt_border_color,
+            srt_back_color: s.srt_back_color,
+            srt_bold: s.srt_bold,
             srt_pos: s.srt_pos,
             ass_override: s.ass_override,
         }
@@ -982,6 +990,10 @@ impl From<SubtitleSettingsFfi> for cinma_core::SubtitleSettings {
             srt_font: s.srt_font,
             srt_font_size: s.srt_font_size,
             srt_color: s.srt_color,
+            srt_border_size: s.srt_border_size,
+            srt_border_color: s.srt_border_color,
+            srt_back_color: s.srt_back_color,
+            srt_bold: s.srt_bold,
             srt_pos: s.srt_pos,
             ass_override: s.ass_override,
         }
@@ -2877,11 +2889,16 @@ impl PlaybackSession {
             .map_err(CoreError::from)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_subtitle_style(
         &self,
         font: Option<String>,
         font_size: Option<u32>,
         color_hex: Option<String>,
+        border_size: Option<u32>,
+        border_color_hex: Option<String>,
+        back_color_hex: Option<String>,
+        bold: bool,
         pos: Option<u32>,
         ass_override: bool,
     ) -> Result<(), CinmaError> {
@@ -2892,6 +2909,10 @@ impl PlaybackSession {
                 font.as_deref(),
                 font_size,
                 color_hex.as_deref(),
+                border_size,
+                border_color_hex.as_deref(),
+                back_color_hex.as_deref(),
+                bold,
                 pos,
                 ass_override,
             )

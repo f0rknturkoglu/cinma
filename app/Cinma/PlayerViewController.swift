@@ -75,6 +75,7 @@ final class PlayerViewController: NSViewController {
     private let titleField = NSTextField(labelWithString: "")
     private let subField = NSTextField(labelWithString: "")
     private let bar = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 22)
+    private let statusPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 14)
     private let statusLabel = NSTextField(labelWithString: "")
     private let scrubBar = ScrubBarView()
     private let playButton = NSButton()
@@ -128,6 +129,7 @@ final class PlayerViewController: NSViewController {
     private var statsVisible = false
     private var statsTask: Task<Void, Never>?
     private var hudHideTask: Task<Void, Never>?
+    private var statusClearTask: Task<Void, Never>?
     private var popoverBackdrop: ClickCatcherView?
     private var popoverCard: NSView?
     private var didTrimInitialMalloc = false
@@ -192,12 +194,15 @@ final class PlayerViewController: NSViewController {
         buildStatsCard()
         buildSkipAndNextCards()
 
+        statusPill.translatesAutoresizingMaskIntoConstraints = false
+        statusPill.isHidden = true
         statusLabel.textColor = CinemaTheme.textPrimary
         statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.lineBreakMode = .byTruncatingTail
+        statusPill.addSubview(statusLabel)
 
-        for sub in [titlePill, bar, thumbCard, statsCard, skipButton, nextCard, statusLabel] {
+        for sub in [titlePill, bar, thumbCard, statsCard, skipButton, nextCard, statusPill] {
             root.addSubview(sub)
         }
 
@@ -235,8 +240,15 @@ final class PlayerViewController: NSViewController {
             nextCard.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -16),
             nextCard.widthAnchor.constraint(equalToConstant: 320),
 
-            statusLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            statusLabel.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -14),
+            statusLabel.topAnchor.constraint(equalTo: statusPill.topAnchor, constant: 7),
+            statusLabel.bottomAnchor.constraint(equalTo: statusPill.bottomAnchor, constant: -7),
+            statusLabel.leadingAnchor.constraint(equalTo: statusPill.leadingAnchor, constant: 14),
+            statusLabel.trailingAnchor.constraint(equalTo: statusPill.trailingAnchor, constant: -14),
+
+            statusPill.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            statusPill.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -14),
+            statusPill.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: 24),
+            statusPill.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -24),
         ])
         view = root
     }
@@ -408,14 +420,18 @@ final class PlayerViewController: NSViewController {
         statsCard.isHidden = true
         statsText.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
         statsText.textColor = CinemaTheme.textPrimary
+        statsText.preferredMaxLayoutWidth = 360
+        statsText.setContentHuggingPriority(.required, for: .horizontal)
+        statsText.setContentCompressionResistancePriority(.required, for: .horizontal)
         statsText.translatesAutoresizingMaskIntoConstraints = false
         statsCard.addSubview(statsText)
         NSLayoutConstraint.activate([
+            statsCard.widthAnchor.constraint(greaterThanOrEqualToConstant: 260),
             statsText.topAnchor.constraint(equalTo: statsCard.topAnchor, constant: 10),
             statsText.bottomAnchor.constraint(equalTo: statsCard.bottomAnchor, constant: -10),
             statsText.leadingAnchor.constraint(equalTo: statsCard.leadingAnchor, constant: 12),
             statsText.trailingAnchor.constraint(equalTo: statsCard.trailingAnchor, constant: -12),
-            statsText.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
+            statsText.widthAnchor.constraint(lessThanOrEqualToConstant: 380),
         ])
     }
 
@@ -542,7 +558,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func start() {
-        statusLabel.stringValue = String(localized: "Starting player…")
+        showStatus(String(localized: "Starting player…"), autoHideAfter: 0)
         loadSkipSegmentsIfEnabled()
         let sink = PlaybackEventSink { [weak self] event in
             Task { @MainActor in self?.handle(event) }
@@ -575,7 +591,7 @@ final class PlayerViewController: NSViewController {
                 }
                 let proceed = await MainActor.run { () -> Bool in
                     if case .stream(let s, _) = request, s.infoHash != nil {
-                        self.statusLabel.stringValue = String(localized: "Connecting to peers…")
+                        self.showStatus(String(localized: "Connecting to peers…"), autoHideAfter: 0)
                     }
                     return !self.closing
                 }
@@ -599,7 +615,7 @@ final class PlayerViewController: NSViewController {
                 }
             } catch {
                 await MainActor.run {
-                    self.statusLabel.stringValue = FriendlyError.explain(error)
+                    self.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
                 }
             }
         }
@@ -608,7 +624,7 @@ final class PlayerViewController: NSViewController {
     private func handle(_ event: PlaybackEvent) {
         switch event {
         case .fileLoaded:
-            statusLabel.stringValue = ""
+            showStatus("", autoHideAfter: 0)
             failedRetries = 0
             cancelStallWatchdog()
             appliedAutoTracks = false
@@ -626,7 +642,7 @@ final class PlayerViewController: NSViewController {
 
         case .playbackRestart:
             cancelStallWatchdog()
-            if statusLabel.stringValue == String(localized: "Buffering…") { statusLabel.stringValue = "" }
+            if statusLabel.stringValue == String(localized: "Buffering…") { showStatus("", autoHideAfter: 0) }
             if !didTrimInitialMalloc {
                 didTrimInitialMalloc = true
                 ImagePipeline.releaseMallocPressure()
@@ -667,7 +683,7 @@ final class PlayerViewController: NSViewController {
             pushNowPlaying()
 
         case .buffering(let isBuffering):
-            statusLabel.stringValue = isBuffering ? String(localized: "Buffering…") : ""
+            showStatus(isBuffering ? String(localized: "Buffering…") : "", autoHideAfter: 0)
             if isBuffering {
                 armStallWatchdog()
             } else {
@@ -694,7 +710,7 @@ final class PlayerViewController: NSViewController {
             switch reason {
             case .error:
                 let msg = error ?? "unknown"
-                statusLabel.stringValue = String(localized: "Playback error: \(msg)")
+                showStatus(String(localized: "Playback error: \(msg)"), autoHideAfter: 4.5)
                 attemptStreamRecovery()
             case .eof:
                 if nextPlan != nil && !nextDismissed {
@@ -718,13 +734,7 @@ final class PlayerViewController: NSViewController {
     private func applySavedStyleAndOffsets() {
         guard let session else { return }
         if let settings = try? core.subtitleSettings() {
-            try? session.setSubtitleStyle(
-                font: settings.srtFont,
-                fontSize: settings.srtFontSize,
-                colorHex: settings.srtColor,
-                pos: settings.srtPos,
-                assOverride: settings.assOverride
-            )
+            applySubtitleStyle(settings, session: session)
         }
         if let videoId = metadata?.videoId, let offsets = try? core.videoOffsets(videoId: videoId) {
             subDelay = offsets.subDelay
@@ -732,6 +742,20 @@ final class PlayerViewController: NSViewController {
             if abs(subDelay) > 0.001 { try? session.setSubtitleDelay(seconds: subDelay) }
             if abs(audioDelay) > 0.001 { try? session.setAudioDelay(seconds: audioDelay) }
         }
+    }
+
+    private func applySubtitleStyle(_ s: SubtitleSettingsFfi, session: PlaybackSession?) {
+        try? session?.setSubtitleStyle(
+            font: s.srtFont,
+            fontSize: s.srtFontSize,
+            colorHex: s.srtColor,
+            borderSize: s.srtBorderSize,
+            borderColorHex: s.srtBorderColor,
+            backColorHex: s.srtBackColor,
+            bold: s.srtBold,
+            pos: s.srtPos,
+            assOverride: s.assOverride
+        )
     }
 
     private func refreshTracksAndChapters() {
@@ -924,7 +948,7 @@ final class PlayerViewController: NSViewController {
             request = .stream(stream, metadata: newMeta)
             refreshTitles()
         }
-        statusLabel.stringValue = String(localized: "Loading next episode…")
+        showStatus(String(localized: "Loading next episode…"), autoHideAfter: 0)
         let session = session
         Task {
             try? await session?.play(stream: stream)
@@ -1009,7 +1033,7 @@ final class PlayerViewController: NSViewController {
         if failedRetries == 0, case .stream(let current, _) = request {
             failedRetries = 1
             pendingSwitchPosition = position > 5 ? position : nil
-            statusLabel.stringValue = String(localized: "Stream stalled, retrying…")
+            showStatus(String(localized: "Stream stalled, retrying…"), autoHideAfter: 0)
             let session = session
             Task { try? await session?.play(stream: current) }
             return
@@ -1020,7 +1044,7 @@ final class PlayerViewController: NSViewController {
         currentStreamIndex = nextIndex
         failedRetries = 0
         let fallback = meta.rankedStreams[nextIndex].stream
-        statusLabel.stringValue = String(localized: "Switching to fallback stream…")
+        showStatus(String(localized: "Switching to fallback stream…"), autoHideAfter: 0)
         switchToStream(fallback)
     }
 
@@ -1088,7 +1112,11 @@ final class PlayerViewController: NSViewController {
             dualSecondaryLang: nil,
             srtFont: nil,
             srtFontSize: 46,
-            srtColor: nil,
+            srtColor: "#FFFFFF",
+            srtBorderSize: 3,
+            srtBorderColor: "#000000",
+            srtBackColor: nil,
+            srtBold: false,
             srtPos: 95,
             assOverride: false
         )
@@ -1133,13 +1161,7 @@ final class PlayerViewController: NSViewController {
             onUpdateStyle: { [weak self] updated in
                 guard let self else { return }
                 try? self.core.setSubtitleSettings(settings: updated)
-                try? self.session?.setSubtitleStyle(
-                    font: updated.srtFont,
-                    fontSize: updated.srtFontSize,
-                    colorHex: updated.srtColor,
-                    pos: updated.srtPos,
-                    assOverride: updated.assOverride
-                )
+                self.applySubtitleStyle(updated, session: self.session)
             }
         )
         presentFloatingPopover(root, relativeTo: sender)
@@ -1199,7 +1221,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func loadOnlineSubtitle(_ candidate: SubtitleCandidateInfo) {
-        statusLabel.stringValue = String(localized: "Loading subtitle…")
+        showStatus(String(localized: "Loading subtitle…"), autoHideAfter: 0)
         let core = core
         let session = session
         Task { [weak self] in
@@ -1212,12 +1234,12 @@ final class PlayerViewController: NSViewController {
                     select: true
                 )
                 await MainActor.run {
-                    self?.statusLabel.stringValue = String(localized: "Loaded \(candidate.lang.uppercased()) subtitle (\(prepared.detectedEncoding))")
+                    self?.showStatus(String(localized: "Loaded \(candidate.lang.uppercased()) subtitle (\(prepared.detectedEncoding))"))
                     self?.tracks = (try? session?.tracks()) ?? []
                 }
             } catch {
                 await MainActor.run {
-                    self?.statusLabel.stringValue = FriendlyError.explain(error)
+                    self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
                 }
             }
         }
@@ -1236,7 +1258,7 @@ final class PlayerViewController: NSViewController {
         if let prepared = try? core.prepareLocalSubtitle(path: url.path) {
             try? session?.addSubtitle(path: prepared.localPath, title: url.lastPathComponent, lang: nil, select: true)
             tracks = (try? session?.tracks()) ?? []
-            statusLabel.stringValue = String(localized: "Loaded \(url.lastPathComponent) (\(prepared.detectedEncoding))")
+            showStatus(String(localized: "Loaded \(url.lastPathComponent) (\(prepared.detectedEncoding))"))
         }
     }
 
@@ -1248,14 +1270,14 @@ final class PlayerViewController: NSViewController {
         subDelay = val
         try? session?.setSubtitleDelay(seconds: val)
         persistOffsets()
-        statusLabel.stringValue = String(format: "%@ %+.1fs", String(localized: "Subtitle delay:"), val)
+        showStatus(String(format: "%@ %+.1fs", String(localized: "Subtitle delay:"), val))
     }
 
     private func adjustAudioDelay(_ delta: Double) {
         audioDelay += delta
         try? session?.setAudioDelay(seconds: audioDelay)
         persistOffsets()
-        statusLabel.stringValue = String(format: "%@ %+.1fs", String(localized: "Audio delay:"), audioDelay)
+        showStatus(String(format: "%@ %+.1fs", String(localized: "Audio delay:"), audioDelay))
     }
 
     private func persistOffsets() {
@@ -1431,7 +1453,7 @@ final class PlayerViewController: NSViewController {
         }
         let paths = (try? core.resolveShaderPaths(preset: preset)) ?? []
         try? session?.setGlslShaders(paths: paths)
-        statusLabel.stringValue = String(localized: "Shader: \(preset)")
+        showStatus(String(localized: "Shader: \(preset)"))
     }
 
     @objc private func selectHdrPeak(_ sender: NSMenuItem) {
@@ -1441,7 +1463,7 @@ final class PlayerViewController: NSViewController {
             try? core.setPlayerPreferences(prefs: prefs)
         }
         try? session?.setHdrTargetPeak(nits: nits)
-        statusLabel.stringValue = nits.map { "HDR peak: \($0) nits" } ?? "HDR peak: Auto"
+        showStatus(nits.map { "HDR peak: \($0) nits" } ?? "HDR peak: Auto")
     }
 
     @objc private func setSleepTimerMinutes(_ sender: NSMenuItem) {
@@ -1449,10 +1471,10 @@ final class PlayerViewController: NSViewController {
         sleepTimerTask = nil
         let mins = sender.tag
         guard mins > 0 else {
-            statusLabel.stringValue = String(localized: "Sleep timer off")
+            showStatus(String(localized: "Sleep timer off"))
             return
         }
-        statusLabel.stringValue = String(localized: "Sleep timer set for \(mins) min")
+        showStatus(String(localized: "Sleep timer set for \(mins) min"))
         sleepTimerTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(mins * 60))
             guard let self, !Task.isCancelled, !self.closing else { return }
@@ -1496,24 +1518,24 @@ final class PlayerViewController: NSViewController {
         let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let out = desktop.appendingPathComponent("Cinma-\(stamp).png")
         try? session.screenshotToFile(path: out.path)
-        statusLabel.stringValue = String(localized: "Saved screenshot: \(out.lastPathComponent)")
+        showStatus(String(localized: "Saved screenshot: \(out.lastPathComponent)"))
     }
 
     @objc private func cycleAbLoop() {
         if abLoopA == nil {
             abLoopA = position
             try? session?.setAbLoopA(seconds: position)
-            statusLabel.stringValue = String(localized: "A/B loop: A = \(Self.format(position))")
+            showStatus(String(localized: "A/B loop: A = \(Self.format(position))"))
         } else if abLoopB == nil {
             abLoopB = position
             try? session?.setAbLoopB(seconds: position)
-            statusLabel.stringValue = String(localized: "A/B loop: A = \(Self.format(abLoopA ?? 0)), B = \(Self.format(position))")
+            showStatus(String(localized: "A/B loop: A = \(Self.format(abLoopA ?? 0)), B = \(Self.format(position))"))
         } else {
             abLoopA = nil
             abLoopB = nil
             try? session?.setAbLoopA(seconds: nil)
             try? session?.setAbLoopB(seconds: nil)
-            statusLabel.stringValue = String(localized: "A/B Loop cleared")
+            showStatus(String(localized: "A/B Loop cleared"))
         }
         scrubBar.abLoopA = abLoopA
         scrubBar.abLoopB = abLoopB
@@ -1548,7 +1570,7 @@ final class PlayerViewController: NSViewController {
             lastSelectedSid = tracks.first(where: { $0.trackType == "sub" && $0.selected })?.id ?? lastSelectedSid
             try? session?.setSubtitleTrack(id: nil)
         }
-        statusLabel.stringValue = subtitlesEnabled ? String(localized: "Subtitles on") : String(localized: "Subtitles off")
+        showStatus(subtitlesEnabled ? String(localized: "Subtitles on") : String(localized: "Subtitles off"))
     }
 
     private func cycleTrack(type: String, isSub: Bool) {
@@ -1563,7 +1585,7 @@ final class PlayerViewController: NSViewController {
             try? session?.setAudioTrack(id: next.id)
         }
         tracks = (try? session?.tracks()) ?? []
-        statusLabel.stringValue = "\(type.uppercased()): \(next.lang ?? next.title ?? "Track \(next.id)")"
+        showStatus("\(type.uppercased()): \(next.lang ?? next.title ?? "Track \(next.id)")")
     }
 
     private func handleKey(_ event: NSEvent) -> Bool {
@@ -1787,11 +1809,26 @@ final class PlayerViewController: NSViewController {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 
+    private func showStatus(_ text: String, autoHideAfter seconds: TimeInterval = 3.0) {
+        statusClearTask?.cancel()
+        statusClearTask = nil
+        statusLabel.stringValue = text
+        statusPill.isHidden = text.isEmpty
+        guard !text.isEmpty, seconds > 0 else { return }
+        statusClearTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard let self, !Task.isCancelled, !self.closing else { return }
+            self.statusLabel.stringValue = ""
+            self.statusPill.isHidden = true
+        }
+    }
+
     @objc private func close() {
         guard !closing else { return }
         closing = true
         closeRequestedAt = .now
         hudHideTask?.cancel()
+        statusClearTask?.cancel()
         statsTask?.cancel()
         sleepTimerTask?.cancel()
         nextCountdownTask?.cancel()
@@ -1804,6 +1841,7 @@ final class PlayerViewController: NSViewController {
         thumbCache = nil
         saveProgressIfNeeded(force: true)
         statusLabel.stringValue = ""
+        statusPill.isHidden = true
         guard let session else {
             onClose()
             return
