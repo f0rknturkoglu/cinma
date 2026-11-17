@@ -1,0 +1,29 @@
+{
+  "metas": [
+    {
+      "id": "tt0133093",
+      "type": "movie",
+      "name": "The Matrix",
+      "poster": "https://images.example.org/matrix-poster.jpg",
+      "posterShape": "poster",
+      "background": "https://images.example.org/matrix-bg.jpg",
+      "logo": "https://images.example.org/matrix-logo.png",
+      "description": "A computer hacker learns about the true nature of reality.",
+      "releaseInfo": "1999",
+      "imdbRating": "8.7",
+      "genres": ["Action", "Sci-Fi"],
+      "runtime": "136 min"
+    },
+    {
+      "id": "tt0816692",
+      "type": "movie",
+      "name": "Interstellar",
+      "poster": "https://images.example.org/interstellar-poster.jpg",
+      "releaseInfo": "2014",
+      "imdbRating": 8.7,
+      "genres": null
+    }
+  ],
+  "hasMore": true,
+  "cacheMaxAge": 3600
+}

@@ -17,7 +17,11 @@ use cinma_db::{Database, DbError, ProfileId};
 use cinma_stremio::AddonClient;
 use cinma_torrent::{RqbitEngine, TorrentConfig};
 
-pub use addons::{InstalledAddon, StreamCandidate};
+pub use addons::{
+    AddonCatalog, CatalogBatch, CatalogBatchListener, CatalogPage, InstalledAddon, MetaResult,
+    StreamBatch, StreamBatchListener, StreamCandidate,
+};
+pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo};
 pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
 };

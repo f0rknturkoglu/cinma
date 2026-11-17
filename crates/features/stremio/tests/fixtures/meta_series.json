@@ -1,0 +1,50 @@
+{
+  "meta": {
+    "id": "tt0944947",
+    "type": "series",
+    "name": "Game of Thrones",
+    "poster": "https://images.example.org/got-poster.jpg",
+    "posterShape": "poster",
+    "background": "https://images.example.org/got-bg.jpg",
+    "logo": "https://images.example.org/got-logo.png",
+    "description": "Nine noble families fight for control over the lands of Westeros.",
+    "releaseInfo": "2011-2019",
+    "imdbRating": "9.2",
+    "runtime": "57 min",
+    "genres": ["Action", "Adventure", "Drama"],
+    "cast": ["Emilia Clarke", "Peter Dinklage"],
+    "director": null,
+    "writer": ["David Benioff", "D.B. Weiss"],
+    "country": "United States",
+    "released": "2011-04-17T00:00:00.000Z",
+    "behaviorHints": {
+      "defaultVideoId": null,
+      "hasScheduledVideos": false
+    },
+    "videos": [
+      {
+        "id": "tt0944947:1:1",
+        "title": "Winter Is Coming",
+        "season": 1,
+        "episode": 1,
+        "number": 1,
+        "released": "2011-04-17T00:00:00.000Z",
+        "overview": "Jon Arryn, the Hand of the King, is dead.",
+        "thumbnail": "https://images.example.org/got-s1e1.jpg"
+      },
+      {
+        "id": "tt0944947:1:2",
+        "name": "The Kingsroad",
+        "season": 1,
+        "episode": 2,
+        "number": 2
+      }
+    ],
+    "trailers": [
+      { "source": "rlR4PJn8b8I", "type": "Trailer" }
+    ],
+    "links": [
+      { "name": "Drama", "category": "Genres", "url": "stremio:///discover/..." }
+    ]
+  }
+}

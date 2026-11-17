@@ -121,10 +121,17 @@ pub struct AddonInfo {
     pub types: Vec<String>,
     /// Enabled for the active profile.
     pub enabled: bool,
+    pub configurable: bool,
 }
 
 impl From<cinma_core::InstalledAddon> for AddonInfo {
     fn from(a: cinma_core::InstalledAddon) -> Self {
+        let configurable = a
+            .manifest
+            .behavior_hints
+            .as_ref()
+            .and_then(|h| h.configurable)
+            .unwrap_or(false);
         Self {
             id: a.manifest.id,
             name: a.manifest.name,
@@ -133,7 +140,275 @@ impl From<cinma_core::InstalledAddon> for AddonInfo {
             transport_url: a.transport_url,
             types: a.manifest.types,
             enabled: a.enabled,
+            configurable,
         }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct CatalogInfo {
+    pub addon_id: String,
+    pub addon_name: String,
+    pub media_type: String,
+    pub id: String,
+    pub name: String,
+    pub genres: Vec<String>,
+    pub is_searchable: bool,
+    pub is_browsable: bool,
+    pub supports_skip: bool,
+}
+
+impl From<cinma_core::AddonCatalog> for CatalogInfo {
+    fn from(c: cinma_core::AddonCatalog) -> Self {
+        Self {
+            addon_id: c.addon_id,
+            addon_name: c.addon_name,
+            media_type: c.catalog.media_type.clone(),
+            id: c.catalog.id.clone(),
+            name: c.catalog.display_name().to_owned(),
+            genres: c.catalog.genres().to_vec(),
+            is_searchable: c.catalog.is_searchable(),
+            is_browsable: c.catalog.is_browsable(),
+            supports_skip: c.catalog.supports_extra("skip"),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct CatalogQueryInput {
+    pub search: Option<String>,
+    pub genre: Option<String>,
+    pub skip: Option<u32>,
+}
+
+impl From<CatalogQueryInput> for cinma_core::CatalogQuery {
+    fn from(q: CatalogQueryInput) -> Self {
+        Self {
+            search: q.search,
+            genre: q.genre,
+            skip: q.skip,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct MetaPreviewInfo {
+    pub id: String,
+    pub media_type: String,
+    pub name: String,
+    pub poster: Option<String>,
+    pub poster_shape: Option<String>,
+    pub background: Option<String>,
+    pub logo: Option<String>,
+    pub description: Option<String>,
+    pub release_info: Option<String>,
+    pub imdb_rating: Option<String>,
+    pub genres: Vec<String>,
+    pub runtime: Option<String>,
+}
+
+impl From<cinma_core::MetaPreview> for MetaPreviewInfo {
+    fn from(m: cinma_core::MetaPreview) -> Self {
+        Self {
+            id: m.id,
+            media_type: m.media_type,
+            name: m.name,
+            poster: m.poster,
+            poster_shape: m.poster_shape,
+            background: m.background,
+            logo: m.logo,
+            description: m.description,
+            release_info: m.release_info,
+            imdb_rating: m.imdb_rating,
+            genres: m.genres,
+            runtime: m.runtime,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct CatalogPageInfo {
+    pub addon_id: String,
+    pub addon_name: String,
+    pub media_type: String,
+    pub catalog_id: String,
+    pub catalog_name: String,
+    pub items: Vec<MetaPreviewInfo>,
+    pub has_more: bool,
+}
+
+impl From<cinma_core::CatalogPage> for CatalogPageInfo {
+    fn from(p: cinma_core::CatalogPage) -> Self {
+        Self {
+            addon_id: p.addon_id,
+            addon_name: p.addon_name,
+            media_type: p.media_type,
+            catalog_id: p.catalog_id,
+            catalog_name: p.catalog_name,
+            items: p.items.into_iter().map(Into::into).collect(),
+            has_more: p.has_more,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct MetaVideoInfo {
+    pub id: String,
+    pub title: Option<String>,
+    pub season: Option<u32>,
+    pub episode: Option<u32>,
+    pub number: Option<u32>,
+    pub released: Option<String>,
+    pub overview: Option<String>,
+    pub thumbnail: Option<String>,
+}
+
+impl From<cinma_core::MetaVideo> for MetaVideoInfo {
+    fn from(v: cinma_core::MetaVideo) -> Self {
+        let title = v.display_title().map(str::to_owned);
+        Self {
+            id: v.id,
+            title,
+            season: v.season,
+            episode: v.episode,
+            number: v.number,
+            released: v.released,
+            overview: v.overview,
+            thumbnail: v.thumbnail,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct MetaTrailerInfo {
+    pub source: String,
+    pub trailer_type: Option<String>,
+}
+
+impl From<cinma_core::MetaTrailer> for MetaTrailerInfo {
+    fn from(t: cinma_core::MetaTrailer) -> Self {
+        Self {
+            source: t.source,
+            trailer_type: t.trailer_type,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct MetaInfo {
+    pub addon_id: String,
+    pub addon_name: String,
+    pub id: String,
+    pub media_type: String,
+    pub name: String,
+    pub poster: Option<String>,
+    pub poster_shape: Option<String>,
+    pub background: Option<String>,
+    pub logo: Option<String>,
+    pub description: Option<String>,
+    pub release_info: Option<String>,
+    pub imdb_rating: Option<String>,
+    pub runtime: Option<String>,
+    pub country: Option<String>,
+    pub awards: Option<String>,
+    pub released: Option<String>,
+    pub genres: Vec<String>,
+    pub cast: Vec<String>,
+    pub director: Vec<String>,
+    pub writer: Vec<String>,
+    pub videos: Vec<MetaVideoInfo>,
+    pub trailers: Vec<MetaTrailerInfo>,
+    pub default_video_id: Option<String>,
+}
+
+impl From<cinma_core::MetaResult> for MetaInfo {
+    fn from(r: cinma_core::MetaResult) -> Self {
+        let m = r.meta;
+        Self {
+            addon_id: r.addon_id,
+            addon_name: r.addon_name,
+            id: m.id,
+            media_type: m.media_type,
+            name: m.name,
+            poster: m.poster,
+            poster_shape: m.poster_shape,
+            background: m.background,
+            logo: m.logo,
+            description: m.description,
+            release_info: m.release_info,
+            imdb_rating: m.imdb_rating,
+            runtime: m.runtime,
+            country: m.country,
+            awards: m.awards,
+            released: m.released,
+            genres: m.genres,
+            cast: m.cast,
+            director: m.director,
+            writer: m.writer,
+            videos: m.videos.into_iter().map(Into::into).collect(),
+            trailers: m.trailers.into_iter().map(Into::into).collect(),
+            default_video_id: m.behavior_hints.and_then(|b| b.default_video_id),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct StreamBatchInfo {
+    pub addon_id: String,
+    pub addon_name: String,
+    pub streams: Vec<StreamInfo>,
+    pub error: Option<String>,
+}
+
+#[uniffi::export(with_foreign)]
+pub trait StreamBatchObserver: Send + Sync {
+    fn on_batch(&self, batch: StreamBatchInfo);
+}
+
+struct StreamBatchAdapter(Arc<dyn StreamBatchObserver>);
+
+impl cinma_core::StreamBatchListener for StreamBatchAdapter {
+    fn on_batch(&self, batch: cinma_core::StreamBatch) {
+        self.0.on_batch(StreamBatchInfo {
+            addon_id: batch.addon_id,
+            addon_name: batch.addon_name,
+            streams: batch.streams.into_iter().map(Into::into).collect(),
+            error: batch.error,
+        });
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct CatalogBatchInfo {
+    pub addon_id: String,
+    pub addon_name: String,
+    pub media_type: String,
+    pub catalog_id: String,
+    pub catalog_name: String,
+    pub items: Vec<MetaPreviewInfo>,
+    pub has_more: bool,
+    pub error: Option<String>,
+}
+
+#[uniffi::export(with_foreign)]
+pub trait CatalogBatchObserver: Send + Sync {
+    fn on_batch(&self, batch: CatalogBatchInfo);
+}
+
+struct CatalogBatchAdapter(Arc<dyn CatalogBatchObserver>);
+
+impl cinma_core::CatalogBatchListener for CatalogBatchAdapter {
+    fn on_batch(&self, batch: cinma_core::CatalogBatch) {
+        self.0.on_batch(CatalogBatchInfo {
+            addon_id: batch.addon_id,
+            addon_name: batch.addon_name,
+            media_type: batch.media_type,
+            catalog_id: batch.catalog_id,
+            catalog_name: batch.catalog_name,
+            items: batch.items.into_iter().map(Into::into).collect(),
+            has_more: batch.has_more,
+            error: batch.error,
+        });
     }
 }
 
@@ -315,11 +590,77 @@ impl CinmaCore {
         Ok(self.inner.set_feature_enabled(feature(&name)?, enabled).await?)
     }
 
+    pub fn catalogs(&self) -> Result<Vec<CatalogInfo>, CinmaError> {
+        Ok(self.inner.catalogs()?.into_iter().map(Into::into).collect())
+    }
+
+    pub async fn catalog(
+        &self,
+        addon_id: String,
+        media_type: String,
+        catalog_id: String,
+        query: CatalogQueryInput,
+    ) -> Result<CatalogPageInfo, CinmaError> {
+        Ok(self
+            .inner
+            .catalog(addon_id, media_type, catalog_id, query.into())
+            .await?
+            .into())
+    }
+
+    pub async fn browse_catalogs(
+        &self,
+        media_type: Option<String>,
+        observer: Arc<dyn CatalogBatchObserver>,
+    ) -> Result<Vec<CatalogPageInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .browse_catalogs(media_type, Some(Arc::new(CatalogBatchAdapter(observer))))
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn search_catalogs(
+        &self,
+        query: String,
+        media_type: Option<String>,
+        observer: Arc<dyn CatalogBatchObserver>,
+    ) -> Result<Vec<CatalogPageInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .search_catalogs(query, media_type, Some(Arc::new(CatalogBatchAdapter(observer))))
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn meta(&self, media_type: String, id: String) -> Result<MetaInfo, CinmaError> {
+        Ok(self.inner.meta(media_type, id).await?.into())
+    }
+
     /// `media_type`: "movie" | "series"; `id`: e.g. "tt1254207" or "tt0944947:1:1".
     pub async fn streams(&self, media_type: String, id: String) -> Result<Vec<StreamInfo>, CinmaError> {
         Ok(self
             .inner
             .streams(media_type, id)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn streams_incremental(
+        &self,
+        media_type: String,
+        id: String,
+        observer: Arc<dyn StreamBatchObserver>,
+    ) -> Result<Vec<StreamInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .streams_streaming(media_type, id, Some(Arc::new(StreamBatchAdapter(observer))))
             .await?
             .into_iter()
             .map(Into::into)

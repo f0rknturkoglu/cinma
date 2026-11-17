@@ -1,0 +1,49 @@
+{
+  "id": "com.linvo.cinemeta",
+  "version": "3.0.14",
+  "name": "Cinemeta",
+  "description": "Provides metadata for movies and series from IMDb",
+  "resources": [
+    "catalog",
+    {
+      "name": "meta",
+      "types": ["movie", "series"],
+      "idPrefixes": ["tt"]
+    }
+  ],
+  "types": ["movie", "series"],
+  "catalogs": [
+    {
+      "type": "movie",
+      "id": "top",
+      "name": "Popular",
+      "extra": [
+        { "name": "genre", "isRequired": false, "options": ["Action", "Drama", "Sci-Fi"] },
+        { "name": "skip", "isRequired": false },
+        { "name": "search", "isRequired": false }
+      ]
+    },
+    {
+      "type": "series",
+      "id": "top",
+      "name": "Popular",
+      "extra": [
+        { "name": "genre", "isRequired": false, "options": ["Drama", "Thriller"] },
+        { "name": "skip", "isRequired": false },
+        { "name": "search", "isRequired": false }
+      ]
+    },
+    {
+      "type": "movie",
+      "id": "search_only",
+      "name": "Search",
+      "extra": [
+        { "name": "search", "isRequired": true }
+      ]
+    }
+  ],
+  "behaviorHints": {
+    "configurable": false,
+    "configurationRequired": false
+  }
+}
