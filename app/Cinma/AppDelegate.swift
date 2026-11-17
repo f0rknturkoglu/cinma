@@ -112,10 +112,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "addon.install":
             guard let manifest = invocation.argument else { return }
             if browse == nil { showBrowse() }
-            browse?.showStatus(String(localized: "Installing addon…"))
+            browse?.showStatus(String(localized: "Checking addon…"))
             Task {
                 do {
-                    let addon = try await core.installAddon(url: manifest)
+                    let preview = try await core.inspectAddon(url: manifest)
+                    guard await confirmAddonInstall(preview) else {
+                        browse?.showStatus(String(localized: "Addon installation cancelled"))
+                        return
+                    }
+                    browse?.showStatus(String(localized: "Installing addon…"))
+                    let addon = try await core.installAddon(url: preview.transportUrl)
                     browse?.showStatus(String(localized: "Installed \(addon.name) \(addon.version)"))
                     DevAutomation.log("deep link installed \(addon.id)")
                 } catch {
@@ -125,6 +131,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             break
         }
+    }
+
+    private func confirmAddonInstall(_ addon: AddonInfo) async -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = String(localized: "Install addon “\(addon.name)”?")
+        var details = [String]()
+        if let desc = addon.description?.trimmingCharacters(in: .whitespacesAndNewlines), !desc.isEmpty {
+            details.append(desc)
+        }
+        details.append(addon.transportUrl)
+        alert.informativeText = details.joined(separator: "\n\n")
+        alert.addButton(withTitle: String(localized: "Install"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        if let window {
+            return await alert.beginSheetModal(for: window) == .alertFirstButtonReturn
+        }
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func showPlayer(_ request: PlayRequest) {

@@ -257,6 +257,11 @@ impl CinmaCore {
         Ok(self.inner.addons()?.into_iter().map(Into::into).collect())
     }
 
+    /// Fetches an addon manifest without installing it (e.g. deep-link confirmation).
+    pub async fn inspect_addon(&self, url: String) -> Result<AddonInfo, CinmaError> {
+        Ok(self.inner.inspect_addon(url).await?.into())
+    }
+
     /// Installs from a manifest URL or `stremio://` link.
     pub async fn install_addon(&self, url: String) -> Result<AddonInfo, CinmaError> {
         Ok(self.inner.install_addon(url).await?.into())

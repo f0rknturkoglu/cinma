@@ -33,6 +33,22 @@
         }
       }
     },
+    "Addon installation cancelled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Addon installation cancelled"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eklenti kurulumu iptal edildi"
+          }
+        }
+      }
+    },
     "Addon manifest URL or stremio:// link": {
       "localizations": {
         "en": {
@@ -77,6 +93,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arabelleğe alınıyor…"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İptal"
+          }
+        }
+      }
+    },
+    "Checking addon…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking addon…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eklenti kontrol ediliyor…"
           }
         }
       }
@@ -301,6 +349,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kur"
+          }
+        }
+      }
+    },
+    "Install addon “%@”?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install addon “%@”?"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "“%@” eklentisi kurulsun mu?"
           }
         }
       }

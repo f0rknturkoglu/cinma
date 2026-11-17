@@ -35,23 +35,34 @@ impl Core {
             .collect()
     }
 
-    /// Fetches the manifest and installs (or refreshes) the addon, enabled
-    /// for the active profile.
-    pub async fn install_addon(self: &Arc<Self>, url: String) -> Result<InstalledAddon, CoreError> {
+    /// Fetches and parses an addon's manifest without installing it.
+    pub async fn inspect_addon(self: &Arc<Self>, url: String) -> Result<InstalledAddon, CoreError> {
         let http = self.http()?;
         let (transport_url, manifest) = self
             .spawn(async move { Ok(http.fetch_manifest(&url).await?) })
             .await?;
-        let manifest_json = serde_json::to_string(&manifest).map_err(|e| CoreError::Invalid(e.to_string()))?;
+        Ok(InstalledAddon {
+            transport_url: transport_url.to_string(),
+            manifest,
+            enabled: false,
+        })
+    }
+
+    /// Fetches the manifest and installs (or refreshes) the addon, enabled
+    /// for the active profile.
+    pub async fn install_addon(self: &Arc<Self>, url: String) -> Result<InstalledAddon, CoreError> {
+        let preview = self.inspect_addon(url).await?;
+        let manifest_json = serde_json::to_string(&preview.manifest)
+            .map_err(|e| CoreError::Invalid(e.to_string()))?;
         let profile = self.active_profile()?;
         self.db.lock().map_err(|_| CoreError::Poisoned)?.upsert_addon(
             profile,
-            &manifest.id,
-            transport_url.as_str(),
+            &preview.manifest.id,
+            &preview.transport_url,
             &manifest_json,
         )?;
         self.emit(CoreEvent::AddonsChanged);
-        Ok(InstalledAddon { transport_url: transport_url.to_string(), manifest, enabled: true })
+        Ok(InstalledAddon { enabled: true, ..preview })
     }
 
     pub fn set_addon_enabled(&self, id: &str, enabled: bool) -> Result<(), CoreError> {
