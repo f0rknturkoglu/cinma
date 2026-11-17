@@ -1,6 +1,6 @@
 # Risks and open decisions
 
-Updated 2026-11-17 after the Phase 3–7 review. Fixed items are recorded in `PROGRESS.md`; this file lists only what is still open.
+Updated 2026-11-17 after the Phase 3–7 review. The owner's test checklist and next phases are in `docs/ROADMAP.md`. Fixed items are recorded in `PROGRESS.md`; this file lists only what is still open.
 
 ## Not yet verified on real networks or devices
 - **Torrent TTFF and seek on a real swarm.** The agent sandbox proxies outbound TCP, so only the loopback seeder was tested. On a normal network run: `tools/measure-playback.sh "<addon manifest url>" movie <imdb id> 5`.

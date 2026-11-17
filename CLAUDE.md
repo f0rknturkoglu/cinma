@@ -6,7 +6,7 @@
 
 ## Project quick reference
 
-- **Picking this project up? Start with `docs/ROADMAP.md`**: current state, pitfalls already learned, owner decisions, and the remaining phases (3–7) as task lists.
+- **Picking this project up? Start with `docs/ROADMAP.md`**: current state, the owner's test checklist, decisions still open, pitfalls already learned, and the next phases (8 UX polish, 9 integrations, 10 hardening).
 
 - Build Rust core + Swift bindings: `tools/build-core.sh [Debug|Release]` (the Xcode "Build Rust core" phase runs it too).
 - App: open `app/Cinma.xcodeproj`, scheme **Cinma**. CLI: `xcodebuild -project app/Cinma.xcodeproj -scheme Cinma -configuration Release -derivedDataPath build/xcode build`.
@@ -273,6 +273,9 @@ Each phase ends with a short report (built, measured vs targets, risks) and gree
 ### Phase 7 — Polish
 - Error UX (dead streams, no peers, addon down), onboarding polish, accessibility (VoiceOver labels, full keyboard navigation), profile PINs, backup/restore UI, packaging/signing.
 - **Exit:** all §6 targets met; manual comparison vs Stremio v5 / Flux / IINA documented.
+
+### Phase 8 — UI/UX polish · Phase 9 — Integrations & add-ons · Phase 10 — Hardening & release
+Added after Phases 0–7 were built and reviewed (2026-11-17). Task lists, priorities and exit criteria are in `docs/ROADMAP.md` §7–9.
 
 ### Backlog (not scheduled; architecture slots already exist)
 - Live TV / IPTV module (M3U, Xtream, XMLTV/EPG).

@@ -2,6 +2,11 @@
 
 ## Status: Phases 0–7 built; review fixes done (2026-11-17). Owner sign-off on Phases 4–7 and ADRs 0011–0016 is still pending.
 
+**Next:** see `docs/ROADMAP.md`:
+- §2: the owner's test checklist;
+- §3: decisions still open;
+- §7–9: Phase 8 (UI/UX polish), Phase 9 (integrations and add-ons), Phase 10 (hardening and release).
+
 Two things are still unmeasured: real-swarm torrent TTFF/seek (the agent sandbox has no P2P) and real Chromecast/DLNA/Trakt round trips. See "Open items" below.
 
 ## Review fixes, round 2 (2026-11-17): everything else from the review
