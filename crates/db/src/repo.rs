@@ -15,7 +15,7 @@ pub struct AddonRow {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DownloadKind {
     Torrent,
     Http,

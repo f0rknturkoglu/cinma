@@ -5,6 +5,7 @@ members = [
     "crates/db",
     "crates/ffi",
     "crates/blobstore",
+    "crates/queue",
     "crates/player-bridge",
     "crates/features/stremio",
     "crates/features/torrent",
@@ -15,6 +16,7 @@ default-members = [
     "crates/db",
     "crates/ffi",
     "crates/blobstore",
+    "crates/queue",
     "crates/player-bridge",
     "crates/features/stremio",
     "crates/features/torrent",
@@ -30,6 +32,7 @@ publish = false
 cinma-core = { path = "crates/core" }
 cinma-db = { path = "crates/db" }
 cinma-blobstore = { path = "crates/blobstore" }
+cinma-queue = { path = "crates/queue" }
 cinma-player = { path = "crates/player-bridge" }
 cinma-stremio = { path = "crates/features/stremio" }
 cinma-torrent = { path = "crates/features/torrent" }

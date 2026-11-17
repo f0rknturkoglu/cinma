@@ -54,6 +54,9 @@ impl Database {
     }
 
     fn init(mut conn: Connection) -> Result<Self, DbError> {
+        // Wait for other connections (e.g. a second process) instead of
+        // failing immediately with SQLITE_BUSY.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
