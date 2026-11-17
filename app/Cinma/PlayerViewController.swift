@@ -126,6 +126,16 @@ final class PlayerViewController: NSViewController {
     private var nextPlan: NextEpisodePrefetchInfo?
     private var nextCountdownTask: Task<Void, Never>?
     private var nextDismissed = false
+    private var loadingNextEpisode = false
+    private var sessionAudioLang: String?
+    private var sessionAudioTitle: String?
+    private var sessionSubEnabled: Bool?
+    private var sessionSubLang: String?
+    private var sessionSubTitle: String?
+    private var sessionSecondarySubEnabled: Bool?
+    private var sessionSecondarySubLang: String?
+    private var sessionSubDelay: Double?
+    private var sessionAudioDelay: Double?
     private var statsVisible = false
     private var statsTask: Task<Void, Never>?
     private var hudHideTask: Task<Void, Never>?
@@ -624,6 +634,11 @@ final class PlayerViewController: NSViewController {
     private func handle(_ event: PlaybackEvent) {
         switch event {
         case .fileLoaded:
+            loadingNextEpisode = false
+            nextCountdownTask?.cancel()
+            nextCountdownTask = nil
+            nextCard.isHidden = true
+            nextCountdownLabel.stringValue = ""
             showStatus("", autoHideAfter: 0)
             failedRetries = 0
             cancelStallWatchdog()
@@ -631,6 +646,9 @@ final class PlayerViewController: NSViewController {
             applySavedStyleAndOffsets()
             refreshTracksAndChapters()
             scheduleOnlineSubtitleLookup()
+            if metadata != nil {
+                loadSkipSegmentsIfEnabled()
+            }
             if let switchPos = pendingSwitchPosition {
                 pendingSwitchPosition = nil
                 try? session?.seekAbsoluteExact(seconds: switchPos)
@@ -655,6 +673,7 @@ final class PlayerViewController: NSViewController {
             refreshTracksAndChapters()
 
         case .position(let seconds):
+            guard !loadingNextEpisode else { return }
             position = seconds
             scrubBar.position = seconds
             updateTime()
@@ -663,6 +682,7 @@ final class PlayerViewController: NSViewController {
             saveProgressIfNeeded(force: false)
 
         case .duration(let seconds):
+            guard !loadingNextEpisode else { return }
             duration = seconds
             scrubBar.duration = seconds
             updateTime()
@@ -713,7 +733,7 @@ final class PlayerViewController: NSViewController {
                 showStatus(String(localized: "Playback error: \(msg)"), autoHideAfter: 4.5)
                 attemptStreamRecovery()
             case .eof:
-                if nextPlan != nil && !nextDismissed {
+                if !loadingNextEpisode, nextPlan != nil, !nextDismissed {
                     playNextEpisodeNow()
                 }
             case .stopped:
@@ -736,12 +756,29 @@ final class PlayerViewController: NSViewController {
         if let settings = try? core.subtitleSettings() {
             applySubtitleStyle(settings, session: session)
         }
-        if let videoId = metadata?.videoId, let offsets = try? core.videoOffsets(videoId: videoId) {
-            subDelay = offsets.subDelay
-            audioDelay = offsets.audioDelay
-            if abs(subDelay) > 0.001 { try? session.setSubtitleDelay(seconds: subDelay) }
-            if abs(audioDelay) > 0.001 { try? session.setAudioDelay(seconds: audioDelay) }
+        if let prefs = try? core.playerPreferences() {
+            let paths = (try? core.resolveShaderPaths(preset: prefs.shaderPreset)) ?? []
+            try? session.setGlslShaders(paths: paths)
+            try? session.setHdrTargetPeak(nits: prefs.hdrTargetPeak)
         }
+        if abs(speed - 1.0) > 0.01 {
+            try? session.setSpeed(speed: speed)
+        }
+        if abs(volume - 100.0) > 0.5 {
+            try? session.setVolume(volume: volume)
+        }
+        if muted {
+            try? session.setMuted(muted: true)
+        }
+        if let videoId = metadata?.videoId, let offsets = try? core.videoOffsets(videoId: videoId) {
+            subDelay = abs(offsets.subDelay) > 0.001 ? offsets.subDelay : (sessionSubDelay ?? 0)
+            audioDelay = abs(offsets.audioDelay) > 0.001 ? offsets.audioDelay : (sessionAudioDelay ?? 0)
+        } else {
+            subDelay = sessionSubDelay ?? 0
+            audioDelay = sessionAudioDelay ?? 0
+        }
+        if abs(subDelay) > 0.001 { try? session.setSubtitleDelay(seconds: subDelay) }
+        if abs(audioDelay) > 0.001 { try? session.setAudioDelay(seconds: audioDelay) }
     }
 
     private func applySubtitleStyle(_ s: SubtitleSettingsFfi, session: PlaybackSession?) {
@@ -772,26 +809,70 @@ final class PlayerViewController: NSViewController {
     private func autoSelectPreferredTracks() {
         guard let session, let prefs = try? core.subtitleSettings() else { return }
         let audioTracks = tracks.filter { $0.trackType == "audio" }
-        for lang in prefs.audioLangs {
-            if let match = audioTracks.first(where: { trackMatchesLang($0, lang) }) {
-                if !match.selected { try? session.setAudioTrack(id: match.id) }
-                break
+        var matchedAudio: MediaTrackInfo?
+        if let wantLang = sessionAudioLang {
+            if let wantTitle = sessionAudioTitle, !wantTitle.isEmpty {
+                matchedAudio = audioTracks.first { trackMatchesLang($0, wantLang) && $0.title == wantTitle }
+            }
+            matchedAudio = matchedAudio ?? audioTracks.first { trackMatchesLang($0, wantLang) }
+        } else if let wantTitle = sessionAudioTitle, !wantTitle.isEmpty {
+            matchedAudio = audioTracks.first { $0.title == wantTitle }
+        }
+        if matchedAudio == nil {
+            for lang in prefs.audioLangs {
+                if let match = audioTracks.first(where: { trackMatchesLang($0, lang) }) {
+                    matchedAudio = match
+                    break
+                }
             }
         }
+        if let match = matchedAudio, !match.selected {
+            try? session.setAudioTrack(id: match.id)
+        }
+
         let subTracks = tracks.filter { $0.trackType == "sub" }
+        if sessionSubEnabled == false {
+            subtitlesEnabled = false
+            try? session.setSubtitleTrack(id: nil)
+            try? session.setSecondarySubtitleTrack(id: nil)
+            return
+        }
+
         var primaryId: Int64?
-        for lang in prefs.preferredLangs {
-            if let match = subTracks.first(where: { trackMatchesLang($0, lang) && !$0.forced })
-                ?? subTracks.first(where: { trackMatchesLang($0, lang) })
-            {
+        if let wantSubLang = sessionSubLang {
+            var match: MediaTrackInfo?
+            if let wantSubTitle = sessionSubTitle, !wantSubTitle.isEmpty {
+                match = subTracks.first { trackMatchesLang($0, wantSubLang) && $0.title == wantSubTitle }
+            }
+            match = match
+                ?? subTracks.first { trackMatchesLang($0, wantSubLang) && !$0.forced }
+                ?? subTracks.first { trackMatchesLang($0, wantSubLang) }
+            if let match {
                 primaryId = match.id
                 lastSelectedSid = match.id
+                subtitlesEnabled = true
                 try? session.setSubtitleTrack(id: match.id)
-                break
             }
         }
-        if let dualLang = prefs.dualSecondaryLang, !dualLang.isEmpty,
-           let dualMatch = subTracks.first(where: { trackMatchesLang($0, dualLang) && $0.id != primaryId })
+        if primaryId == nil {
+            for lang in prefs.preferredLangs {
+                if let match = subTracks.first(where: { trackMatchesLang($0, lang) && !$0.forced })
+                    ?? subTracks.first(where: { trackMatchesLang($0, lang) })
+                {
+                    primaryId = match.id
+                    lastSelectedSid = match.id
+                    subtitlesEnabled = true
+                    try? session.setSubtitleTrack(id: match.id)
+                    break
+                }
+            }
+        }
+
+        if sessionSecondarySubEnabled == false {
+            secondarySid = nil
+            try? session.setSecondarySubtitleTrack(id: nil)
+        } else if let secLang = sessionSecondarySubLang ?? prefs.dualSecondaryLang, !secLang.isEmpty,
+                  let dualMatch = subTracks.first(where: { trackMatchesLang($0, secLang) && $0.id != primaryId })
         {
             secondarySid = dualMatch.id
             try? session.setSecondarySubtitleTrack(id: dualMatch.id)
@@ -865,7 +946,8 @@ final class PlayerViewController: NSViewController {
     // MARK: - Next Episode Prefetch & Autoplay (§5.9)
 
     private func checkNextEpisodeTrigger() {
-        guard let meta = metadata, meta.mediaType == "series",
+        guard !loadingNextEpisode, !closing,
+              let meta = metadata, meta.mediaType == "series",
               let season = meta.season, let ep = meta.episode,
               duration > 30
         else { return }
@@ -892,7 +974,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func showNextEpisodeCard(_ plan: NextEpisodePrefetchInfo) {
-        guard nextCard.isHidden else { return }
+        guard !loadingNextEpisode, nextCard.isHidden else { return }
         nextTitleLabel.stringValue = String(localized: "S\(plan.season) · E\(plan.episode) — \(plan.title)")
         nextSubtitleLabel.stringValue = plan.bestStream != nil
             ? String(localized: "Prefetched & ready")
@@ -909,25 +991,40 @@ final class PlayerViewController: NSViewController {
         nextCountdownTask?.cancel()
         nextCountdownTask = Task { [weak self] in
             for remaining in stride(from: total, through: 1, by: -1) {
-                guard let self, !Task.isCancelled, !self.nextDismissed, !self.closing else { return }
+                guard let self, !Task.isCancelled, !self.loadingNextEpisode, !self.nextDismissed, !self.closing else { return }
                 self.nextCountdownLabel.stringValue = String(localized: "Auto-playing in \(remaining)s…")
                 try? await Task.sleep(for: .seconds(1))
             }
-            guard let self, !Task.isCancelled, !self.nextDismissed, !self.closing else { return }
+            guard let self, !Task.isCancelled, !self.loadingNextEpisode, !self.nextDismissed, !self.closing else { return }
             self.playNextEpisodeNow()
         }
     }
 
     @objc private func playNextEpisodeNow() {
-        guard let plan = nextPlan ?? session?.prefetchedNextEpisode(),
+        guard !loadingNextEpisode,
+              let plan = nextPlan ?? session?.prefetchedNextEpisode(),
               let stream = plan.bestStream
         else { return }
+        loadingNextEpisode = true
         nextCountdownTask?.cancel()
+        nextCountdownTask = nil
         nextCard.isHidden = true
+        nextCountdownLabel.stringValue = ""
+        skipButton.isHidden = true
         nextPlan = nil
         prefetchedTriggered = false
         nextDismissed = false
         pendingSwitchPosition = nil
+        appliedResume = true
+        position = 0
+        duration = 0
+        scrubBar.position = 0
+        scrubBar.duration = 0
+        updateTime()
+        chapters = []
+        scrubBar.chapters = []
+        apiSkipSegments = []
+        onlineSubtitles = []
 
         if let prev = metadata {
             let newMeta = PlaybackMetadata(
@@ -950,8 +1047,15 @@ final class PlayerViewController: NSViewController {
         }
         showStatus(String(localized: "Loading next episode…"), autoHideAfter: 0)
         let session = session
-        Task {
-            try? await session?.play(stream: stream)
+        Task { [weak self] in
+            do {
+                try await session?.play(stream: stream)
+            } catch {
+                await MainActor.run {
+                    self?.loadingNextEpisode = false
+                    self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
+                }
+            }
         }
     }
 
@@ -1141,16 +1245,29 @@ final class PlayerViewController: NSViewController {
                 self?.openLocalSubtitleFile()
             },
             onSelectPrimary: { [weak self] id in
-                self?.lastSelectedSid = id
-                self?.subtitlesEnabled = id != nil
-                try? self?.session?.setSubtitleTrack(id: id)
-                self?.tracks = (try? self?.session?.tracks()) ?? []
-                self?.dismissFloatingPopover()
+                guard let self else { return }
+                self.lastSelectedSid = id
+                self.subtitlesEnabled = id != nil
+                self.sessionSubEnabled = id != nil
+                if let id, let chosen = self.tracks.first(where: { $0.trackType == "sub" && $0.id == id }) {
+                    self.sessionSubLang = chosen.lang
+                    self.sessionSubTitle = chosen.title
+                }
+                try? self.session?.setSubtitleTrack(id: id)
+                self.tracks = (try? self.session?.tracks()) ?? []
+                self.dismissFloatingPopover()
             },
             onSelectSecondary: { [weak self] id in
-                self?.secondarySid = id
-                try? self?.session?.setSecondarySubtitleTrack(id: id)
-                self?.dismissFloatingPopover()
+                guard let self else { return }
+                self.secondarySid = id
+                self.sessionSecondarySubEnabled = id != nil
+                if let id, let chosen = self.tracks.first(where: { $0.trackType == "sub" && $0.id == id }) {
+                    self.sessionSecondarySubLang = chosen.lang
+                } else if id == nil {
+                    self.sessionSecondarySubLang = nil
+                }
+                try? self.session?.setSecondarySubtitleTrack(id: id)
+                self.dismissFloatingPopover()
             },
             onAdjustDelay: { [weak self] delta in
                 self?.adjustSubDelay(delta)
@@ -1234,6 +1351,10 @@ final class PlayerViewController: NSViewController {
                     select: true
                 )
                 await MainActor.run {
+                    self?.subtitlesEnabled = true
+                    self?.sessionSubEnabled = true
+                    self?.sessionSubLang = candidate.lang
+                    self?.sessionSubTitle = candidate.title ?? candidate.provider
                     self?.showStatus(String(localized: "Loaded \(candidate.lang.uppercased()) subtitle (\(prepared.detectedEncoding))"))
                     self?.tracks = (try? session?.tracks()) ?? []
                 }
@@ -1268,6 +1389,7 @@ final class PlayerViewController: NSViewController {
 
     private func setSubDelay(_ val: Double) {
         subDelay = val
+        sessionSubDelay = val
         try? session?.setSubtitleDelay(seconds: val)
         persistOffsets()
         showStatus(String(format: "%@ %+.1fs", String(localized: "Subtitle delay:"), val))
@@ -1275,6 +1397,7 @@ final class PlayerViewController: NSViewController {
 
     private func adjustAudioDelay(_ delta: Double) {
         audioDelay += delta
+        sessionAudioDelay = audioDelay
         try? session?.setAudioDelay(seconds: audioDelay)
         persistOffsets()
         showStatus(String(format: "%@ %+.1fs", String(localized: "Audio delay:"), audioDelay))
@@ -1322,7 +1445,12 @@ final class PlayerViewController: NSViewController {
     }
 
     @objc private func selectAudioTrackItem(_ sender: NSMenuItem) {
-        try? session?.setAudioTrack(id: Int64(sender.tag))
+        let tid = Int64(sender.tag)
+        if let chosen = tracks.first(where: { $0.trackType == "audio" && $0.id == tid }) {
+            sessionAudioLang = chosen.lang
+            sessionAudioTitle = chosen.title
+        }
+        try? session?.setAudioTrack(id: tid)
         tracks = (try? session?.tracks()) ?? []
     }
 
@@ -1332,6 +1460,7 @@ final class PlayerViewController: NSViewController {
 
     @objc private func resetAudioDelayItem() {
         audioDelay = 0
+        sessionAudioDelay = 0
         try? session?.setAudioDelay(seconds: 0)
         persistOffsets()
     }
@@ -1563,8 +1692,13 @@ final class PlayerViewController: NSViewController {
 
     private func toggleSubtitlesVisibility() {
         subtitlesEnabled.toggle()
+        sessionSubEnabled = subtitlesEnabled
         if subtitlesEnabled {
             let target = lastSelectedSid ?? tracks.first(where: { $0.trackType == "sub" })?.id
+            if let target, let chosen = tracks.first(where: { $0.trackType == "sub" && $0.id == target }) {
+                sessionSubLang = chosen.lang
+                sessionSubTitle = chosen.title
+            }
             try? session?.setSubtitleTrack(id: target)
         } else {
             lastSelectedSid = tracks.first(where: { $0.trackType == "sub" && $0.selected })?.id ?? lastSelectedSid
@@ -1580,8 +1714,14 @@ final class PlayerViewController: NSViewController {
         let next = group[(idx + 1) % group.count]
         if isSub {
             lastSelectedSid = next.id
+            subtitlesEnabled = true
+            sessionSubEnabled = true
+            sessionSubLang = next.lang
+            sessionSubTitle = next.title
             try? session?.setSubtitleTrack(id: next.id)
         } else {
+            sessionAudioLang = next.lang
+            sessionAudioTitle = next.title
             try? session?.setAudioTrack(id: next.id)
         }
         tracks = (try? session?.tracks()) ?? []

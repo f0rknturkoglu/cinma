@@ -11,14 +11,14 @@ import ImageIO
 final class ImagePipeline {
     static let shared = ImagePipeline()
 
-    private let browseCostLimit = 28 * 1024 * 1024
-    private let browseCountLimit = 160
+    private let browseCostLimit = 16 * 1024 * 1024
+    private let browseCountLimit = 90
     private var inPlaybackMode = false
 
     private let memoryCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
-        cache.totalCostLimit = 28 * 1024 * 1024
-        cache.countLimit = 160
+        cache.totalCostLimit = 16 * 1024 * 1024
+        cache.countLimit = 90
         return cache
     }()
 

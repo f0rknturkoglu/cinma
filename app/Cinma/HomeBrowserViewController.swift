@@ -562,6 +562,7 @@ final class HomeBrowserViewController: NSViewController {
         }
         Task {
             _ = try? await core.browseCatalogs(mediaType: nil, observer: collector)
+            ImagePipeline.releaseMallocPressure()
         }
     }
 
