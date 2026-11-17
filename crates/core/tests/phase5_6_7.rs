@@ -355,3 +355,36 @@ fn disk_quota_never_evicts_a_finished_download() {
         "cache blob is evicted"
     );
 }
+
+#[test]
+fn failed_restore_leaves_the_live_database_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(dir.path()).unwrap();
+    core.create_profile("Guest".into(), None).unwrap();
+
+    // Corrupt file: validation must fail before anything is swapped.
+    let bad = dir.path().join("bad.sqlite3");
+    std::fs::write(&bad, b"definitely not a database").unwrap();
+    assert!(core.import_backup(&bad).is_err());
+    // Missing file.
+    assert!(
+        core.import_backup(&dir.path().join("missing.sqlite3"))
+            .is_err()
+    );
+
+    assert_eq!(core.profiles().unwrap().len(), 2, "live data intact");
+    core.create_profile("Still writable".into(), None).unwrap();
+    assert!(!dir.path().join("cinma.sqlite3.restore").exists());
+
+    // A good restore keeps the previous database aside.
+    let backup = dir.path().join("good.sqlite3");
+    core.export_backup(&backup).unwrap();
+    core.create_profile("After backup".into(), None).unwrap();
+    core.import_backup(&backup).unwrap();
+    assert_eq!(core.profiles().unwrap().len(), 3);
+    assert!(dir.path().join("cinma.sqlite3.pre-restore").exists());
+    // The restored database reopens cleanly.
+    drop(core);
+    let reopened = Core::open(dir.path()).unwrap();
+    assert_eq!(reopened.profiles().unwrap().len(), 3);
+}

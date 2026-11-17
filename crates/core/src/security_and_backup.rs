@@ -3,7 +3,7 @@
 //! - SQLite online backup (`VACUUM INTO`) and validated live restore
 
 use std::num::NonZeroU32;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use cinma_db::{Database, ProfileId};
@@ -63,30 +63,90 @@ impl Core {
         Ok(())
     }
 
-    /// Validates `src` integrity/schema and replaces the live SQLite database atomically.
+    /// Validates `src` and swaps it in for the live database.
+    ///
+    /// Steps: refuse while downloads run → copy `src` next to the live file and
+    /// fsync it → validate the copy → close the live database → move it (and
+    /// any WAL/SHM) aside as `cinma.sqlite3.pre-restore` → rename the copy into
+    /// place → open it. If opening fails, the previous database is moved back.
+    /// At no point is the live file overwritten in place.
     pub fn import_backup(self: &Arc<Self>, src: &Path) -> Result<u32, CoreError> {
-        let version = Database::validate_backup_file(src)?;
+        if let Some(queue) = self.queue.lock().map_err(|_| CoreError::Poisoned)?.as_ref()
+            && queue.active_count() > 0
+        {
+            return Err(CoreError::Invalid(
+                "Pause active downloads before restoring a backup".into(),
+            ));
+        }
+        Database::validate_backup_file(src)?;
+
         let db_path = self.data_dir.join(DB_FILE_NAME);
+        let staged = sibling(&db_path, ".restore");
+        let previous = sibling(&db_path, ".pre-restore");
+        let _ = std::fs::remove_file(&staged);
+        std::fs::copy(src, &staged)?;
+        std::fs::File::open(&staged)?.sync_all()?;
+        let version = match Database::validate_backup_file(&staged) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = std::fs::remove_file(&staged);
+                return Err(e.into());
+            }
+        };
+
         {
             let mut db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
-            let placeholder = Database::open_in_memory()?;
-            let old = std::mem::replace(&mut *db, placeholder);
-            drop(old);
+            // Closing the last connection checkpoints and removes the WAL.
+            drop(std::mem::replace(&mut *db, Database::open_in_memory()?));
 
-            for suffix in ["-wal", "-shm"] {
-                let sidecar = Path::new(&format!("{}{}", db_path.display(), suffix)).to_path_buf();
-                if sidecar.exists() {
-                    let _ = std::fs::remove_file(sidecar);
+            for suffix in ["", "-wal", "-shm"] {
+                let _ = std::fs::remove_file(sibling(&previous, suffix));
+            }
+            for suffix in ["", "-wal", "-shm"] {
+                let from = sibling(&db_path, suffix);
+                if from.exists() {
+                    std::fs::rename(&from, sibling(&previous, suffix))?;
                 }
             }
-            std::fs::copy(src, &db_path)?;
-            *db = Database::open(&db_path)?;
+            std::fs::rename(&staged, &db_path)?;
+            sync_dir(&self.data_dir);
+
+            match Database::open(&db_path) {
+                Ok(restored) => *db = restored,
+                Err(e) => {
+                    let _ = std::fs::rename(&db_path, &staged);
+                    for suffix in ["", "-wal", "-shm"] {
+                        let from = sibling(&previous, suffix);
+                        if from.exists() {
+                            let _ = std::fs::rename(&from, sibling(&db_path, suffix));
+                        }
+                    }
+                    *db = Database::open(&db_path)?;
+                    return Err(e.into());
+                }
+            }
         }
         self.emit(CoreEvent::ProfileChanged);
         self.emit(CoreEvent::AddonsChanged);
         self.emit(CoreEvent::LibraryChanged);
         self.emit(CoreEvent::DownloadsChanged);
         Ok(version)
+    }
+}
+
+/// `path` with `suffix` appended to its file name (`a.sqlite3` + `-wal`).
+fn sibling(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(suffix);
+    path.with_file_name(name)
+}
+
+fn sync_dir(dir: &Path) {
+    if let Ok(d) = std::fs::File::open(dir) {
+        let _ = d.sync_all();
     }
 }
 
