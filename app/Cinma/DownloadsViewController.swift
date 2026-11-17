@@ -66,6 +66,9 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
         )
         folderBtn.setAccessibilityLabel(String(localized: "Open Download Folder"))
 
+        for button in [folderBtn, addBtn] {
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
         let topBar = NSStackView(views: [header, usageLabel, NSView(), folderBtn, addBtn])
         topBar.orientation = .horizontal
         topBar.alignment = .centerY

@@ -133,7 +133,7 @@ enum CinemaTheme {
         target: AnyObject?,
         action: Selector
     ) -> NSButton {
-        let button = NSButton(title: title, target: target, action: action)
+        let button = PillButton(title: title, target: target, action: action)
         button.isBordered = false
         button.wantsLayer = true
         button.font = .systemFont(ofSize: 13.5, weight: primary ? .bold : .semibold)
@@ -157,6 +157,16 @@ enum CinemaTheme {
             ]
         )
         return button
+    }
+}
+
+/// A borderless button whose natural size includes the pill's padding, so it
+/// is never clipped where no explicit size constraints are set.
+@MainActor
+final class PillButton: NSButton {
+    override var intrinsicContentSize: NSSize {
+        let base = super.intrinsicContentSize
+        return NSSize(width: base.width + 28, height: max(base.height + 14, 32))
     }
 }
 
