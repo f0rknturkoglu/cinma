@@ -61,32 +61,59 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         catalogPopup.target = self
         catalogPopup.action = #selector(catalogChanged)
         catalogPopup.bezelStyle = .rounded
+        catalogPopup.translatesAutoresizingMaskIntoConstraints = false
+        catalogPopup.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
 
         genreStack.orientation = .horizontal
+        genreStack.alignment = .centerY
         genreStack.spacing = 8
+        genreStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let genreDoc = NSView()
+        genreDoc.translatesAutoresizingMaskIntoConstraints = false
+        genreDoc.addSubview(genreStack)
+
         let genreScroll = NSScrollView()
-        genreScroll.documentView = genreStack
+        genreScroll.documentView = genreDoc
         genreScroll.drawsBackground = false
         genreScroll.hasHorizontalScroller = false
+        genreScroll.hasVerticalScroller = false
+        genreScroll.automaticallyAdjustsContentInsets = false
         genreScroll.translatesAutoresizingMaskIntoConstraints = false
-        genreScroll.heightAnchor.constraint(equalToConstant: 34).isActive = true
+
+        NSLayoutConstraint.activate([
+            genreScroll.heightAnchor.constraint(equalToConstant: 36),
+            genreDoc.topAnchor.constraint(equalTo: genreScroll.contentView.topAnchor),
+            genreDoc.bottomAnchor.constraint(equalTo: genreScroll.contentView.bottomAnchor),
+            genreDoc.leadingAnchor.constraint(equalTo: genreScroll.contentView.leadingAnchor),
+            genreDoc.heightAnchor.constraint(equalTo: genreScroll.heightAnchor),
+            genreStack.topAnchor.constraint(equalTo: genreDoc.topAnchor),
+            genreStack.bottomAnchor.constraint(equalTo: genreDoc.bottomAnchor),
+            genreStack.leadingAnchor.constraint(equalTo: genreDoc.leadingAnchor),
+            genreStack.trailingAnchor.constraint(equalTo: genreDoc.trailingAnchor),
+        ])
 
         loadMoreButton.target = self
         loadMoreButton.isHidden = true
         loadMoreButton.translatesAutoresizingMaskIntoConstraints = false
         loadMoreButton.heightAnchor.constraint(equalToConstant: 36).isActive = true
-        loadMoreButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 130).isActive = true
+        loadMoreButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
 
-        let headerRow = NSStackView(views: [titleLabel, catalogPopup])
+        let titleCol = NSStackView(views: [titleLabel, subtitleLabel])
+        titleCol.orientation = .vertical
+        titleCol.alignment = .leading
+        titleCol.spacing = 4
+
+        let headerRow = NSStackView(views: [titleCol, NSView(), catalogPopup])
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
-        headerRow.distribution = .gravityAreas
+        headerRow.spacing = 16
 
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = PosterCardItem.itemSize
         layout.minimumInteritemSpacing = 18
         layout.minimumLineSpacing = 24
-        layout.sectionInset = NSEdgeInsets(top: 12, left: 64, bottom: 24, right: 64)
+        layout.sectionInset = NSEdgeInsets(top: 14, left: 64, bottom: 72, right: 64)
 
         collectionView.collectionViewLayout = layout
         collectionView.backgroundColors = [.clear]
@@ -120,12 +147,13 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         gridScroll.documentView = collectionView
         gridScroll.drawsBackground = false
         gridScroll.hasVerticalScroller = true
+        gridScroll.automaticallyAdjustsContentInsets = false
         gridScroll.translatesAutoresizingMaskIntoConstraints = false
 
-        let topStack = NSStackView(views: [headerRow, subtitleLabel, genreScroll])
+        let topStack = NSStackView(views: [headerRow, genreScroll])
         topStack.orientation = .vertical
         topStack.alignment = .leading
-        topStack.spacing = 10
+        topStack.spacing = 12
         topStack.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(topStack)
@@ -135,7 +163,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         root.addSubview(loadMoreButton)
 
         NSLayoutConstraint.activate([
-            topStack.topAnchor.constraint(equalTo: root.topAnchor, constant: 84),
+            topStack.topAnchor.constraint(equalTo: root.topAnchor, constant: 80),
             topStack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 64),
             topStack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -64),
             headerRow.widthAnchor.constraint(equalTo: topStack.widthAnchor),
@@ -144,7 +172,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             gridScroll.topAnchor.constraint(equalTo: topStack.bottomAnchor, constant: 12),
             gridScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             gridScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            gridScroll.bottomAnchor.constraint(equalTo: loadMoreButton.topAnchor, constant: -10),
+            gridScroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
 
             emptyStack.centerXAnchor.constraint(equalTo: gridScroll.centerXAnchor),
             emptyStack.centerYAnchor.constraint(equalTo: gridScroll.centerYAnchor),
@@ -154,7 +182,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             spinner.centerYAnchor.constraint(equalTo: gridScroll.centerYAnchor),
 
             loadMoreButton.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            loadMoreButton.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
+            loadMoreButton.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -18),
         ])
         view = root
     }

@@ -21,6 +21,9 @@ fn read_secret(account: &str, env_override: Option<&str>) -> Result<Option<Strin
             return Ok(Some(trimmed.to_owned()));
         }
     }
+    if std::env::var_os("CINMA_MEASURE").is_some() {
+        return Ok(None);
+    }
     match generic_password(PasswordOptions::new_generic_password(SERVICE, account)) {
         Ok(bytes) => {
             let s = String::from_utf8(bytes)

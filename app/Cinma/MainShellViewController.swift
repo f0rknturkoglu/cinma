@@ -6,6 +6,11 @@ import UniformTypeIdentifiers
 /// bar, profile menu, tab container, and pushed detail screen (mockup M0).
 @MainActor
 final class MainShellViewController: NSViewController, NSTextFieldDelegate {
+    struct BrowseState {
+        let tabRaw: Int
+        let detail: MetaPreviewInfo?
+    }
+
     private enum Tab: Int {
         case home = 0
         case discover = 1
@@ -44,10 +49,20 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
     private var liveTvVC: LiveTvViewController?
 
     private var activeTab: Tab = .home
+    private var detailItem: MetaPreviewInfo?
     private var detailVC: TitleDetailViewController?
     private var currentVC: NSViewController?
+    private var pendingRestore: BrowseState?
     private var statusClearTask: Task<Void, Never>?
     private var onboardingChecked = false
+
+    func currentBrowseState() -> BrowseState {
+        BrowseState(tabRaw: activeTab.rawValue, detail: detailItem)
+    }
+
+    func restoreBrowseState(_ state: BrowseState) {
+        pendingRestore = state
+    }
 
     init(core: CinmaCore, onPlay: @escaping (PlayRequest) -> Void) {
         self.core = core
@@ -115,7 +130,16 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         }
         syncIptvTabVisibility()
         refreshProfileBadge()
-        switchToTab(.home)
+        if let restore = pendingRestore {
+            pendingRestore = nil
+            let tab = Tab(rawValue: restore.tabRaw) ?? .home
+            switchToTab(tab)
+            if let item = restore.detail {
+                openDetail(item)
+            }
+        } else {
+            switchToTab(.home)
+        }
     }
 
     override func viewDidAppear() {
@@ -304,12 +328,14 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
             onPlay: onPlay
         )
         vc.onOpenAddons = { [weak self] in self?.openAddons() }
+        detailItem = item
         detailVC = vc
         updateTabButtonStyles()
         showChild(vc)
     }
 
     private func popDetailIfNeeded() {
+        detailItem = nil
         detailVC = nil
     }
 
@@ -416,39 +442,27 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
     }
 
     @objc func openIntegrations() {
-        var holder: NSHostingController<IntegrationsSheetView>?
-        let vc = NSHostingController(rootView: IntegrationsSheetView(core: core) { [weak self] in
-            if let vc = holder { self?.dismiss(vc) }
-        })
-        holder = vc
-        presentAsSheet(vc)
+        presentSheetView { dismiss in
+            IntegrationsSheetView(core: core, onDismiss: dismiss)
+        }
     }
 
     @objc func openAddons() {
-        var holder: NSHostingController<AddonManagerView>?
-        let vc = NSHostingController(rootView: AddonManagerView(core: core) { [weak self] in
-            if let vc = holder { self?.dismiss(vc) }
-        })
-        holder = vc
-        presentAsSheet(vc)
+        presentSheetView { dismiss in
+            AddonManagerView(core: core, onDismiss: dismiss)
+        }
     }
 
     @objc func openProfiles() {
-        var holder: NSHostingController<ProfilePickerView>?
-        let vc = NSHostingController(rootView: ProfilePickerView(core: core) { [weak self] in
-            if let vc = holder { self?.dismiss(vc) }
-        })
-        holder = vc
-        presentAsSheet(vc)
+        presentSheetView { dismiss in
+            ProfilePickerView(core: core, onDismiss: dismiss)
+        }
     }
 
     @objc func openSettings() {
-        var holder: NSHostingController<SettingsView>?
-        let vc = NSHostingController(rootView: SettingsView(core: core) { [weak self] in
-            if let vc = holder { self?.dismiss(vc) }
-        })
-        holder = vc
-        presentAsSheet(vc)
+        presentSheetView { dismiss in
+            SettingsView(core: core, onDismiss: dismiss)
+        }
     }
 
     private func presentOnboardingIfNeeded() {
@@ -460,13 +474,12 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         let hasKey = (try? core.hasTmdbKey()) ?? false
         guard !completed && !hasAddons && !hasKey else { return }
 
-        var holder: NSHostingController<OnboardingView>?
-        let vc = NSHostingController(rootView: OnboardingView(core: core) { [weak self] in
-            if let vc = holder { self?.dismiss(vc) }
-            self?.homeVC.refreshAll()
-        })
-        holder = vc
-        presentAsSheet(vc)
+        presentSheetView { dismiss in
+            OnboardingView(core: core) { [weak self] in
+                dismiss()
+                self?.homeVC.refreshAll()
+            }
+        }
     }
 
     private func syncIptvTabVisibility() {

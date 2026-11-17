@@ -183,11 +183,13 @@ struct SubtitleManagerPopoverView: View {
                             .tint(.orange)
                     }
                 }
-                .frame(height: 170)
+                    .frame(height: 160)
+                    .scrollContentBackground(.hidden)
             }
         }
         .padding(14)
-        .frame(width: 430)
+        .frame(width: 390)
+        .preferredColorScheme(.dark)
     }
 
     private func trackLabel(_ t: MediaTrackInfo) -> String {
@@ -252,11 +254,13 @@ struct StreamSwitcherPopoverView: View {
                         }
                     }
                 }
-                .frame(height: 240)
+                .frame(height: 220)
+                .scrollContentBackground(.hidden)
             }
         }
         .padding(14)
-        .frame(width: 440)
+        .frame(width: 400)
+        .preferredColorScheme(.dark)
     }
 
     private func summary(_ item: RankedStreamInfo) -> String {

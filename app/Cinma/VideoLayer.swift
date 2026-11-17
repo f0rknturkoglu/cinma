@@ -14,7 +14,7 @@ final class VideoLayer: CAOpenGLLayer {
     private var _session: PlaybackSession?
     private var _onRenderReady: (@Sendable () -> Void)?
     private var renderReady = false
-    private var hdrSurface = true
+    private var hdrSurface = false
     private var context: CGLContextObj?
     private var pixelFormat: CGLPixelFormatObj?
 
@@ -28,7 +28,7 @@ final class VideoLayer: CAOpenGLLayer {
         isOpaque = true
         needsDisplayOnBoundsChange = true
         backgroundColor = NSColor.black.cgColor
-        applySurfaceColorSpace(hdr: true)
+        applySurfaceColorSpace(hdr: false)
     }
 
     /// Used by Core Animation for presentation copies.

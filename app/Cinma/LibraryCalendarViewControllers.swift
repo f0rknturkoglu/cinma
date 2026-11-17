@@ -287,9 +287,7 @@ final class CalendarViewController: NSViewController {
             row.layer?.borderColor = CinemaTheme.cardBorder.cgColor
             row.setAccessibilityLabel("\(ep.showName) S\(ep.season)E\(ep.episode) \(ep.episodeName), \(ep.airDate)")
 
-            let img = NSImageView()
-            img.imageScaling = .scaleAxesIndependently
-            img.wantsLayer = true
+            let img = AspectFillImageView()
             img.layer?.cornerRadius = 10
             img.layer?.masksToBounds = true
             img.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor

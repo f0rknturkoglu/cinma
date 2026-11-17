@@ -10,7 +10,9 @@ pub struct DlnaClient {
 impl DlnaClient {
     pub fn new(control_url: String) -> Result<Self, CastError> {
         let http = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(8))
+            .connect_timeout(std::time::Duration::from_secs(2))
+            .timeout(std::time::Duration::from_secs(3))
+            .pool_max_idle_per_host(0)
             .build()?;
         Ok(Self { http, control_url })
     }
@@ -92,6 +94,7 @@ impl DlnaClient {
             .http
             .post(&self.control_url)
             .header("Content-Type", "text/xml; charset=\"utf-8\"")
+            .header("Connection", "close")
             .header(
                 "SOAPACTION",
                 format!("\"urn:schemas-upnp-org:service:AVTransport:1#{action}\""),

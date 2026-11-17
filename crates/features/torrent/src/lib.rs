@@ -359,7 +359,7 @@ impl RqbitEngine {
             dht: (!self.config.local_only).then(|| dht_config(self.config.root.join("dht.json"))),
             bind_device_name: bind_dev,
             disable_local_service_discovery: self.config.local_only,
-            peer_limit: Some(80),
+            peer_limit: Some(40),
             ratelimits: LimitsConfig {
                 upload_bps: upload_bps.and_then(NonZeroU32::new),
                 download_bps: policy.download_bps.and_then(NonZeroU32::new),

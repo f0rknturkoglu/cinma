@@ -55,7 +55,7 @@ const OFF_FRAME_FORMAT: usize = 116;
 
 const AVIO_BUF_SIZE: usize = 32 * 1024;
 const TARGET_THUMB_WIDTH: i32 = 160;
-const MAX_CACHE_ENTRIES: usize = 96;
+const MAX_CACHE_ENTRIES: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct ThumbnailImage {

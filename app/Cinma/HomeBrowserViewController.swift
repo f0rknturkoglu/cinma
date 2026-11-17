@@ -33,7 +33,7 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
         layout.scrollDirection = .horizontal
         layout.minimumInteritemSpacing = 18
         layout.minimumLineSpacing = 18
-        layout.sectionInset = NSEdgeInsets(top: 0, left: 64, bottom: 0, right: 64)
+        layout.sectionInset = NSEdgeInsets(top: 4, left: 64, bottom: 4, right: 64)
 
         collectionView.collectionViewLayout = layout
         collectionView.backgroundColors = [.clear]
@@ -154,7 +154,7 @@ final class HomeBrowserViewController: NSViewController {
 
     // Hero views
     private let heroContainer = NSView()
-    private let heroBackdrop = NSImageView()
+    private let heroBackdrop = AspectFillImageView()
     private let heroFallbackView: GradientLayerView = {
         let colors = ArtworkPlaceholder.gradient(for: "cinma-hero").compactMap { NSColor(cgColor: $0) }
         return GradientLayerView(
@@ -204,9 +204,10 @@ final class HomeBrowserViewController: NSViewController {
 
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-        let doc = NSView()
+        let doc = FlippedDocumentView()
         doc.translatesAutoresizingMaskIntoConstraints = false
 
         contentStack.orientation = .vertical
@@ -229,8 +230,7 @@ final class HomeBrowserViewController: NSViewController {
 
             doc.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
             doc.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            doc.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-            doc.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            doc.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
 
             contentStack.topAnchor.constraint(equalTo: doc.topAnchor),
             contentStack.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
@@ -249,6 +249,8 @@ final class HomeBrowserViewController: NSViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
         installWindowObserversIfNeeded()
         startHeroRotationIfNeeded()
     }
@@ -308,11 +310,19 @@ final class HomeBrowserViewController: NSViewController {
         heroContainer.translatesAutoresizingMaskIntoConstraints = false
         heroFallbackView.translatesAutoresizingMaskIntoConstraints = false
 
-        heroBackdrop.imageScaling = .scaleProportionallyUpOrDown
-        heroBackdrop.wantsLayer = true
-        heroBackdrop.layer?.contentsGravity = .resizeAspectFill
-        heroBackdrop.layer?.masksToBounds = true
         heroBackdrop.translatesAutoresizingMaskIntoConstraints = false
+
+        let topScrim = GradientLayerView(
+            colors: [
+                CinemaTheme.background.withAlphaComponent(0.76),
+                CinemaTheme.background.withAlphaComponent(0.26),
+                .clear,
+            ],
+            locations: [0, 0.55, 1],
+            start: CGPoint(x: 0.5, y: 1),
+            end: CGPoint(x: 0.5, y: 0)
+        )
+        topScrim.translatesAutoresizingMaskIntoConstraints = false
 
         let leftScrim = GradientLayerView(
             colors: [
@@ -402,6 +412,7 @@ final class HomeBrowserViewController: NSViewController {
 
         heroContainer.addSubview(heroFallbackView)
         heroContainer.addSubview(heroBackdrop)
+        heroContainer.addSubview(topScrim)
         heroContainer.addSubview(leftScrim)
         heroContainer.addSubview(bottomScrim)
         heroContainer.addSubview(textStack)
@@ -420,6 +431,11 @@ final class HomeBrowserViewController: NSViewController {
             heroBackdrop.trailingAnchor.constraint(equalTo: heroContainer.trailingAnchor),
             heroBackdrop.bottomAnchor.constraint(equalTo: heroContainer.bottomAnchor),
 
+            topScrim.topAnchor.constraint(equalTo: heroContainer.topAnchor),
+            topScrim.leadingAnchor.constraint(equalTo: heroContainer.leadingAnchor),
+            topScrim.trailingAnchor.constraint(equalTo: heroContainer.trailingAnchor),
+            topScrim.heightAnchor.constraint(equalToConstant: 112),
+
             leftScrim.topAnchor.constraint(equalTo: heroContainer.topAnchor),
             leftScrim.leadingAnchor.constraint(equalTo: heroContainer.leadingAnchor),
             leftScrim.trailingAnchor.constraint(equalTo: heroContainer.trailingAnchor),
@@ -430,6 +446,7 @@ final class HomeBrowserViewController: NSViewController {
             bottomScrim.bottomAnchor.constraint(equalTo: heroContainer.bottomAnchor),
             bottomScrim.heightAnchor.constraint(equalToConstant: 280),
 
+            textStack.topAnchor.constraint(greaterThanOrEqualTo: heroContainer.topAnchor, constant: 108),
             textStack.leadingAnchor.constraint(equalTo: heroContainer.leadingAnchor, constant: 64),
             textStack.bottomAnchor.constraint(equalTo: heroContainer.bottomAnchor, constant: -88),
             textStack.widthAnchor.constraint(lessThanOrEqualToConstant: 560),

@@ -101,37 +101,52 @@ impl ActiveCastSession {
 
     pub async fn play(&self) -> Result<(), CastError> {
         let mut t = self.transport.lock().await;
-        match &mut *t {
-            RemoteTransport::Dlna(d) => d.play().await,
-            RemoteTransport::Chromecast(c) => c.media_command("PLAY", None).await,
-        }
+        tokio::time::timeout(Duration::from_secs(3), async {
+            match &mut *t {
+                RemoteTransport::Dlna(d) => d.play().await,
+                RemoteTransport::Chromecast(c) => c.media_command("PLAY", None).await,
+            }
+        })
+        .await
+        .map_err(|_| CastError::Invalid("cast play timed out".into()))?
     }
 
     pub async fn pause(&self) -> Result<(), CastError> {
         let mut t = self.transport.lock().await;
-        match &mut *t {
-            RemoteTransport::Dlna(d) => d.pause().await,
-            RemoteTransport::Chromecast(c) => c.media_command("PAUSE", None).await,
-        }
+        tokio::time::timeout(Duration::from_secs(3), async {
+            match &mut *t {
+                RemoteTransport::Dlna(d) => d.pause().await,
+                RemoteTransport::Chromecast(c) => c.media_command("PAUSE", None).await,
+            }
+        })
+        .await
+        .map_err(|_| CastError::Invalid("cast pause timed out".into()))?
     }
 
     pub async fn seek(&self, seconds: f64) -> Result<(), CastError> {
         let mut t = self.transport.lock().await;
-        match &mut *t {
-            RemoteTransport::Dlna(d) => d.seek_seconds(seconds.max(0.0) as u64).await,
-            RemoteTransport::Chromecast(c) => {
-                c.media_command(
-                    "SEEK",
-                    Some(serde_json::json!({ "currentTime": seconds.max(0.0) })),
-                )
-                .await
+        tokio::time::timeout(Duration::from_secs(3), async {
+            match &mut *t {
+                RemoteTransport::Dlna(d) => d.seek_seconds(seconds.max(0.0) as u64).await,
+                RemoteTransport::Chromecast(c) => {
+                    c.media_command(
+                        "SEEK",
+                        Some(serde_json::json!({ "currentTime": seconds.max(0.0) })),
+                    )
+                    .await
+                }
             }
-        }
+        })
+        .await
+        .map_err(|_| CastError::Invalid("cast seek timed out".into()))?
     }
 
     pub async fn stop(&self) -> Result<(), CastError> {
-        {
-            let mut t = self.transport.lock().await;
+        if let Some(srv) = self.server.lock().await.take() {
+            srv.stop().await;
+        }
+        let mut t = self.transport.lock().await;
+        let _ = tokio::time::timeout(Duration::from_millis(1200), async {
             match &mut *t {
                 RemoteTransport::Dlna(d) => {
                     let _ = d.stop().await;
@@ -140,10 +155,8 @@ impl ActiveCastSession {
                     let _ = c.media_command("STOP", None).await;
                 }
             }
-        }
-        if let Some(srv) = self.server.lock().await.take() {
-            srv.stop().await;
-        }
+        })
+        .await;
         Ok(())
     }
 }

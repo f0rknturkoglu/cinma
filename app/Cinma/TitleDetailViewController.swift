@@ -18,7 +18,7 @@ final class TitleDetailViewController: NSViewController {
     var onOpenAddons: (() -> Void)?
 
     private let scrollView = NSScrollView()
-    private let backdropView = NSImageView()
+    private let backdropView = AspectFillImageView()
     private let fallbackGradient = CAGradientLayer()
     private let logoView = NSImageView()
     private let titleLabel = NSTextField(wrappingLabelWithString: "")
@@ -88,9 +88,10 @@ final class TitleDetailViewController: NSViewController {
 
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-        let doc = NSView()
+        let doc = FlippedDocumentView()
         doc.translatesAutoresizingMaskIntoConstraints = false
 
         let heroBox = NSView()
@@ -100,10 +101,6 @@ final class TitleDetailViewController: NSViewController {
         heroBox.layer?.insertSublayer(fallbackGradient, at: 0)
         heroBox.translatesAutoresizingMaskIntoConstraints = false
 
-        backdropView.imageScaling = .scaleProportionallyUpOrDown
-        backdropView.wantsLayer = true
-        backdropView.layer?.contentsGravity = .resizeAspectFill
-        backdropView.layer?.masksToBounds = true
         backdropView.translatesAutoresizingMaskIntoConstraints = false
 
         let leftScrim = GradientLayerView(
@@ -267,8 +264,7 @@ final class TitleDetailViewController: NSViewController {
 
             doc.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
             doc.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-            doc.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
-            doc.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
+            doc.widthAnchor.constraint(equalTo: scrollView.contentView.widthAnchor),
 
             heroBox.topAnchor.constraint(equalTo: doc.topAnchor),
             heroBox.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
@@ -500,9 +496,7 @@ final class TitleDetailViewController: NSViewController {
             row.layer?.borderWidth = 1
             row.layer?.borderColor = (isSelected ? CinemaTheme.highlightBorder : CinemaTheme.cardBorder).cgColor
 
-            let thumb = NSImageView()
-            thumb.imageScaling = .scaleAxesIndependently
-            thumb.wantsLayer = true
+            let thumb = AspectFillImageView()
             thumb.layer?.cornerRadius = 10
             thumb.layer?.masksToBounds = true
             thumb.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor

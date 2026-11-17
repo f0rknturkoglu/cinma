@@ -50,12 +50,20 @@ private final class PlayerRootView: NSView {
     }
 }
 
+private final class ClickCatcherView: NSView {
+    var onClick: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+}
+
 /// Complete cinema player (`CLAUDE.md` §5.2, §5.8, §5.9): dedicated CA GL thread,
 /// SDR 8-bit optimization, hover thumbnails, dual/encoded subtitles, chapters,
 /// next-episode prefetch/countdown, stream switcher & auto-recovery, stats/AB/sleep/shaders,
 /// media keys & power assertion.
 @MainActor
-final class PlayerViewController: NSViewController, NSPopoverDelegate {
+final class PlayerViewController: NSViewController {
     private let core: CinmaCore
     private var request: PlayRequest
     private let onClose: () -> Void
@@ -63,7 +71,6 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     private let videoView = NSView()
     private let videoLayer = VideoLayer()
     private let titlePill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 22)
-    private let topRightPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 19)
     private let infoLabel = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
     private let subField = NSTextField(labelWithString: "")
@@ -121,7 +128,9 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     private var statsVisible = false
     private var statsTask: Task<Void, Never>?
     private var hudHideTask: Task<Void, Never>?
-    private var activePopover: NSPopover?
+    private var popoverBackdrop: ClickCatcherView?
+    private var popoverCard: NSView?
+    private var didTrimInitialMalloc = false
     private var sleepTimerTask: Task<Void, Never>?
     private var stallRecoveryTask: Task<Void, Never>?
     private var failedRetries = 0
@@ -172,8 +181,8 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         root.onKey = { [weak self] event in self?.handleKey(event) ?? false }
         root.onMouseActivity = { [weak self] in self?.showHudAndResetTimer() }
 
-        videoView.layer = videoLayer
         videoView.wantsLayer = true
+        videoView.layer?.backgroundColor = NSColor.black.cgColor
         videoView.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(videoView)
 
@@ -188,7 +197,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.lineBreakMode = .byTruncatingTail
 
-        for sub in [titlePill, topRightPill, bar, thumbCard, statsCard, skipButton, nextCard, statusLabel] {
+        for sub in [titlePill, bar, thumbCard, statsCard, skipButton, nextCard, statusLabel] {
             root.addSubview(sub)
         }
 
@@ -204,9 +213,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
             titlePill.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
             titlePill.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 88),
-
-            topRightPill.centerYAnchor.constraint(equalTo: titlePill.centerYAnchor),
-            topRightPill.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
+            titlePill.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -24),
 
             bar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
             bar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
@@ -253,8 +260,10 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         refreshTitles()
         titleField.font = .systemFont(ofSize: 13.5, weight: .bold)
         titleField.textColor = CinemaTheme.textPrimary
+        titleField.lineBreakMode = .byTruncatingTail
         subField.font = .systemFont(ofSize: 11.5, weight: .regular)
         subField.textColor = CinemaTheme.textSecondary
+        subField.lineBreakMode = .byTruncatingTail
 
         let titleCol = NSStackView(views: [titleField, subField])
         titleCol.orientation = .vertical
@@ -272,30 +281,6 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
             leftStack.bottomAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: -6),
             leftStack.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor, constant: 6),
             leftStack.trailingAnchor.constraint(equalTo: titlePill.trailingAnchor, constant: -16),
-        ])
-
-        topRightPill.translatesAutoresizingMaskIntoConstraints = false
-        infoLabel.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
-        infoLabel.textColor = CinemaTheme.textPrimary
-
-        let castBtn = makeIconButton("tv.and.mediabox", tooltip: String(localized: "Cast to LAN Device"), action: #selector(openCastSheet(_:)))
-        let pipBtn = makeIconButton("pip.enter", tooltip: String(localized: "Mini Player (P)"), action: #selector(enterPiPClicked))
-        let streamsBtn = makeIconButton("rectangle.stack", tooltip: String(localized: "Switch Stream"), action: #selector(showStreamSwitcher(_:)))
-        let statsBtn = makeIconButton("info.circle", tooltip: String(localized: "Playback Stats (I)"), action: #selector(toggleStats))
-        let shotBtn = makeIconButton("camera", tooltip: String(localized: "Screenshot (S)"), action: #selector(takeScreenshot))
-        let moreBtn = makeIconButton("ellipsis.circle", tooltip: String(localized: "Video, A/B Loop & Sleep Timer"), action: #selector(showMoreMenu(_:)))
-
-        let rightStack = NSStackView(views: [infoLabel, castBtn, pipBtn, streamsBtn, statsBtn, shotBtn, moreBtn])
-        rightStack.orientation = .horizontal
-        rightStack.alignment = .centerY
-        rightStack.spacing = 8
-        rightStack.translatesAutoresizingMaskIntoConstraints = false
-        topRightPill.addSubview(rightStack)
-        NSLayoutConstraint.activate([
-            rightStack.topAnchor.constraint(equalTo: topRightPill.topAnchor, constant: 6),
-            rightStack.bottomAnchor.constraint(equalTo: topRightPill.bottomAnchor, constant: -6),
-            rightStack.leadingAnchor.constraint(equalTo: topRightPill.leadingAnchor, constant: 12),
-            rightStack.trailingAnchor.constraint(equalTo: topRightPill.trailingAnchor, constant: -10),
         ])
     }
 
@@ -316,9 +301,19 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         playButton.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: String(localized: "Pause"))
         playButton.target = self
         playButton.action = #selector(togglePause)
+        playButton.translatesAutoresizingMaskIntoConstraints = false
+        playButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
+        playButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
 
         timeLabel.font = .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold)
         timeLabel.textColor = CinemaTheme.textPrimary
+        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        infoLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        infoLabel.textColor = CinemaTheme.textSecondary
+        infoLabel.lineBreakMode = .byTruncatingTail
+        infoLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        infoLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         speedButton.title = "1.0×"
         speedButton.isBordered = false
@@ -332,20 +327,35 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         volumeButton.contentTintColor = CinemaTheme.textPrimary
         volumeButton.target = self
         volumeButton.action = #selector(toggleMute)
+        volumeButton.translatesAutoresizingMaskIntoConstraints = false
+        volumeButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        volumeButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
 
-        let chapBtn = makeIconButton("list.bullet.rectangle", tooltip: String(localized: "Chapters"), action: #selector(showChaptersMenu(_:)))
-        let audioBtn = makeIconButton("waveform", tooltip: String(localized: "Audio Track & Delay"), action: #selector(showAudioMenu(_:)))
         let subBtn = makeIconButton("captions.bubble", tooltip: String(localized: "Subtitles"), action: #selector(showSubtitlesPopover(_:)))
+        let audioBtn = makeIconButton("waveform", tooltip: String(localized: "Audio Track & Delay"), action: #selector(showAudioMenu(_:)))
+        let chapBtn = makeIconButton("list.bullet.rectangle", tooltip: String(localized: "Chapters"), action: #selector(showChaptersMenu(_:)))
+        let streamsBtn = makeIconButton("rectangle.stack", tooltip: String(localized: "Switch Stream"), action: #selector(showStreamSwitcher(_:)))
+        let castBtn = makeIconButton("tv.and.mediabox", tooltip: String(localized: "Cast to LAN Device"), action: #selector(openCastSheet(_:)))
+        let pipBtn = makeIconButton("pip.enter", tooltip: String(localized: "Mini Player (P)"), action: #selector(enterPiPClicked))
+        let statsBtn = makeIconButton("info.circle", tooltip: String(localized: "Playback Stats (I)"), action: #selector(toggleStats))
+        let shotBtn = makeIconButton("camera", tooltip: String(localized: "Screenshot (S)"), action: #selector(takeScreenshot))
+        let moreBtn = makeIconButton("ellipsis.circle", tooltip: String(localized: "Video, A/B Loop & Sleep Timer"), action: #selector(showMoreMenu(_:)))
         let fsBtn = makeIconButton("arrow.up.left.and.arrow.down.right", tooltip: String(localized: "Fullscreen (F)"), action: #selector(toggleFullscreen))
 
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        // All player controls consolidated in the bottom glass bar (Harbor / Stremio layout).
         let transportRow = NSStackView(views: [
-            back10, playButton, fwd10, timeLabel,
-            NSView(),
-            speedButton, volumeButton, chapBtn, audioBtn, subBtn, fsBtn,
+            back10, playButton, fwd10, timeLabel, infoLabel,
+            spacer,
+            volumeButton, speedButton, subBtn, audioBtn, chapBtn,
+            streamsBtn, castBtn, pipBtn, statsBtn, shotBtn, moreBtn, fsBtn,
         ])
         transportRow.orientation = .horizontal
         transportRow.alignment = .centerY
-        transportRow.spacing = 12
+        transportRow.spacing = 8
 
         let barStack = NSStackView(views: [scrubBar, transportRow])
         barStack.orientation = .vertical
@@ -474,6 +484,9 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         btn.isBordered = false
         btn.toolTip = tooltip
         btn.contentTintColor = CinemaTheme.textPrimary
+        btn.translatesAutoresizingMaskIntoConstraints = false
+        btn.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        btn.heightAnchor.constraint(equalToConstant: 28).isActive = true
         return btn
     }
 
@@ -549,6 +562,9 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
             do {
                 await MainActor.run {
                     self.videoLayer.configureSurface(hdr: isHdr)
+                    if self.videoView.layer !== self.videoLayer {
+                        self.videoView.layer = self.videoLayer
+                    }
                 }
                 let session = try core.createPlaybackForSurface(observer: sink, hdrSurface: isHdr)
                 await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
@@ -611,6 +627,10 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         case .playbackRestart:
             cancelStallWatchdog()
             if statusLabel.stringValue == String(localized: "Buffering…") { statusLabel.stringValue = "" }
+            if !didTrimInitialMalloc {
+                didTrimInitialMalloc = true
+                ImagePipeline.releaseMallocPressure()
+            }
 
         case .tracksChanged:
             refreshTracksAndChapters()
@@ -1054,10 +1074,10 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
             streams: streams,
             activeRaw: activeStreamRaw
         ) { [weak self] selected in
-            self?.activePopover?.performClose(nil)
+            self?.dismissFloatingPopover()
             self?.switchToStream(selected)
         }
-        presentPopover(view, relativeTo: sender)
+        presentFloatingPopover(view, relativeTo: sender)
     }
 
     @objc private func showSubtitlesPopover(_ sender: NSButton) {
@@ -1081,15 +1101,15 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
             subDelay: subDelay,
             settings: settings,
             onSearchOnline: { [weak self] in
-                self?.activePopover?.performClose(nil)
+                self?.dismissFloatingPopover()
                 self?.scheduleOnlineSubtitleLookup()
             },
             onSelectOnline: { [weak self] cand in
-                self?.activePopover?.performClose(nil)
+                self?.dismissFloatingPopover()
                 self?.loadOnlineSubtitle(cand)
             },
             onLoadLocal: { [weak self] in
-                self?.activePopover?.performClose(nil)
+                self?.dismissFloatingPopover()
                 self?.openLocalSubtitleFile()
             },
             onSelectPrimary: { [weak self] id in
@@ -1097,12 +1117,12 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
                 self?.subtitlesEnabled = id != nil
                 try? self?.session?.setSubtitleTrack(id: id)
                 self?.tracks = (try? self?.session?.tracks()) ?? []
-                self?.activePopover?.performClose(nil)
+                self?.dismissFloatingPopover()
             },
             onSelectSecondary: { [weak self] id in
                 self?.secondarySid = id
                 try? self?.session?.setSecondarySubtitleTrack(id: id)
-                self?.activePopover?.performClose(nil)
+                self?.dismissFloatingPopover()
             },
             onAdjustDelay: { [weak self] delta in
                 self?.adjustSubDelay(delta)
@@ -1122,22 +1142,60 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
                 )
             }
         )
-        presentPopover(root, relativeTo: sender)
+        presentFloatingPopover(root, relativeTo: sender)
     }
 
-    private func presentPopover<V: View>(_ rootView: V, relativeTo anchor: NSView) {
-        activePopover?.performClose(nil)
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.delegate = self
-        popover.contentViewController = NSHostingController(rootView: rootView)
-        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
-        activePopover = popover
+    /// Presents a Liquid Glass card inside `view` anchored above `anchor` and
+    /// clamped within `[leading + 20, trailing - 20]` so it never overflows off-screen.
+    private func presentFloatingPopover<V: View>(_ rootView: V, relativeTo anchor: NSView) {
+        dismissFloatingPopover()
+
+        let backdrop = ClickCatcherView()
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.onClick = { [weak self] in self?.dismissFloatingPopover() }
+
+        let card = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
+        card.translatesAutoresizingMaskIntoConstraints = false
+
+        let host = NSHostingView(rootView: rootView)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(host)
+
+        view.addSubview(backdrop)
+        view.addSubview(card)
+
+        let centerAlign = card.centerXAnchor.constraint(equalTo: anchor.centerXAnchor)
+        centerAlign.priority = .defaultHigh
+
+        NSLayoutConstraint.activate([
+            backdrop.topAnchor.constraint(equalTo: view.topAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            host.topAnchor.constraint(equalTo: card.topAnchor),
+            host.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+            host.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+
+            centerAlign,
+            card.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
+            card.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
+            card.topAnchor.constraint(greaterThanOrEqualTo: titlePill.bottomAnchor, constant: 12),
+            card.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -10),
+        ])
+        popoverBackdrop = backdrop
+        popoverCard = card
     }
 
-    func popoverDidClose(_ notification: Notification) {
-        activePopover = nil
-        showHudAndResetTimer()
+    private func dismissFloatingPopover() {
+        popoverCard?.removeFromSuperview()
+        popoverBackdrop?.removeFromSuperview()
+        popoverCard = nil
+        popoverBackdrop = nil
+        if !closing {
+            showHudAndResetTimer()
+        }
     }
 
     private func loadOnlineSubtitle(_ candidate: SubtitleCandidateInfo) {
@@ -1302,15 +1360,10 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
     @objc private func openCastSheet(_ sender: NSButton) {
         showHudAndCancelTimer()
-        var holder: NSHostingController<CastDeviceSheetView>?
         let titleText = titleField.stringValue.isEmpty ? "Cinma" : titleField.stringValue
-        let vc = NSHostingController(
-            rootView: CastDeviceSheetView(core: core, request: request, title: titleText) { [weak self] in
-                if let vc = holder { self?.dismiss(vc) }
-            }
-        )
-        holder = vc
-        presentAsSheet(vc)
+        presentSheetView { dismiss in
+            CastDeviceSheetView(core: core, request: request, title: titleText, onDismiss: dismiss)
+        }
     }
 
     @objc private func showMoreMenu(_ sender: NSButton) {
@@ -1527,7 +1580,12 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         case "player.toggle_pause": togglePause()
         case "player.seek_back": seekBack10()
         case "player.seek_forward": seekForward10()
-        case "player.close": close()
+        case "player.close":
+            if popoverBackdrop != nil {
+                dismissFloatingPopover()
+            } else {
+                close()
+            }
         case "player.fullscreen": toggleFullscreen()
         case "player.toggle_subtitles": toggleSubtitlesVisibility()
         case "player.cycle_subtitle": cycleTrack(type: "sub", isSub: true)
@@ -1607,10 +1665,10 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     private func showHudAndResetTimer() {
         setHudAlpha(1.0)
         hudHideTask?.cancel()
-        guard !paused, !isHoveringScrub, activePopover == nil else { return }
+        guard !paused, !isHoveringScrub, popoverBackdrop == nil else { return }
         hudHideTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2.8))
-            guard let self, !Task.isCancelled, !self.paused, !self.isHoveringScrub, self.activePopover == nil, !self.closing else { return }
+            guard let self, !Task.isCancelled, !self.paused, !self.isHoveringScrub, self.popoverBackdrop == nil, !self.closing else { return }
             self.setHudAlpha(0.0)
         }
     }
@@ -1621,7 +1679,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     }
 
     private func setHudAlpha(_ alpha: CGFloat) {
-        let pills = [titlePill, topRightPill, bar]
+        let pills = [titlePill, bar]
         if alpha > 0 {
             for p in pills { p.isHidden = false }
         }
@@ -1738,7 +1796,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         sleepTimerTask?.cancel()
         nextCountdownTask?.cancel()
         cancelStallWatchdog()
-        activePopover?.performClose(nil)
+        dismissFloatingPopover()
         nowPlaying.teardown()
         let discordCore = core
         Task { try? await discordCore.clearDiscordPresence() }
@@ -1763,6 +1821,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
                 }
             }
             self.session = nil
+            ImagePipeline.releaseMallocPressure()
             onClose()
         }
     }

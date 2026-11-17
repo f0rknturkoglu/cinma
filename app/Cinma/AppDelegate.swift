@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var menuBar: MenuBarController?
     private var miniPanel: MiniPlayerPanel?
     private var pipPlayerVC: PlayerViewController?
+    private var savedBrowseState: MainShellViewController.BrowseState?
     private var pendingLinks: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -135,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showBrowse() {
         guard let core, let window else { return }
+        ImagePipeline.shared.setPlaybackMode(false)
         if let shell {
             MainWindow.setContent(shell, in: window)
             shell.handleLibraryChanged()
@@ -142,6 +144,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let shell = MainShellViewController(core: core) { [weak self] request in
             self?.showPlayer(request)
+        }
+        if let saved = savedBrowseState {
+            savedBrowseState = nil
+            shell.restoreBrowseState(saved)
         }
         self.shell = shell
         MainWindow.setContent(shell, in: window)
@@ -269,6 +275,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showPlayer(_ request: PlayRequest) {
         guard let core, let window else { return }
         dismissMiniPlayerAndStop(closePlayer: true)
+        if let shell {
+            savedBrowseState = shell.currentBrowseState()
+            self.shell = nil
+        }
+        ImagePipeline.shared.setPlaybackMode(true)
         let player = PlayerViewController(core: core, request: request) { [weak self] in
             self?.showBrowse()
         }
@@ -306,6 +317,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         miniPanel?.orderOut(nil)
         miniPanel = nil
         pipPlayerVC = nil
+        if let shell {
+            savedBrowseState = shell.currentBrowseState()
+            self.shell = nil
+        }
+        ImagePipeline.shared.setPlaybackMode(true)
         player.reattachVideoViewFromPiP()
         reopenMainWindow()
         if let window {

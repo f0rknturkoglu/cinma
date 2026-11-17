@@ -1,27 +1,48 @@
 //! Minimal Chromecast CastV2 protocol client over TLS port 8009 (no external protobuf codegen).
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::time::Duration;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, Error as TlsError, SignatureScheme};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
+use tokio::sync::{Mutex, Notify};
+use tokio::task::JoinHandle;
 use tokio_rustls::{TlsConnector, client::TlsStream};
 
 use crate::CastError;
 
 const RECEIVER_APP_ID: &str = "CC1AD845";
 const NS_CONN: &str = "urn:x-cast:com.google.cast.tp.connection";
+const NS_HEARTBEAT: &str = "urn:x-cast:com.google.cast.tp.heartbeat";
 const NS_RECEIVER: &str = "urn:x-cast:com.google.cast.receiver";
 const NS_MEDIA: &str = "urn:x-cast:com.google.cast.media";
 
-pub struct CastV2Client {
-    stream: TlsStream<TcpStream>,
-    req_id: AtomicI64,
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
+
+struct CastSessionState {
     transport_id: Option<String>,
     media_session_id: Option<i64>,
+}
+
+pub struct CastV2Client {
+    writer: Arc<Mutex<WriteHalf<TlsStream<TcpStream>>>>,
+    state: Arc<Mutex<CastSessionState>>,
+    notify: Arc<Notify>,
+    closed: Arc<AtomicBool>,
+    reader_task: JoinHandle<()>,
+    req_id: AtomicI64,
+}
+
+impl Drop for CastV2Client {
+    fn drop(&mut self) {
+        self.closed.store(true, Ordering::Relaxed);
+        self.reader_task.abort();
+    }
 }
 
 impl CastV2Client {
@@ -36,19 +57,41 @@ impl CastV2Client {
         tls_cfg.enable_sni = false;
 
         let connector = TlsConnector::from(Arc::new(tls_cfg));
-        let tcp = TcpStream::connect((host, port)).await?;
+        let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host, port)))
+            .await
+            .map_err(|_| CastError::Invalid("cast TCP connect timed out".into()))??;
+        let _ = tcp.set_nodelay(true);
         let domain = ServerName::try_from("chromecast.local".to_owned())
             .map_err(|e| CastError::Invalid(e.to_string()))?;
-        let stream = connector
-            .connect(domain, tcp)
+        let stream = tokio::time::timeout(CONNECT_TIMEOUT, connector.connect(domain, tcp))
             .await
+            .map_err(|_| CastError::Invalid("cast TLS handshake timed out".into()))?
             .map_err(|e| CastError::Invalid(format!("cast TLS: {e}")))?;
 
-        let mut client = Self {
-            stream,
-            req_id: AtomicI64::new(1),
+        let (reader, writer) = tokio::io::split(stream);
+        let writer = Arc::new(Mutex::new(writer));
+        let state = Arc::new(Mutex::new(CastSessionState {
             transport_id: None,
             media_session_id: None,
+        }));
+        let notify = Arc::new(Notify::new());
+        let closed = Arc::new(AtomicBool::new(false));
+
+        let reader_task = tokio::spawn(pump_incoming(
+            reader,
+            Arc::clone(&writer),
+            Arc::clone(&state),
+            Arc::clone(&notify),
+            Arc::clone(&closed),
+        ));
+
+        let client = Self {
+            writer,
+            state,
+            notify,
+            closed,
+            reader_task,
+            req_id: AtomicI64::new(1),
         };
         client
             .send_json("receiver-0", NS_CONN, r#"{"type":"CONNECT"}"#)
@@ -71,23 +114,13 @@ impl CastV2Client {
         self.send_json("receiver-0", NS_RECEIVER, &launch.to_string())
             .await?;
 
-        // Wait briefly for `RECEIVER_STATUS` containing `transportId` (fallback to receiver-0).
-        if let Ok(Ok(msg)) =
-            tokio::time::timeout(std::time::Duration::from_secs(3), self.recv_frame()).await
-            && let Some(val) = msg.payload_json
-            && let Some(tid) = val
-                .pointer("/status/applications/0/transportId")
-                .and_then(|v| v.as_str())
-        {
-            self.transport_id = Some(tid.to_owned());
+        let tid = self.wait_for_transport_id(Duration::from_secs(3)).await;
+        if let Some(ref tid) = tid {
             self.send_json(tid, NS_CONN, r#"{"type":"CONNECT"}"#)
                 .await?;
         }
 
-        let dest = self
-            .transport_id
-            .clone()
-            .unwrap_or_else(|| "receiver-0".to_owned());
+        let dest = tid.unwrap_or_else(|| "receiver-0".to_owned());
         let load_id = self.req_id.fetch_add(1, Ordering::Relaxed);
         let load = serde_json::json!({
             "type": "LOAD",
@@ -101,7 +134,45 @@ impl CastV2Client {
             }
         });
         self.send_json(&dest, NS_MEDIA, &load.to_string()).await?;
+        // Capture real mediaSessionId from the receiver's MEDIA_STATUS if sent promptly.
+        let _ = self
+            .wait_for_media_session_id(Duration::from_millis(800))
+            .await;
         Ok(())
+    }
+
+    async fn wait_for_transport_id(&self, timeout: Duration) -> Option<String> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if let Some(tid) = self.state.lock().await.transport_id.clone() {
+                return Some(tid);
+            }
+            if self.closed.load(Ordering::Relaxed) {
+                return None;
+            }
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+            let _ = tokio::time::timeout(remaining, self.notify.notified()).await;
+        }
+    }
+
+    async fn wait_for_media_session_id(&self, timeout: Duration) -> Option<i64> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if let Some(msid) = self.state.lock().await.media_session_id {
+                return Some(msid);
+            }
+            if self.closed.load(Ordering::Relaxed) {
+                return None;
+            }
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+            let _ = tokio::time::timeout(remaining, self.notify.notified()).await;
+        }
     }
 
     pub async fn media_command(
@@ -109,16 +180,25 @@ impl CastV2Client {
         kind: &str,
         extra: Option<serde_json::Value>,
     ) -> Result<(), CastError> {
-        let dest = self
-            .transport_id
-            .as_deref()
-            .unwrap_or("receiver-0")
-            .to_owned();
+        if self.closed.load(Ordering::Relaxed) {
+            return Err(CastError::Invalid(
+                "cast connection closed by receiver".into(),
+            ));
+        }
+        let (dest, msid) = {
+            let st = self.state.lock().await;
+            (
+                st.transport_id
+                    .clone()
+                    .unwrap_or_else(|| "receiver-0".to_owned()),
+                st.media_session_id.unwrap_or(1),
+            )
+        };
         let id = self.req_id.fetch_add(1, Ordering::Relaxed);
         let mut msg = serde_json::json!({
             "type": kind,
             "requestId": id,
-            "mediaSessionId": self.media_session_id.unwrap_or(1),
+            "mediaSessionId": msid,
         });
         if let (Some(obj), Some(serde_json::Value::Object(map))) = (msg.as_object_mut(), extra) {
             for (k, v) in map {
@@ -128,30 +208,87 @@ impl CastV2Client {
         self.send_json(&dest, NS_MEDIA, &msg.to_string()).await
     }
 
-    async fn send_json(
-        &mut self,
-        dest: &str,
-        namespace: &str,
-        json: &str,
-    ) -> Result<(), CastError> {
-        let frame = encode_cast_message("sender-0", dest, namespace, json);
-        let len = (frame.len() as u32).to_be_bytes();
-        self.stream.write_all(&len).await?;
-        self.stream.write_all(&frame).await?;
-        Ok(())
+    async fn send_json(&self, dest: &str, namespace: &str, json: &str) -> Result<(), CastError> {
+        send_frame(&self.writer, dest, namespace, json).await
     }
+}
 
-    async fn recv_frame(&mut self) -> Result<DecodedCastFrame, CastError> {
-        let mut len_buf = [0u8; 4];
-        self.stream.read_exact(&mut len_buf).await?;
-        let len = u32::from_be_bytes(len_buf) as usize;
-        if len > 1024 * 1024 {
-            return Err(CastError::Invalid("oversized cast frame".into()));
-        }
-        let mut buf = vec![0u8; len];
-        self.stream.read_exact(&mut buf).await?;
-        Ok(decode_cast_message(&buf))
+async fn send_frame(
+    writer: &Arc<Mutex<WriteHalf<TlsStream<TcpStream>>>>,
+    dest: &str,
+    namespace: &str,
+    json: &str,
+) -> Result<(), CastError> {
+    let frame = encode_cast_message("sender-0", dest, namespace, json);
+    let len = (frame.len() as u32).to_be_bytes();
+    tokio::time::timeout(WRITE_TIMEOUT, async {
+        let mut w = writer.lock().await;
+        w.write_all(&len).await?;
+        w.write_all(&frame).await?;
+        w.flush().await?;
+        Ok::<_, std::io::Error>(())
+    })
+    .await
+    .map_err(|_| CastError::Invalid("cast write timed out".into()))?
+    .map_err(CastError::Io)
+}
+
+async fn recv_frame<R: AsyncReadExt + Unpin>(
+    reader: &mut R,
+) -> Result<DecodedCastFrame, CastError> {
+    let mut len_buf = [0u8; 4];
+    reader.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    if len > 1024 * 1024 {
+        return Err(CastError::Invalid("oversized cast frame".into()));
     }
+    let mut buf = vec![0u8; len];
+    reader.read_exact(&mut buf).await?;
+    Ok(decode_cast_message(&buf))
+}
+
+async fn pump_incoming(
+    mut reader: ReadHalf<TlsStream<TcpStream>>,
+    writer: Arc<Mutex<WriteHalf<TlsStream<TcpStream>>>>,
+    state: Arc<Mutex<CastSessionState>>,
+    notify: Arc<Notify>,
+    closed: Arc<AtomicBool>,
+) {
+    while let Ok(msg) = recv_frame(&mut reader).await {
+        let Some(val) = msg.payload_json else {
+            continue;
+        };
+        if msg.namespace == NS_HEARTBEAT && val.get("type").and_then(|v| v.as_str()) == Some("PING")
+        {
+            let _ = send_frame(&writer, "receiver-0", NS_HEARTBEAT, r#"{"type":"PONG"}"#).await;
+            continue;
+        }
+        let mut changed = false;
+        {
+            let mut st = state.lock().await;
+            if let Some(tid) = val
+                .pointer("/status/applications/0/transportId")
+                .and_then(|v| v.as_str())
+                && st.transport_id.as_deref() != Some(tid)
+            {
+                st.transport_id = Some(tid.to_owned());
+                changed = true;
+            }
+            if let Some(msid) = val
+                .pointer("/status/0/mediaSessionId")
+                .and_then(|v| v.as_i64())
+                && st.media_session_id != Some(msid)
+            {
+                st.media_session_id = Some(msid);
+                changed = true;
+            }
+        }
+        if changed {
+            notify.notify_waiters();
+        }
+    }
+    closed.store(true, Ordering::Relaxed);
+    notify.notify_waiters();
 }
 
 pub struct DecodedCastFrame {

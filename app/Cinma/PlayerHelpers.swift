@@ -16,11 +16,13 @@ enum HDRProbe {
         case .trailer, .download:
             return false
         case .file(let url):
+            let nameLower = url.lastPathComponent.lowercased()
+            let nameHintHdr = nameLower.contains("hdr") || nameLower.contains("2160p.dv") || nameLower.contains(".dv.") || nameLower.contains("hlg") || nameLower.contains("pq")
             let asset = AVURLAsset(url: url)
             guard let tracks = try? await asset.loadTracks(withMediaType: .video),
                   let first = tracks.first,
                   let descs = try? await first.load(.formatDescriptions)
-            else { return true }
+            else { return nameHintHdr }
             for desc in descs {
                 guard let ext = CMFormatDescriptionGetExtensions(desc) as? [CFString: Any] else { continue }
                 if let tf = ext[kCVImageBufferTransferFunctionKey] as? String {
@@ -181,7 +183,7 @@ final class ThumbnailPreviewCache {
     private let localURL: URL?
 
     init(localURL: URL?) {
-        cache.countLimit = 120
+        cache.countLimit = 32
         self.localURL = localURL
     }
 

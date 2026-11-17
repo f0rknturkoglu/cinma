@@ -102,12 +102,67 @@ async fn lan_http_server_serves_byte_range_and_drives_dlna_soap_session() {
     )
     .await
     .unwrap();
+    let t_pause = std::time::Instant::now();
     session.pause().await.unwrap();
+    assert!(t_pause.elapsed() < std::time::Duration::from_millis(500));
+
+    let t_stop = std::time::Instant::now();
     session.stop().await.unwrap();
+    assert!(t_stop.elapsed() < std::time::Duration::from_millis(500));
     srv.await.unwrap();
 
     assert_eq!(
         *seen_actions.lock().unwrap(),
         vec!["SetAVTransportURI", "Play", "Pause", "Stop"]
     );
+}
+
+#[tokio::test]
+async fn cast_stop_does_not_hang_when_renderer_stops_responding() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let dlna_addr = listener.local_addr().unwrap();
+    let srv = tokio::spawn(async move {
+        // First two requests (SetAVTransportURI + Play) succeed fast; Stop hangs forever.
+        for i in 0..3 {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 4096];
+            let _ = sock.read(&mut buf).await.unwrap();
+            if i < 2 {
+                let ok = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                sock.write_all(ok.as_bytes()).await.unwrap();
+            } else {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        }
+    });
+
+    let source: Arc<dyn cinma_blobstore::ByteSource> =
+        Arc::new(MemorySource::new(vec![1; 4096], 4096));
+    let device = CastDevice {
+        id: "dlna:stalled".into(),
+        kind: CastKind::Dlna,
+        name: "Stalled TV".into(),
+        host: "127.0.0.1".into(),
+        port: dlna_addr.port(),
+        control_url: Some(format!("http://{dlna_addr}/AVTransport/control")),
+    };
+    let session = ActiveCastSession::start(
+        device,
+        MediaPayload::Source {
+            source,
+            mime: "video/mp4".into(),
+        },
+        "Stalled Movie",
+    )
+    .await
+    .unwrap();
+
+    let t_stop = std::time::Instant::now();
+    session.stop().await.unwrap();
+    assert!(
+        t_stop.elapsed() < std::time::Duration::from_secs(2),
+        "stop() stalled for {:?}",
+        t_stop.elapsed()
+    );
+    srv.abort();
 }

@@ -90,6 +90,7 @@ impl CastServerHandle {
     pub async fn stop(mut self) {
         self.cancel.cancel();
         if let Some(h) = self.task.take() {
+            h.abort();
             let _ = h.await;
         }
     }
@@ -200,7 +201,10 @@ async fn stream_payload(
                 })
                 .await
                 .map_err(io::Error::other)??;
-                sock.write_all(&chunk).await?;
+                tokio::select! {
+                    () = cancel.cancelled() => return Ok(()),
+                    res = sock.write_all(&chunk) => res?,
+                }
                 offset += want as u64;
                 remaining -= want as u64;
             }
@@ -227,7 +231,10 @@ async fn stream_payload(
                 if chunk.is_empty() {
                     break;
                 }
-                sock.write_all(&chunk).await?;
+                tokio::select! {
+                    () = cancel.cancelled() => return Ok(()),
+                    res = sock.write_all(&chunk) => res?,
+                }
                 offset += chunk.len() as u64;
                 remaining -= chunk.len() as u64;
             }

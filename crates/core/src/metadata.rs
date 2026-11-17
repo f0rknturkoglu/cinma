@@ -47,8 +47,25 @@ impl Core {
         Ok(())
     }
 
+    /// Non-blocking check whether a TMDB key is configured without touching Keychain IPC
+    /// on the UI thread (uses cached app setting / env / test override).
     pub fn has_tmdb_key(&self) -> Result<bool, CoreError> {
-        Ok(self.tmdb_key()?.is_some())
+        if let Some(override_val) = self
+            .tmdb_key_override
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .as_ref()
+        {
+            return Ok(override_val.is_some());
+        }
+        if std::env::var("CINMA_TMDB_API_KEY")
+            .ok()
+            .is_some_and(|v| !v.trim().is_empty())
+        {
+            return Ok(true);
+        }
+        let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
+        Ok(db.get_app_setting("tmdb.has_key")?.as_deref() == Some("1"))
     }
 
     pub fn tmdb_key(&self) -> Result<Option<String>, CoreError> {
@@ -60,12 +77,19 @@ impl Core {
         {
             return Ok(override_val.clone());
         }
-        keychain::get_tmdb_api_key()
+        let key = keychain::get_tmdb_api_key()?;
+        if let Ok(db) = self.db.lock() {
+            let _ = db.set_app_setting("tmdb.has_key", if key.is_some() { "1" } else { "0" });
+        }
+        Ok(key)
     }
 
     pub fn set_tmdb_key(&self, key: Option<String>) -> Result<(), CoreError> {
         let trimmed = key.map(|k| k.trim().to_owned()).filter(|k| !k.is_empty());
         keychain::set_tmdb_api_key(trimmed.as_deref())?;
+        if let Ok(db) = self.db.lock() {
+            let _ = db.set_app_setting("tmdb.has_key", if trimmed.is_some() { "1" } else { "0" });
+        }
         *self
             .tmdb_key_override
             .lock()

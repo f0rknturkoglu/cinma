@@ -401,13 +401,12 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
     }
 
     @objc private func openAddSheet() {
-        var holder: NSHostingController<AddDownloadSheetView>?
-        let vc = NSHostingController(rootView: AddDownloadSheetView(core: core) { [weak self] in
-            if let vc = holder { self?.dismiss(vc) }
-            self?.reload()
-        })
-        holder = vc
-        presentAsSheet(vc)
+        presentSheetView { dismiss in
+            AddDownloadSheetView(core: core) { [weak self] in
+                dismiss()
+                self?.reload()
+            }
+        }
     }
 }
 

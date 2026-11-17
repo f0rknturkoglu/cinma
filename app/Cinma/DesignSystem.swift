@@ -1,4 +1,27 @@
 import AppKit
+import SwiftUI
+
+/// Top-down (`y = 0` at top) document container for `NSScrollView` so dynamic
+/// content growth at the bottom never shifts the top scroll origin.
+@MainActor
+final class FlippedDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+extension NSViewController {
+    /// Presents a SwiftUI view as a sheet without retaining the hosting controller
+    /// inside its own dismissal closure.
+    func presentSheetView<V: View>(_ builder: (_ dismiss: @escaping @MainActor () -> Void) -> V) {
+        weak var weakVc: NSViewController?
+        let vc = NSHostingController(rootView: builder { [weak self] in
+            Task { @MainActor in
+                if let sheet = weakVc { self?.dismiss(sheet) }
+            }
+        })
+        weakVc = vc
+        presentAsSheet(vc)
+    }
+}
 
 struct PlaybackMetadata: Sendable {
     let videoId: String

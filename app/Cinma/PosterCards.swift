@@ -8,7 +8,7 @@ final class PosterCardItem: NSCollectionViewItem {
 
     private let cardBox = NSView()
     private let gradientLayer = CAGradientLayer()
-    private let artworkView = NSImageView()
+    private let artworkView = AspectFillImageView()
     private let fallbackTitle = NSTextField(wrappingLabelWithString: "")
     private let badgeBox = NSView()
     private let badgeLabel = NSTextField(labelWithString: "")
@@ -29,7 +29,6 @@ final class PosterCardItem: NSCollectionViewItem {
         cardBox.layer?.insertSublayer(gradientLayer, at: 0)
         cardBox.translatesAutoresizingMaskIntoConstraints = false
 
-        artworkView.imageScaling = .scaleAxesIndependently
         artworkView.translatesAutoresizingMaskIntoConstraints = false
 
         let scrim = GradientLayerView(
@@ -175,7 +174,7 @@ final class ContinueWatchingCardItem: NSCollectionViewItem {
 
     private let cardBox = NSView()
     private let gradientLayer = CAGradientLayer()
-    private let artworkView = NSImageView()
+    private let artworkView = AspectFillImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let progressTrack = NSView()
     private let progressFill = NSView()
@@ -196,7 +195,6 @@ final class ContinueWatchingCardItem: NSCollectionViewItem {
         cardBox.layer?.insertSublayer(gradientLayer, at: 0)
         cardBox.translatesAutoresizingMaskIntoConstraints = false
 
-        artworkView.imageScaling = .scaleAxesIndependently
         artworkView.translatesAutoresizingMaskIntoConstraints = false
 
         let scrim = GradientLayerView(

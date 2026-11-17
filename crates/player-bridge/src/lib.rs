@@ -240,8 +240,13 @@ impl Player {
             ("idle", "yes".into()),
             ("keep-open", "yes".into()),
             ("cache", "yes".into()),
-            ("demuxer-max-bytes", "16MiB".into()),
-            ("demuxer-max-back-bytes", "4MiB".into()),
+            ("demuxer-max-bytes", "8MiB".into()),
+            ("demuxer-max-back-bytes", "2MiB".into()),
+            ("demuxer-readahead-secs", "10".into()),
+            ("cache-pause-wait", "1".into()),
+            ("vd-lavc-threads", "4".into()),
+            ("ad-lavc-threads", "2".into()),
+            ("opengl-pbo", "no".into()),
             // Respect ASS/SSA script styling by default (§5.8).
             ("sub-ass-override", "no".into()),
         ];

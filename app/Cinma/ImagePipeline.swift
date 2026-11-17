@@ -1,19 +1,24 @@
 import AppKit
 import CryptoKit
+import Darwin
 import ImageIO
 
 /// Downsampling + two-tier image pipeline (§5.15, §5.16):
-///   1. Memory `NSCache` with byte cost limit (dropped on window close).
+///   1. Memory `NSCache` with byte cost limit (dropped on window close / playback).
 ///   2. Capped disk cache under `Caches/Cinma/images` (150 MB LRU cap).
 ///   3. `ImageIO` thumbnail downsampling to exact display pixel size.
 @MainActor
 final class ImagePipeline {
     static let shared = ImagePipeline()
 
+    private let browseCostLimit = 28 * 1024 * 1024
+    private let browseCountLimit = 160
+    private var inPlaybackMode = false
+
     private let memoryCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
-        cache.totalCostLimit = 48 * 1024 * 1024
-        cache.countLimit = 220
+        cache.totalCostLimit = 28 * 1024 * 1024
+        cache.countLimit = 160
         return cache
     }()
 
@@ -38,19 +43,44 @@ final class ImagePipeline {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.memoryCache.totalCostLimit = 16 * 1024 * 1024 }
+            Task { @MainActor in
+                guard let self, !self.inPlaybackMode else { return }
+                self.memoryCache.totalCostLimit = 12 * 1024 * 1024
+            }
         }
         NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.memoryCache.totalCostLimit = 48 * 1024 * 1024 }
+            Task { @MainActor in
+                guard let self, !self.inPlaybackMode else { return }
+                self.memoryCache.totalCostLimit = self.browseCostLimit
+            }
         }
+    }
+
+    func setPlaybackMode(_ active: Bool) {
+        inPlaybackMode = active
+        if active {
+            memoryCache.removeAllObjects()
+            memoryCache.totalCostLimit = 2 * 1024 * 1024
+            memoryCache.countLimit = 12
+            Self.releaseMallocPressure()
+        } else {
+            memoryCache.totalCostLimit = browseCostLimit
+            memoryCache.countLimit = browseCountLimit
+            Self.releaseMallocPressure()
+        }
+    }
+
+    nonisolated static func releaseMallocPressure() {
+        malloc_zone_pressure_relief(nil, 0)
     }
 
     func clearMemoryCache() {
         memoryCache.removeAllObjects()
+        Self.releaseMallocPressure()
     }
 
     /// Loads and downsamples `urlString` to fit `pointSize` on the current display scale.
@@ -155,6 +185,75 @@ final class ImagePipeline {
             guard total > target else { break }
             try? fm.removeItem(at: url)
             total = total > size ? total - size : 0
+        }
+    }
+}
+
+/// True aspect-fill (`object-fit: cover`) layer-backed image view for AppKit.
+/// Uses `CALayer.contentsGravity = .resizeAspectFill` directly so images fill
+/// their frame completely with zero stretching or letterbox gaps.
+@MainActor
+final class AspectFillImageView: NSView {
+    private let contentLayer = CALayer()
+
+    var image: NSImage? {
+        didSet {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if let image, let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                contentLayer.contents = cg
+            } else {
+                contentLayer.contents = image
+            }
+            CATransaction.commit()
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        contentLayer.contentsGravity = .resizeAspectFill
+        contentLayer.masksToBounds = true
+        layer?.addSublayer(contentLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        contentLayer.frame = bounds
+        CATransaction.commit()
+    }
+
+    func setRemoteImage(
+        _ url: String?,
+        pointSize: NSSize,
+        taskStorage: inout Task<Void, Never>?
+    ) {
+        taskStorage?.cancel()
+        image = nil
+        guard let url, !url.isEmpty else { return }
+        let scale = window?.backingScaleFactor ?? 2.0
+        taskStorage = Task { [weak self] in
+            let loaded = await ImagePipeline.shared.load(urlString: url, pointSize: pointSize, scale: scale)
+            guard !Task.isCancelled, let self else { return }
+            if let loaded {
+                if !CinemaTheme.reduceMotion {
+                    self.alphaValue = 0
+                    self.image = loaded
+                    NSAnimationContext.runAnimationGroup({ ctx in
+                        ctx.duration = 0.18
+                        self.animator().alphaValue = 1
+                    }, completionHandler: nil)
+                } else {
+                    self.alphaValue = 1
+                    self.image = loaded
+                }
+            }
         }
     }
 }

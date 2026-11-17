@@ -13,3 +13,4 @@ date,commit,runs,first_frame_ms,core_ready_ms,rss_mb,footprint_mb,idle_cpu_pct,n
 2026-11-17T22:08:49,817bfdf,5,177.4,185.6,101.0,30.0,0.00,"phase 8 complete: ui/ux polish, live download progress, mini panel pip, app icon & about"
 2026-11-17T22:20:16,817bfdf,5,164.1,169.1,101.4,30.0,0.00,"phase 8 complete: ui/ux polish, live download progress, mini panel pip, app icon & about"
 2026-11-17T23:19:16,0ddc74d,5,184.2,193.5,100.4,31.0,0.00,"phase 9 complete: integrations, debrid, oauth, iptv, skip segments, archive streaming & discord"
+2026-11-18T00:14:27,2943b75,1,385.8,395.7,83.2,24.0,0.00,""
