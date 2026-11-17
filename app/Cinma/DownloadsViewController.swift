@@ -135,7 +135,7 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
         guard progressTask == nil else { return }
         progressTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled, let self else { return }
                 self.progressTask = nil
                 self.reload()
@@ -147,8 +147,8 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
     private func setupTable() {
         tableView.backgroundColor = .clear
         tableView.usesAlternatingRowBackgroundColors = false
-        tableView.rowHeight = 58
-        tableView.intercellSpacing = NSSize(width: 10, height: 6)
+        tableView.rowHeight = 72
+        tableView.intercellSpacing = NSSize(width: 12, height: 8)
         tableView.headerView = NSTableHeaderView()
         tableView.delegate = self
         tableView.doubleAction = #selector(rowDoubleClicked)
@@ -156,10 +156,10 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
         tableView.setAccessibilityLabel(String(localized: "Download queue"))
 
         let cols: [(NSUserInterfaceItemIdentifier, String, CGFloat)] = [
-            (Self.titleColId, String(localized: "Title"), 320),
-            (Self.stateColId, String(localized: "Status"), 150),
-            (Self.progressColId, String(localized: "Progress"), 210),
-            (Self.actionsColId, String(localized: "Actions"), 250),
+            (Self.titleColId, String(localized: "Title"), 310),
+            (Self.stateColId, String(localized: "Status"), 140),
+            (Self.progressColId, String(localized: "Progress"), 200),
+            (Self.actionsColId, String(localized: "Actions"), 290),
         ]
         for (id, title, width) in cols {
             let col = NSTableColumn(identifier: id)
@@ -258,6 +258,7 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
             return stack
 
         case Self.actionsColId:
+            let container = NSView()
             var buttons: [NSView] = []
             if info.canPlayNow {
                 let playBtn = CinemaTheme.makePillButton(
@@ -268,6 +269,7 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
                     action: #selector(playClicked(_:))
                 )
                 playBtn.tag = Int(info.id)
+                playBtn.setContentCompressionResistancePriority(.required, for: .horizontal)
                 playBtn.setAccessibilityLabel("\(String(localized: "Play")) \(info.title)")
                 buttons.append(playBtn)
             }
@@ -287,8 +289,15 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
 
             let rowStack = NSStackView(views: buttons)
             rowStack.orientation = .horizontal
-            rowStack.spacing = 6
-            return rowStack
+            rowStack.alignment = .centerY
+            rowStack.spacing = 8
+            rowStack.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(rowStack)
+            NSLayoutConstraint.activate([
+                rowStack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                rowStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            ])
+            return container
 
         default:
             return NSView()

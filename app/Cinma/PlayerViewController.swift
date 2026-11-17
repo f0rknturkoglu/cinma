@@ -62,12 +62,12 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
     private let videoView = NSView()
     private let videoLayer = VideoLayer()
-    private let titlePill = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 22)
-    private let topRightPill = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 19)
+    private let titlePill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 22)
+    private let topRightPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 19)
     private let infoLabel = NSTextField(labelWithString: "")
     private let titleField = NSTextField(labelWithString: "")
     private let subField = NSTextField(labelWithString: "")
-    private let bar = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 22)
+    private let bar = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 22)
     private let statusLabel = NSTextField(labelWithString: "")
     private let scrubBar = ScrubBarView()
     private let playButton = NSButton()
@@ -76,16 +76,16 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     private let timeLabel = NSTextField(labelWithString: "--:-- / --:--")
 
     // Hover thumbnail preview
-    private let thumbCard = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 12)
+    private let thumbCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 12)
     private let thumbImageView = NSImageView()
     private let thumbTimeLabel = NSTextField(labelWithString: "00:00")
     private var thumbCenterXConstraint: NSLayoutConstraint?
 
     // Stats overlay & Skip intro / Next episode cards
-    private let statsCard = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 14)
+    private let statsCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 14)
     private let statsText = NSTextField(wrappingLabelWithString: "")
     private lazy var skipButton = CinemaTheme.makePillButton(title: "", symbol: "forward.end.fill", primary: true, target: self, action: #selector(skipCurrentSegment))
-    private let nextCard = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 16)
+    private let nextCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
     private let nextTitleLabel = NSTextField(labelWithString: "")
     private let nextSubtitleLabel = NSTextField(labelWithString: "")
     private let nextCountdownLabel = NSTextField(labelWithString: "")
@@ -126,6 +126,11 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     private var failedRetries = 0
     private var currentStreamIndex = 0
     private var pendingSwitchPosition: Double?
+    private var isHoveringScrub = false
+
+    var onEnterPiP: (() -> Void)?
+    var onPauseStateChanged: ((Bool) -> Void)?
+    var isPausedForPiP: Bool { paused }
 
     private var closing = false
     private var appliedResume = false
@@ -273,12 +278,13 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
         infoLabel.textColor = CinemaTheme.textPrimary
 
         let castBtn = makeIconButton("tv.and.mediabox", tooltip: String(localized: "Cast to LAN Device"), action: #selector(openCastSheet(_:)))
+        let pipBtn = makeIconButton("pip.enter", tooltip: String(localized: "Mini Player (P)"), action: #selector(enterPiPClicked))
         let streamsBtn = makeIconButton("rectangle.stack", tooltip: String(localized: "Switch Stream"), action: #selector(showStreamSwitcher(_:)))
         let statsBtn = makeIconButton("info.circle", tooltip: String(localized: "Playback Stats (I)"), action: #selector(toggleStats))
         let shotBtn = makeIconButton("camera", tooltip: String(localized: "Screenshot (S)"), action: #selector(takeScreenshot))
         let moreBtn = makeIconButton("ellipsis.circle", tooltip: String(localized: "Video, A/B Loop & Sleep Timer"), action: #selector(showMoreMenu(_:)))
 
-        let rightStack = NSStackView(views: [infoLabel, castBtn, streamsBtn, statsBtn, shotBtn, moreBtn])
+        let rightStack = NSStackView(views: [infoLabel, castBtn, pipBtn, streamsBtn, statsBtn, shotBtn, moreBtn])
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = 8
@@ -626,6 +632,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
         case .paused(let isPaused):
             paused = isPaused
+            onPauseStateChanged?(isPaused)
             let name = isPaused ? "play.fill" : "pause.fill"
             let label = isPaused ? String(localized: "Play") : String(localized: "Pause")
             playButton.image = NSImage(systemSymbolName: name, accessibilityDescription: label)
@@ -976,11 +983,16 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
     private func handleScrubHover(seconds: Double?, localX: CGFloat) {
         guard let seconds, duration > 0 else {
+            isHoveringScrub = false
             thumbCard.isHidden = true
+            showHudAndResetTimer()
             return
         }
+        isHoveringScrub = true
+        showHudAndCancelTimer()
         thumbCard.isHidden = false
-        thumbCenterXConstraint?.constant = localX
+        let clampedX = min(max(localX, 88), max(88, bar.bounds.width - 88))
+        thumbCenterXConstraint?.constant = clampedX
         let chName = chapters.last(where: { $0.startS <= seconds })?.title
         if let chName, !chName.isEmpty {
             thumbTimeLabel.stringValue = "\(Self.format(seconds)) · \(chName)"
@@ -1110,7 +1122,7 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
                 }
             } catch {
                 await MainActor.run {
-                    self?.statusLabel.stringValue = error.localizedDescription
+                    self?.statusLabel.stringValue = FriendlyError.explain(error)
                 }
             }
         }
@@ -1466,9 +1478,14 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
     private func handleKey(_ event: NSEvent) -> Bool {
         showHudAndResetTimer()
-        guard let combo = KeyCombo.from(event),
-              let command = try? core.resolveKey(context: "player", combo: combo)
-        else { return false }
+        guard let combo = KeyCombo.from(event) else { return false }
+        guard let command = try? core.resolveKey(context: "player", combo: combo) else {
+            if combo == "p" {
+                enterPiPClicked()
+                return true
+            }
+            return false
+        }
         switch command {
         case "player.toggle_pause": togglePause()
         case "player.seek_back": seekBack10()
@@ -1520,13 +1537,43 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
 
     // MARK: - HUD Auto-Hide & Persistence
 
+    func playerTitleForPiP() -> String {
+        titleField.stringValue.isEmpty ? "Cinma" : titleField.stringValue
+    }
+
+    func detachVideoViewForPiP() -> NSView {
+        hudHideTask?.cancel()
+        return videoView
+    }
+
+    func reattachVideoViewFromPiP() {
+        videoView.removeFromSuperview()
+        videoView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(videoView, positioned: .below, relativeTo: titlePill)
+        NSLayoutConstraint.activate([
+            videoView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            videoView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            videoView.topAnchor.constraint(equalTo: view.topAnchor),
+            videoView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        showHudAndResetTimer()
+    }
+
+    func togglePauseFromPiP() { togglePause() }
+    func closeFromPiP() { close() }
+
+    @objc private func enterPiPClicked() {
+        showHudAndCancelTimer()
+        onEnterPiP?()
+    }
+
     private func showHudAndResetTimer() {
         setHudAlpha(1.0)
         hudHideTask?.cancel()
-        guard !paused, activePopover == nil else { return }
+        guard !paused, !isHoveringScrub, activePopover == nil else { return }
         hudHideTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2.8))
-            guard let self, !Task.isCancelled, !self.paused, self.activePopover == nil, !self.closing else { return }
+            guard let self, !Task.isCancelled, !self.paused, !self.isHoveringScrub, self.activePopover == nil, !self.closing else { return }
             self.setHudAlpha(0.0)
         }
     }
@@ -1537,13 +1584,29 @@ final class PlayerViewController: NSViewController, NSPopoverDelegate {
     }
 
     private func setHudAlpha(_ alpha: CGFloat) {
-        let duration: TimeInterval = CinemaTheme.reduceMotion ? 0 : 0.18
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = duration
-            titlePill.animator().alphaValue = alpha
-            topRightPill.animator().alphaValue = alpha
-            bar.animator().alphaValue = alpha
+        let pills = [titlePill, topRightPill, bar]
+        if alpha > 0 {
+            for p in pills { p.isHidden = false }
         }
+        let duration: TimeInterval = CinemaTheme.reduceMotion ? 0 : 0.18
+        if duration == 0 {
+            for p in pills {
+                p.alphaValue = alpha
+                p.isHidden = alpha == 0
+            }
+            return
+        }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = duration
+            for p in pills { p.animator().alphaValue = alpha }
+        }, completionHandler: {
+            Task { @MainActor in
+                guard !self.closing else { return }
+                for p in pills where p.alphaValue == 0 {
+                    p.isHidden = true
+                }
+            }
+        })
     }
 
     private func pushNowPlaying() {

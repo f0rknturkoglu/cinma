@@ -1,13 +1,51 @@
 # PROGRESS
 
-## Status: Phases 0–7 built and owner-approved (2026-11-17). ADRs 0010, 0011, 0012, 0014, 0016 accepted; ADR 0013 §3 accepted (disk quota superseded by 0016); ADR 0015 backup/libmpv lookup accepted (packaging deferred to Phase 10); CLAUDE.md §6 targets owner-approved.
+## Status: Phases 0–8 built (2026-11-17); Phase 8 awaiting owner review before Phase 9. ADRs 0010, 0011, 0012, 0014, 0016 accepted; ADR 0013 §3 accepted (disk quota superseded by 0016); ADR 0015 backup/libmpv lookup accepted (packaging deferred to Phase 10); CLAUDE.md §6 targets owner-approved.
 
 **Next:** see `docs/ROADMAP.md`:
 - §2: the owner's test checklist;
 - §3 & §6: recorded owner decisions (2026-11-17);
-- §7–9: Phase 8 (UI/UX polish), Phase 9 (integrations and add-ons), Phase 10 (hardening and release).
+- §8–9: Phase 9 (integrations and add-ons), Phase 10 (hardening and release).
 
-Two things are still unmeasured: real-swarm torrent TTFF/seek (the agent sandbox has no P2P) and real Chromecast/DLNA/Trakt round trips. See "Open items" below.
+Two things are still unmeasured: real-swarm torrent TTFF/seek (the agent sandbox has no P2P) and real Chromecast/DLNA/Trakt round trips. See `docs/RISKS.md`.
+
+---
+
+## Phase 8 — UI/UX polish & zero-copy mini-player PiP ✅ (2026-11-17)
+
+### Done in Phase 8
+- **Actionable errors (`FriendlyError`)**: unwrapped raw `Cinma.CinmaError` strings across stream picker, detail, browsing, downloads, addons, and settings into plain human messages with concrete `actionHint` guidance and inline recovery CTAs (`Open Addons…`, `Open Settings…`, `Clear Search`, `Explore Home`, `Retry`).
+- **Downloads UX & in-memory live progress (`cinma-queue`, `cinma-torrent`, `cinma-core`, `DownloadsViewController.swift`)**:
+  - `LiveProgressMap` tracks active transfer bytes and `Blob::available().covered()` in RAM (`1 s` live ticks; SQLite checkpoints remain coarse every `5` ticks / ~`5 s`), cleared on finish/stop.
+  - Row height raised to `72 pt`, action column widened to `290 pt` with vertically centered controls so pill buttons (`Play Now`, `Pause`/`Resume`, `Show in Finder`, `Remove`) no longer clip.
+- **Home hero & image memory (`HomeBrowserViewController.swift`, `DesignSystem.swift`, `ImagePipeline.swift`)**:
+  - Replaced `heroFallbackGradient` CALayer with auto-laying-out `GradientLayerView` + multi-stop full-bleed `leftScrim` / `bottomScrim` (eliminates half-width edge artifacts).
+  - Pauses the 10 s hero rotation timer via `NSWindow.didChangeOcclusionStateNotification` and `NSApplication.didResignActiveNotification`.
+  - Caps decoded backdrops (`960×420` / `960×380`, `min(1920, ...)`) and lowers `ImagePipeline` memory limit from `48 MB` (active) to `16 MB` (inactive).
+- **Onboarding & Tabbed Settings (`SheetsAndSettings.swift`, `crates/core/src/metadata.rs`)**:
+  - Core metadata fallback changed from `"tr-TR"` to `"en-US"` and `OnboardingView` matches `Bundle.main.preferredLocalizations` (`en-US` vs `tr-TR`), plus addon URL scheme validation (`http://`, `https://`, `stremio://`) and TMDB key verification via `verifyTmdbKey`.
+  - Split flat `SettingsView` into 6 tabs (`General`, `Playback`, `Subtitles`, `Downloads`, `Shortcuts`, `Backup`) showing download folders and `yt-dlp` status clearly.
+- **Empty, loading, partial states, keyboard navigation & VoiceOver**:
+  - Added spinners, skeleton/empty recovery views, and incremental `"m of n addons answered · k streams"` progress in `TitleDetailViewController`.
+  - Added `KeyboardCollectionView` (arrow keys + `Return`/`Space`), `PillButton.drawFocusRingMask()`, accent (`#E8A33D`) 2.5 px focus rings on `PosterCardItem` / `ContinueWatchingCardItem`, `Esc` (`cancelOperation`) handling, and VoiceOver labels/descriptions on cards, hero dots, and settings controls.
+- **Player HUD polish & zero-copy PiP `NSPanel` (`DesignSystem.swift`, `PlayerViewController.swift`, `MiniPlayerPanel.swift`)**:
+  - Added `GlassKind.hud` with a dark scrim backing behind `NSGlassEffectView` so HUD pills/icons stay legible over bright HDR highlights, smoothed auto-hide/scrubber thumb clamping (`isHoveringScrub`), and shipped the floating always-on-top `MiniPlayerPanel` (`NSPanel`, `P` shortcut + HUD toggle) reusing `VideoLayer` with zero frame copies.
+- **App icon, About window & `en` / `tr` localization (`AppIcon.icns`, `Info.plist`, `MainMenu.swift`, `Localizable.xcstrings`)**:
+  - Added multi-resolution macOS squircle `AppIcon.icns`, About / Licenses window (`app.about` menu item listing `libmpv`, FFmpeg LGPL, `librqbit`, etc.), and synced/translated all `408` `en` + `tr` strings (`0` missing).
+
+### Verification & Measurements (Phase 8, Release, after final edits)
+- **`cargo fmt --check` & `cargo clippy --all-targets -- -D warnings`:** passed (0 warnings).
+- **`cargo test --quiet`:** **120 Rust tests pass**, 0 failed, 0 ignored across all workspace crates.
+- **Release `xcodebuild` (`Cinma.app`):** passed with **0 compiler warnings** and **0 errors**; `AppIcon.icns` (`1.1 MB`), `en.lproj`, `tr.lproj`, and ad-hoc signature verified in bundle.
+- **Launch & Idle (`tools/measure.sh`, Release, 5 runs):**
+  - Median first frame: **164.1 ms** (< 250 ms target ✅)
+  - Median core ready: **169.1 ms**
+  - Median idle `phys_footprint`: **30.0 MB** (≤ 70 MB empty window target ✅), RSS **101.4 MB**
+  - Median idle CPU: **0.00 %** (~0 % target ✅)
+- **Local playback smoke tests (Release):**
+  - 1080p SDR MKV (`sdr_h264_1080p.mkv`): TTFF **391.2 ms**, seeks **85.7 ms** / **142.2 ms**, `gamma=bt.1886 hdr=false`, exit `0`.
+  - 4K HDR10 MP4 (`hdr10_hevc_4k.mp4`): TTFF **338.5 ms**, seek **139.1 ms**, `gamma=pq hdr=true`, exit `0`.
+- **Visual screenshots (`en` + `tr`):** verified fresh-launch Onboarding (`English (en-US)` vs `Türkçe (tr-TR)` metadata defaults, `39 MB` / `38 MB` footprint), empty Home full-bleed hero scrim, and 4K HDR10 Player HUD contrast via `screencapture` inspection. Home artwork idle (172 MB / 0.17% CPU) and 4K playback CPU (~17%) remain within CLAUDE.md §6 approved targets; Reduce Motion/Reduce Transparency guards (`CinemaTheme.reduceMotion`, `reduceTransparency`) were verified in code (`NSSystem` toggle not flipped interactively via UI).
 
 ## Review fixes, round 2 (2026-11-17): everything else from the review
 Commits `8c4bda8`…`356b7c6`. 118 Rust tests pass, clippy is clean, and the Release build has no warnings.

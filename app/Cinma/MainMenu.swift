@@ -13,7 +13,7 @@ enum MainMenu {
 
     private static func item(for id: String) -> Item? {
         switch id {
-        case "app.about": Item(title: String(localized: "About Cinma"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), targetsDelegate: false)
+        case "app.about": Item(title: String(localized: "About Cinma"), action: #selector(AppDelegate.showAbout(_:)), targetsDelegate: true)
         case "app.hide": Item(title: String(localized: "Hide Cinma"), action: #selector(NSApplication.hide(_:)), targetsDelegate: false)
         case "app.hide_others": Item(title: String(localized: "Hide Others"), action: #selector(NSApplication.hideOtherApplications(_:)), targetsDelegate: false)
         case "app.show_all": Item(title: String(localized: "Show All"), action: #selector(NSApplication.unhideAllApplications(_:)), targetsDelegate: false)

@@ -101,6 +101,9 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        discoverVC.onOpenAddons = { [weak self] in self?.openAddons() }
+        libraryVC.onOpenHome = { [weak self] in self?.switchToTab(.home) }
+        calendarVC.onOpenSettings = { [weak self] in self?.openSettings() }
         refreshProfileBadge()
         switchToTab(.home)
     }
@@ -284,6 +287,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
             },
             onPlay: onPlay
         )
+        vc.onOpenAddons = { [weak self] in self?.openAddons() }
         detailVC = vc
         updateTabButtonStyles()
         showChild(vc)

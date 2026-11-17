@@ -15,6 +15,7 @@ final class TitleDetailViewController: NSViewController {
     private let preview: MetaPreviewInfo
     private let onBack: () -> Void
     private let onPlay: (PlayRequest) -> Void
+    var onOpenAddons: (() -> Void)?
 
     private let scrollView = NSScrollView()
     private let backdropView = NSImageView()
@@ -32,7 +33,15 @@ final class TitleDetailViewController: NSViewController {
     private let episodesSection = NSStackView()
 
     private let streamTitleLabel = NSTextField(labelWithString: "")
-    private let streamStatusLabel = NSTextField(labelWithString: "")
+    private let streamStatusLabel = NSTextField(wrappingLabelWithString: "")
+    private let streamSpinner = NSProgressIndicator()
+    private lazy var streamActionButton = CinemaTheme.makePillButton(
+        title: String(localized: "Open Addons…"),
+        symbol: "puzzlepiece.extension",
+        primary: false,
+        target: self,
+        action: #selector(streamRecoveryAction)
+    )
     private let streamFilterStack = NSStackView()
     private let streamsListStack = NSStackView()
 
@@ -43,6 +52,11 @@ final class TitleDetailViewController: NSViewController {
     private var progressByVideo: [String: WatchProgressInfo] = [:]
 
     private var accumulatedStreams: [StreamInfo] = []
+    private var respondedAddonsCount = 0
+    private var lastStreamVideoId: String?
+    private var lastStreamTitle: String?
+    private var lastStreamSeason: Int64?
+    private var lastStreamEpisode: Int64?
     private var activeFilter: StreamFilter = .all
     private var streamTask: Task<Void, Never>?
     private var backdropTask: Task<Void, Never>?
@@ -79,22 +93,37 @@ final class TitleDetailViewController: NSViewController {
 
         let heroBox = NSView()
         heroBox.wantsLayer = true
+        heroBox.layer?.masksToBounds = true
         fallbackGradient.colors = ArtworkPlaceholder.gradient(for: preview.id)
         heroBox.layer?.insertSublayer(fallbackGradient, at: 0)
         heroBox.translatesAutoresizingMaskIntoConstraints = false
 
-        backdropView.imageScaling = .scaleAxesIndependently
+        backdropView.imageScaling = .scaleProportionallyUpOrDown
+        backdropView.wantsLayer = true
+        backdropView.layer?.contentsGravity = .resizeAspectFill
+        backdropView.layer?.masksToBounds = true
         backdropView.translatesAutoresizingMaskIntoConstraints = false
 
         let leftScrim = GradientLayerView(
-            colors: [CinemaTheme.background.withAlphaComponent(0.92), CinemaTheme.background.withAlphaComponent(0.35), .clear],
-            locations: [0, 0.5, 0.85],
+            colors: [
+                CinemaTheme.background.withAlphaComponent(0.95),
+                CinemaTheme.background.withAlphaComponent(0.68),
+                CinemaTheme.background.withAlphaComponent(0.28),
+                .clear,
+            ],
+            locations: [0, 0.25, 0.55, 0.92],
             start: CGPoint(x: 0, y: 0.5),
             end: CGPoint(x: 1, y: 0.5)
         )
         leftScrim.translatesAutoresizingMaskIntoConstraints = false
         let bottomScrim = GradientLayerView(
-            colors: [.clear, CinemaTheme.background],
+            colors: [
+                .clear,
+                CinemaTheme.background.withAlphaComponent(0.45),
+                CinemaTheme.background.withAlphaComponent(0.88),
+                CinemaTheme.background,
+            ],
+            locations: [0, 0.35, 0.78, 1],
             start: CGPoint(x: 0.5, y: 1),
             end: CGPoint(x: 0.5, y: 0)
         )
@@ -185,9 +214,20 @@ final class TitleDetailViewController: NSViewController {
         streamTitleLabel.textColor = CinemaTheme.textPrimary
         streamTitleLabel.stringValue = preview.name
 
+        streamSpinner.style = .spinning
+        streamSpinner.controlSize = .small
+        streamSpinner.isDisplayedWhenStopped = false
+
         streamStatusLabel.font = .monospacedDigitSystemFont(ofSize: 12.5, weight: .regular)
         streamStatusLabel.textColor = CinemaTheme.textMuted
         streamStatusLabel.stringValue = String(localized: "Fetching streams…")
+
+        streamActionButton.isHidden = true
+
+        let statusRow = NSStackView(views: [streamSpinner, streamStatusLabel])
+        statusRow.orientation = .horizontal
+        statusRow.alignment = .centerY
+        statusRow.spacing = 8
 
         streamFilterStack.orientation = .horizontal
         streamFilterStack.spacing = 6
@@ -198,7 +238,7 @@ final class TitleDetailViewController: NSViewController {
         streamsListStack.spacing = 10
         streamsListStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let pickerContent = NSStackView(views: [streamTitleLabel, streamStatusLabel, streamFilterStack, streamsListStack])
+        let pickerContent = NSStackView(views: [streamTitleLabel, statusRow, streamActionButton, streamFilterStack, streamsListStack])
         pickerContent.orientation = .vertical
         pickerContent.alignment = .leading
         pickerContent.spacing = 12
@@ -305,7 +345,8 @@ final class TitleDetailViewController: NSViewController {
                 if preview.mediaType == "movie" {
                     self.fetchStreams(videoId: preview.id, title: preview.name, season: nil, episode: nil)
                 } else {
-                    self.streamStatusLabel.stringValue = error.localizedDescription
+                    self.streamSpinner.stopAnimation(nil)
+                    self.streamStatusLabel.stringValue = FriendlyError.explain(error)
                 }
             }
         }
@@ -321,7 +362,7 @@ final class TitleDetailViewController: NSViewController {
         }
         backdropView.setRemoteImage(
             m.background ?? m.poster ?? preview.poster,
-            pointSize: NSSize(width: 1280, height: 460),
+            pointSize: NSSize(width: 960, height: 380),
             taskStorage: &backdropTask
         )
         let genres = m.genres.prefix(3).joined(separator: ", ")
@@ -493,35 +534,81 @@ final class TitleDetailViewController: NSViewController {
     private func fetchStreams(videoId: String, title: String, season: Int64?, episode: Int64?) {
         streamTask?.cancel()
         accumulatedStreams = []
+        respondedAddonsCount = 0
+        lastStreamVideoId = videoId
+        lastStreamTitle = title
+        lastStreamSeason = season
+        lastStreamEpisode = episode
         streamTitleLabel.stringValue = title
-        streamStatusLabel.stringValue = String(localized: "Fetching streams…")
+        streamActionButton.isHidden = true
+        streamSpinner.startAnimation(nil)
+
+        let totalEnabledAddons = ((try? core.addons()) ?? []).filter(\.enabled).count
+        streamStatusLabel.stringValue = totalEnabledAddons > 0
+            ? String(localized: "Querying \(totalEnabledAddons) addons…")
+            : String(localized: "Fetching streams…")
         renderRankedStreams()
 
         let mediaType = richMeta?.meta.mediaType ?? preview.mediaType
         let core = core
-        let collector = StreamBatchCollector { [weak self] batch in
+        let collector = StreamBatchCollector { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.accumulatedStreams.append(contentsOf: batch.streams)
-                self.renderRankedStreams()
+                self.respondedAddonsCount += 1
             }
         }
         streamTask = Task { [weak self] in
+            // Re-wrap collector so we append incoming streams progressively per addon.
+            let liveCollector = StreamBatchCollector { [weak self] batch in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.respondedAddonsCount += 1
+                    self.accumulatedStreams.append(contentsOf: batch.streams)
+                    if totalEnabledAddons > 0 {
+                        self.streamStatusLabel.stringValue = String(
+                            localized: "\(min(self.respondedAddonsCount, totalEnabledAddons)) of \(totalEnabledAddons) addons answered · \(self.accumulatedStreams.count) streams"
+                        )
+                    }
+                    self.renderRankedStreams()
+                }
+            }
+            _ = collector
             do {
-                let all = try await core.streamsIncremental(mediaType: mediaType, id: videoId, observer: collector)
+                let all = try await core.streamsIncremental(mediaType: mediaType, id: videoId, observer: liveCollector)
                 guard !Task.isCancelled, let self else { return }
+                self.streamSpinner.stopAnimation(nil)
                 self.accumulatedStreams = all
                 if all.isEmpty {
                     self.streamStatusLabel.stringValue = String(localized: "No playable streams found from enabled addons. Check Addons or try another source.")
+                    self.streamActionButton.title = String(localized: "Open Addons…")
+                    self.streamActionButton.isHidden = false
                 }
                 self.renderRankedStreams()
             } catch {
                 guard !Task.isCancelled, let self else { return }
+                self.streamSpinner.stopAnimation(nil)
                 if self.accumulatedStreams.isEmpty {
                     self.streamStatusLabel.stringValue = FriendlyError.explain(error)
+                    let hint = FriendlyError.actionHint(error)
+                    self.streamActionButton.title = hint == .openAddons
+                        ? String(localized: "Open Addons…")
+                        : String(localized: "Retry")
+                    self.streamActionButton.isHidden = false
                 }
             }
         }
+    }
+
+    @objc private func streamRecoveryAction() {
+        if streamActionButton.title == String(localized: "Open Addons…") {
+            onOpenAddons?()
+        } else if let vid = lastStreamVideoId, let title = lastStreamTitle {
+            fetchStreams(videoId: vid, title: title, season: lastStreamSeason, episode: lastStreamEpisode)
+        }
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        goBack()
     }
 
     private func rebuildStreamFilters() {
@@ -768,7 +855,7 @@ final class TitleDetailViewController: NSViewController {
             } catch {
                 let alert = NSAlert()
                 alert.messageText = String(localized: "Trailer unavailable")
-                alert.informativeText = error.localizedDescription
+                alert.informativeText = FriendlyError.explain(error)
                 if let window = self?.view.window {
                     await alert.beginSheetModal(for: window)
                 } else {

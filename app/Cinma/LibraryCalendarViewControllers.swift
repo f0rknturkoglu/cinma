@@ -5,9 +5,18 @@ import AppKit
 final class LibraryViewController: NSViewController, NSCollectionViewDataSource, NSCollectionViewDelegate {
     private let core: CinmaCore
     private let onOpenDetail: (MetaPreviewInfo) -> Void
+    var onOpenHome: (() -> Void)?
 
-    private let collectionView = NSCollectionView()
+    private let collectionView = KeyboardCollectionView()
+    private let emptyStack = NSStackView()
     private let emptyLabel = NSTextField(wrappingLabelWithString: String(localized: "Your library is empty. Add movies or shows from Home or Discover."))
+    private lazy var exploreButton = CinemaTheme.makePillButton(
+        title: String(localized: "Explore Home"),
+        symbol: "house",
+        primary: true,
+        target: self,
+        action: #selector(exploreHomeClicked)
+    )
     private var items: [MetaPreviewInfo] = []
 
     init(core: CinmaCore, onOpenDetail: @escaping (MetaPreviewInfo) -> Void) {
@@ -41,6 +50,10 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.register(PosterCardItem.self, forItemWithIdentifier: PosterCardItem.identifier)
+        collectionView.onActivateSelection = { [weak self] ip in
+            guard let self, self.items.indices.contains(ip.item) else { return }
+            self.onOpenDetail(self.items[ip.item])
+        }
 
         let scroll = NSScrollView()
         scroll.documentView = collectionView
@@ -51,11 +64,16 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
         emptyLabel.font = .systemFont(ofSize: 15, weight: .regular)
         emptyLabel.textColor = CinemaTheme.textMuted
         emptyLabel.alignment = .center
-        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
+        emptyStack.orientation = .vertical
+        emptyStack.alignment = .centerX
+        emptyStack.spacing = 12
+        emptyStack.addArrangedSubview(emptyLabel)
+        emptyStack.addArrangedSubview(exploreButton)
+        emptyStack.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(titleLabel)
         root.addSubview(scroll)
-        root.addSubview(emptyLabel)
+        root.addSubview(emptyStack)
 
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: root.topAnchor, constant: 84),
@@ -66,8 +84,8 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
 
-            emptyLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            emptyLabel.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            emptyStack.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            emptyStack.centerYAnchor.constraint(equalTo: root.centerYAnchor),
             emptyLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
         ])
         view = root
@@ -96,8 +114,12 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
                 runtime: nil
             )
         }
-        emptyLabel.isHidden = !items.isEmpty
+        emptyStack.isHidden = !items.isEmpty
         collectionView.reloadData()
+    }
+
+    @objc private func exploreHomeClicked() {
+        onOpenHome?()
     }
 
     func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {
@@ -116,7 +138,10 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
     }
 
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
-        guard let first = indexPaths.first, items.indices.contains(first.item) else { return }
+        guard let first = indexPaths.first,
+              items.indices.contains(first.item),
+              NSApp.currentEvent?.type == .leftMouseDown || NSApp.currentEvent?.type == .leftMouseUp
+        else { return }
         collectionView.deselectItems(at: indexPaths)
         onOpenDetail(items[first.item])
     }
@@ -127,9 +152,17 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
 final class CalendarViewController: NSViewController {
     private let core: CinmaCore
     private let onOpenDetail: (MetaPreviewInfo) -> Void
+    var onOpenSettings: (() -> Void)?
 
     private let listStack = NSStackView()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
+    private lazy var settingsButton = CinemaTheme.makePillButton(
+        title: String(localized: "Open Settings…"),
+        symbol: "gearshape",
+        primary: true,
+        target: self,
+        action: #selector(openSettingsClicked)
+    )
     private var thumbTasks: [Task<Void, Never>] = []
 
     init(core: CinmaCore, onOpenDetail: @escaping (MetaPreviewInfo) -> Void) {
@@ -170,8 +203,11 @@ final class CalendarViewController: NSViewController {
         scroll.hasVerticalScroller = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
+        settingsButton.isHidden = true
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(titleLabel)
         root.addSubview(statusLabel)
+        root.addSubview(settingsButton)
         root.addSubview(scroll)
 
         NSLayoutConstraint.activate([
@@ -182,7 +218,10 @@ final class CalendarViewController: NSViewController {
             statusLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 64),
             statusLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -64),
 
-            scroll.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 18),
+            settingsButton.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 12),
+            settingsButton.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 64),
+
+            scroll.topAnchor.constraint(equalTo: settingsButton.bottomAnchor, constant: 14),
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -209,9 +248,11 @@ final class CalendarViewController: NSViewController {
         let hasTmdb = (try? core.hasTmdbKey()) ?? false
         if !hasTmdb {
             statusLabel.stringValue = String(localized: "Add a TMDB API key in Settings to track upcoming episode air dates.")
+            settingsButton.isHidden = false
             renderEntries([])
             return
         }
+        settingsButton.isHidden = true
         statusLabel.stringValue = String(localized: "Checking upcoming episodes for library shows…")
         let core = core
         Task { [weak self] in
@@ -222,6 +263,10 @@ final class CalendarViewController: NSViewController {
                 : String(localized: "\(entries.count) upcoming episodes")
             self.renderEntries(entries)
         }
+    }
+
+    @objc private func openSettingsClicked() {
+        onOpenSettings?()
     }
 
     private func renderEntries(_ entries: [UpcomingEpisodeInfo]) {
@@ -240,6 +285,7 @@ final class CalendarViewController: NSViewController {
             row.layer?.backgroundColor = CinemaTheme.cardBackground.cgColor
             row.layer?.borderWidth = 1
             row.layer?.borderColor = CinemaTheme.cardBorder.cgColor
+            row.setAccessibilityLabel("\(ep.showName) S\(ep.season)E\(ep.episode) \(ep.episodeName), \(ep.airDate)")
 
             let img = NSImageView()
             img.imageScaling = .scaleAxesIndependently

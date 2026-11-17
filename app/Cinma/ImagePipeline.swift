@@ -12,8 +12,8 @@ final class ImagePipeline {
 
     private let memoryCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
-        cache.totalCostLimit = 64 * 1024 * 1024
-        cache.countLimit = 250
+        cache.totalCostLimit = 48 * 1024 * 1024
+        cache.countLimit = 220
         return cache
     }()
 
@@ -32,6 +32,21 @@ final class ImagePipeline {
         config.timeoutIntervalForRequest = 15
         config.httpMaximumConnectionsPerHost = 6
         session = URLSession(configuration: config)
+
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.memoryCache.totalCostLimit = 16 * 1024 * 1024 }
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.memoryCache.totalCostLimit = 48 * 1024 * 1024 }
+        }
     }
 
     func clearMemoryCache() {
@@ -43,7 +58,7 @@ final class ImagePipeline {
         guard let urlString, !urlString.isEmpty, let url = URL(string: urlString) else {
             return nil
         }
-        let maxPixels = max(64, Int((max(pointSize.width, pointSize.height) * scale).rounded(.up)))
+        let maxPixels = min(1920, max(64, Int((max(pointSize.width, pointSize.height) * scale).rounded(.up))))
         let key = "\(urlString)#\(maxPixels)" as NSString
         if let cached = memoryCache.object(forKey: key) {
             return cached

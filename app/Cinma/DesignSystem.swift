@@ -24,22 +24,59 @@ enum PlayRequest: Sendable {
 }
 
 enum FriendlyError {
-    static func explain(_ error: Error) -> String {
-        let raw = error.localizedDescription
-        let lower = raw.lowercased()
-        if lower.contains("no peers") || lower.contains("timed out waiting for torrent metadata") {
-            return String(localized: "No active peers found for this torrent. Try another stream with more seeders.")
+    enum RecoveryAction {
+        case openAddons
+        case openSettings
+        case retry
+    }
+
+    static func rawMessage(_ error: Error) -> String {
+        if let ce = error as? CinmaError {
+            switch ce {
+            case .Database(let m), .Io(let m), .Network(let m), .Torrent(let m),
+                 .Player(let m), .Invalid(let m), .Internal(let m):
+                return m
+            }
         }
-        if lower.contains("404") || lower.contains("410") || lower.contains("connection refused") || lower.contains("dns") {
-            return String(localized: "Stream or addon server is unreachable right now. Switch streams or check addon status.")
+        return error.localizedDescription
+    }
+
+    static func actionHint(_ error: Error) -> RecoveryAction? {
+        let lower = rawMessage(error).lowercased()
+        if lower.contains("no stream") || lower.contains("no addon") || lower.contains("no enabled addon") {
+            return .openAddons
+        }
+        if lower.contains("yt-dlp is not installed") || lower.contains("turned off") || lower.contains("tmdb") {
+            return .openSettings
+        }
+        if lower.contains("timeout") || lower.contains("unreachable") || lower.contains("connection") {
+            return .retry
+        }
+        return nil
+    }
+
+    static func explain(_ error: Error) -> String {
+        let msg = rawMessage(error)
+        let lower = msg.lowercased()
+        if lower.contains("no stream") || lower.contains("no enabled addon") {
+            return String(localized: "No enabled addon returned streams. Add or enable a stream addon under Profile → Addons.")
+        }
+        if lower.contains("no peers") || lower.contains("timed out waiting for torrent metadata") {
+            return String(localized: "No active peers responded for this torrent. Try another stream with more seeders.")
+        }
+        if lower.contains("404") || lower.contains("410") || lower.contains("connection refused") || lower.contains("dns") || lower.contains("timed out") {
+            return String(localized: "The server did not respond in time. Try another source or check Addons.")
         }
         if lower.contains("yt-dlp is not installed") {
-            return String(localized: "yt-dlp is not installed yet. Install it from Settings → Trailers & Web Downloads.")
+            return String(localized: "yt-dlp is not installed. Install it from Settings → Downloads.")
         }
         if lower.contains("feature `") && lower.contains("turned off") {
-            return String(localized: "This feature is turned off in Settings. Enable it to continue.")
+            return String(localized: "This feature is turned off. Enable it in Settings to use it.")
         }
-        return raw
+        if lower.contains("tmdb") && (lower.contains("401") || lower.contains("unauthorized") || lower.contains("key")) {
+            return String(localized: "TMDB API key was rejected. Check your key in Settings.")
+        }
+        return msg
     }
 }
 
@@ -70,6 +107,7 @@ enum CinemaTheme {
     enum GlassKind {
         case regular
         case clear
+        case hud
     }
 
     /// Creates an `NSGlassEffectView` on macOS 26+ or `NSVisualEffectView` fallback
@@ -85,10 +123,26 @@ enum CinemaTheme {
             return solid
         }
         if #available(macOS 26.0, *) {
+            if kind == .hud {
+                let host = NSView()
+                host.wantsLayer = true
+                host.layer?.cornerRadius = cornerRadius
+                host.layer?.masksToBounds = true
+                host.layer?.backgroundColor = NSColor(white: 0.03, alpha: 0.64).cgColor
+                host.layer?.borderWidth = 1
+                host.layer?.borderColor = NSColor(white: 1, alpha: 0.16).cgColor
+                let glass = NSGlassEffectView()
+                glass.style = .regular
+                glass.cornerRadius = cornerRadius
+                glass.tintColor = NSColor(white: 0.05, alpha: 0.72)
+                glass.autoresizingMask = [.width, .height]
+                host.addSubview(glass)
+                return host
+            }
             let glass = NSGlassEffectView()
             glass.style = kind == .clear ? .clear : .regular
             glass.cornerRadius = cornerRadius
-            glass.tintColor = NSColor(white: 0.10, alpha: 0.32)
+            glass.tintColor = NSColor(white: 0.10, alpha: 0.36)
             return glass
         }
         let fx = NSVisualEffectView()
@@ -136,6 +190,7 @@ enum CinemaTheme {
         let button = PillButton(title: title, target: target, action: action)
         button.isBordered = false
         button.wantsLayer = true
+        button.focusRingType = .exterior
         button.font = .systemFont(ofSize: 13.5, weight: primary ? .bold : .semibold)
         button.contentTintColor = primary ? accentInk : textPrimary
         if let symbol, let img = NSImage(systemSymbolName: symbol, accessibilityDescription: title) {
@@ -168,6 +223,42 @@ final class PillButton: NSButton {
         let base = super.intrinsicContentSize
         return NSSize(width: base.width + 28, height: max(base.height + 14, 32))
     }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: 18, yRadius: 18).fill()
+    }
+}
+
+/// `NSCollectionView` subclass supporting Return/Space item activation and
+/// clean keyboard arrow-key navigation with scrolling.
+@MainActor
+final class KeyboardCollectionView: NSCollectionView {
+    var onActivateSelection: ((IndexPath) -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok && selectionIndexPaths.isEmpty && numberOfItems(inSection: 0) > 0 {
+            let first = IndexPath(item: 0, section: 0)
+            selectItems(at: [first], scrollPosition: .nearestHorizontalEdge)
+        }
+        return ok
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Return (36), Numpad Enter (76), or Space (49) activates selected item.
+        if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 49 {
+            if let ip = selectionIndexPaths.first {
+                onActivateSelection?(ip)
+                return
+            }
+        }
+        super.keyDown(with: event)
+        if let ip = selectionIndexPaths.first {
+            scrollToItems(at: [ip], scrollPosition: [.nearestHorizontalEdge, .nearestVerticalEdge])
+        }
+    }
 }
 
 /// Hosts a Core Animation `CAGradientLayer` that stays sized to bounds.
@@ -194,6 +285,10 @@ final class GradientLayerView: NSView {
         CATransaction.setDisableActions(true)
         gradient.frame = bounds
         CATransaction.commit()
+    }
+
+    func updateColors(_ colors: [NSColor]) {
+        gradient.colors = colors.map(\.cgColor)
     }
 }
 

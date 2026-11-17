@@ -121,11 +121,23 @@ final class PosterCardItem: NSCollectionViewItem {
         CATransaction.commit()
     }
 
+    override var isSelected: Bool {
+        didSet { updateSelectionRing() }
+    }
+
+    private func updateSelectionRing() {
+        cardBox.layer?.borderWidth = isSelected ? 2.5 : 1
+        cardBox.layer?.borderColor = isSelected
+            ? CinemaTheme.accent.cgColor
+            : NSColor(white: 1, alpha: 0.10).cgColor
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
         loadTask?.cancel()
         loadTask = nil
         artworkView.image = nil
+        updateSelectionRing()
     }
 
     func configure(with item: MetaPreviewInfo) {
@@ -148,7 +160,10 @@ final class PosterCardItem: NSCollectionViewItem {
         artworkView.setRemoteImage(item.poster, pointSize: NSSize(width: 168, height: 252), taskStorage: &loadTask)
         view.setAccessibilityElement(true)
         view.setAccessibilityRole(.button)
-        view.setAccessibilityLabel("\(item.name) \(metaLabel.stringValue)")
+        view.setAccessibilityTitle(item.name)
+        view.setAccessibilityLabel("\(item.name), \(metaLabel.stringValue)")
+        view.setAccessibilityHelp(String(localized: "Press Return to view sources"))
+        updateSelectionRing()
     }
 }
 
@@ -266,11 +281,23 @@ final class ContinueWatchingCardItem: NSCollectionViewItem {
         CATransaction.commit()
     }
 
+    override var isSelected: Bool {
+        didSet { updateSelectionRing() }
+    }
+
+    private func updateSelectionRing() {
+        cardBox.layer?.borderWidth = isSelected ? 2.5 : 1
+        cardBox.layer?.borderColor = isSelected
+            ? CinemaTheme.accent.cgColor
+            : NSColor(white: 1, alpha: 0.10).cgColor
+    }
+
     override func prepareForReuse() {
         super.prepareForReuse()
         loadTask?.cancel()
         loadTask = nil
         artworkView.image = nil
+        updateSelectionRing()
     }
 
     func configure(with entry: WatchProgressInfo) {
@@ -295,6 +322,9 @@ final class ContinueWatchingCardItem: NSCollectionViewItem {
         artworkView.setRemoteImage(entry.artwork, pointSize: NSSize(width: 300, height: 168), taskStorage: &loadTask)
         view.setAccessibilityElement(true)
         view.setAccessibilityRole(.button)
-        view.setAccessibilityLabel("\(entry.title) \(metaLabel.stringValue)")
+        view.setAccessibilityTitle(entry.title)
+        view.setAccessibilityLabel("\(entry.title), \(metaLabel.stringValue)")
+        view.setAccessibilityHelp(String(localized: "Press Return to resume playback"))
+        updateSelectionRing()
     }
 }

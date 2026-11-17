@@ -37,7 +37,7 @@ impl Core {
         let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
         Ok(db
             .get_profile_setting(profile, LANG_SETTING_KEY)?
-            .unwrap_or_else(|| "tr-TR".to_owned()))
+            .unwrap_or_else(|| "en-US".to_owned()))
     }
 
     pub fn set_metadata_language(&self, lang: &str) -> Result<(), CoreError> {

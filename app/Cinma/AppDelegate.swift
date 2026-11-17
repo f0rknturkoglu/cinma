@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var core: CinmaCore?
     private var shell: MainShellViewController?
     private var menuBar: MenuBarController?
+    private var miniPanel: MiniPlayerPanel?
+    private var pipPlayerVC: PlayerViewController?
     private var pendingLinks: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -115,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DevAutomation.run(core: core) { [weak self] request in self?.showPlayer(request) }
         case let .failure(error):
             home?.showStatus(
-                String(localized: "Core failed to start: \(error.localizedDescription)")
+                String(localized: "Core failed to start: \(FriendlyError.explain(error))")
             )
         }
     }
@@ -159,6 +161,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         shell?.openFile()
     }
 
+    @objc func showAbout(_ sender: Any?) {
+        AboutWindow.show()
+    }
+
     // MARK: - Deep links (stremio://…)
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -188,7 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     shell?.showStatus(String(localized: "Installed \(addon.name) \(addon.version)"))
                     DevAutomation.log("deep link installed \(addon.id)")
                 } catch {
-                    shell?.showStatus(String(localized: "Install failed: \(error.localizedDescription)"))
+                    shell?.showStatus(String(localized: "Install failed: \(FriendlyError.explain(error))"))
                 }
             }
         default:
@@ -216,10 +222,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showPlayer(_ request: PlayRequest) {
         guard let core, let window else { return }
+        dismissMiniPlayerAndStop(closePlayer: true)
         let player = PlayerViewController(core: core, request: request) { [weak self] in
             self?.showBrowse()
         }
+        player.onEnterPiP = { [weak self, weak player] in
+            guard let self, let player else { return }
+            self.enterMiniPlayer(player)
+        }
         MainWindow.setContent(player, in: window)
+    }
+
+    private func enterMiniPlayer(_ player: PlayerViewController) {
+        guard miniPanel == nil else { return }
+        let title = player.playerTitleForPiP()
+        let videoView = player.detachVideoViewForPiP()
+        let panel = MiniPlayerPanel(
+            videoView: videoView,
+            title: title,
+            isPaused: player.isPausedForPiP,
+            onTogglePause: { [weak player] in player?.togglePauseFromPiP() },
+            onExpand: { [weak self] in self?.exitMiniPlayerToWindow() },
+            onClosePanel: { [weak self] in self?.dismissMiniPlayerAndStop(closePlayer: true) }
+        )
+        player.onPauseStateChanged = { [weak panel] paused in
+            panel?.updatePaused(paused)
+        }
+        pipPlayerVC = player
+        miniPanel = panel
+        showBrowse()
+        panel.orderFront(nil)
+    }
+
+    private func exitMiniPlayerToWindow() {
+        guard let player = pipPlayerVC else { return }
+        player.onPauseStateChanged = nil
+        miniPanel?.orderOut(nil)
+        miniPanel = nil
+        pipPlayerVC = nil
+        player.reattachVideoViewFromPiP()
+        reopenMainWindow()
+        if let window {
+            MainWindow.setContent(player, in: window)
+        }
+    }
+
+    private func dismissMiniPlayerAndStop(closePlayer: Bool) {
+        if let player = pipPlayerVC {
+            player.onPauseStateChanged = nil
+            miniPanel?.orderOut(nil)
+            miniPanel = nil
+            pipPlayerVC = nil
+            if closePlayer {
+                player.reattachVideoViewFromPiP()
+                player.closeFromPiP()
+            }
+        }
     }
 
     static func dataDirectory() -> URL {

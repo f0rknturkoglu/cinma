@@ -19,6 +19,7 @@ use cinma_db::{
 use tokio::runtime::Handle;
 
 pub type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
+type LiveProgressMap = Arc<Mutex<HashMap<i64, (u64, Option<u64>)>>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum QueueError {
@@ -40,6 +41,7 @@ pub struct Job {
     pub cancel: CancellationToken,
     db: Arc<Mutex<Database>>,
     store: Arc<BlobStore>,
+    live: LiveProgressMap,
 }
 
 impl Job {
@@ -124,11 +126,19 @@ impl Job {
 
     /// Progress for engines without a blob (the bytes are durable in their file).
     pub fn report_bytes(&self, done: u64, total: Option<u64>) -> Result<(), QueueError> {
+        self.report_live_bytes(done, total);
         self.db
             .lock()
             .map_err(|_| QueueError::Poisoned)?
             .set_download_bytes(self.download.id, done, total)?;
         Ok(())
+    }
+
+    /// Updates in-memory progress for smooth UI display without touching SQLite.
+    pub fn report_live_bytes(&self, done: u64, total: Option<u64>) {
+        if let Ok(mut guard) = self.live.lock() {
+            guard.insert(self.download.id, (done, total));
+        }
     }
 }
 
@@ -148,6 +158,7 @@ struct Inner {
     engines: Mutex<HashMap<DownloadKind, Arc<dyn DownloadEngine>>>,
     /// Running jobs: download id → (job generation, cancel token).
     running: Mutex<HashMap<i64, (u64, CancellationToken)>>,
+    live_progress: LiveProgressMap,
     next_generation: std::sync::atomic::AtomicU64,
     on_change: Mutex<Option<ChangeListener>>,
 }
@@ -175,6 +186,7 @@ impl Queue {
                 max_active: max_active.max(1),
                 engines: Mutex::new(HashMap::new()),
                 running: Mutex::new(HashMap::new()),
+                live_progress: Arc::new(Mutex::new(HashMap::new())),
                 next_generation: std::sync::atomic::AtomicU64::new(0),
                 on_change: Mutex::new(None),
             }),
@@ -214,6 +226,9 @@ impl Queue {
             return Err(QueueError::NoEngine(download.kind));
         }
         let id = self.db()?.insert_download(download)?;
+        if let Ok(mut live) = self.inner.live_progress.lock() {
+            live.remove(&id);
+        }
         self.changed(id);
         self.schedule()?;
         Ok(id)
@@ -224,6 +239,9 @@ impl Queue {
         self.db()?
             .set_download_state(id, DownloadState::Paused, None)?;
         self.stop_job(id)?;
+        if let Ok(mut live) = self.inner.live_progress.lock() {
+            live.remove(&id);
+        }
         self.changed(id);
         self.schedule()
     }
@@ -233,6 +251,9 @@ impl Queue {
         if matches!(row.state, DownloadState::Paused | DownloadState::Failed) {
             self.db()?
                 .set_download_state(id, DownloadState::Queued, None)?;
+            if let Ok(mut live) = self.inner.live_progress.lock() {
+                live.remove(&id);
+            }
             self.changed(id);
         }
         self.schedule()
@@ -246,12 +267,45 @@ impl Queue {
         if delete_data && let Some(blob) = row.blob_id {
             self.inner.store.remove(&BlobId::parse(&blob)?)?;
         }
+        if let Ok(mut live) = self.inner.live_progress.lock() {
+            live.remove(&id);
+        }
         self.changed(id);
         self.schedule()
     }
 
     pub fn downloads(&self, profile: ProfileId) -> Result<Vec<DownloadRow>, QueueError> {
-        Ok(self.db()?.downloads(profile)?)
+        let mut rows = self.db()?.downloads(profile)?;
+        self.overlay_live_progress(&mut rows);
+        Ok(rows)
+    }
+
+    /// Overlays live in-memory byte counts onto active download rows without
+    /// triggering SQLite writes or disk checkpoints.
+    pub fn overlay_live_progress(&self, rows: &mut [DownloadRow]) {
+        let live = self
+            .inner
+            .live_progress
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        for row in rows.iter_mut() {
+            if row.state != DownloadState::Active {
+                continue;
+            }
+            if let Some(&(done, total)) = live.get(&row.id) {
+                row.bytes_done = row.bytes_done.max(done);
+                if row.bytes_total.is_none() {
+                    row.bytes_total = total;
+                }
+            }
+            if let Some(blob_hex) = row.blob_id.as_deref()
+                && let Ok(bid) = BlobId::parse(blob_hex)
+                && let Ok(blob) = self.inner.store.open_blob(&bid)
+            {
+                row.bytes_done = row.bytes_done.max(blob.available().covered());
+            }
+        }
     }
 
     pub fn active_count(&self) -> usize {
@@ -292,6 +346,9 @@ impl Queue {
         let started = self.start_ready()?;
         // Notify outside the lock: listeners may call back into the queue.
         for id in started {
+            if let Ok(mut live) = self.inner.live_progress.lock() {
+                live.remove(&id);
+            }
             self.changed(id);
         }
         Ok(())
@@ -339,6 +396,7 @@ impl Queue {
                 cancel: cancel.clone(),
                 db: Arc::clone(&self.inner.db),
                 store: Arc::clone(&self.inner.store),
+                live: Arc::clone(&self.inner.live_progress),
             };
             let queue = self.clone();
             self.inner.runtime.spawn(async move {
@@ -378,6 +436,9 @@ impl Queue {
             if let Ok(db) = self.db() {
                 let _ = db.set_download_state(id, state, error);
             }
+        }
+        if let Ok(mut live) = self.inner.live_progress.lock() {
+            live.remove(&id);
         }
         self.changed(id);
         let _ = self.schedule();

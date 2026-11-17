@@ -10,7 +10,7 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
 
     private let headingLabel = NSTextField(labelWithString: "")
     private let sourceLabel = NSTextField(labelWithString: "")
-    private let collectionView = NSCollectionView()
+    private let collectionView = KeyboardCollectionView()
     private let scrollView = NSScrollView()
     private var content: Content = .posters([])
 
@@ -42,6 +42,9 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
         collectionView.delegate = self
         collectionView.register(PosterCardItem.self, forItemWithIdentifier: PosterCardItem.identifier)
         collectionView.register(ContinueWatchingCardItem.self, forItemWithIdentifier: ContinueWatchingCardItem.identifier)
+        collectionView.onActivateSelection = { [weak self] ip in
+            self?.activateItem(at: ip)
+        }
 
         scrollView.documentView = collectionView
         scrollView.drawsBackground = false
@@ -119,13 +122,19 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
     }
 
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
-        guard let first = indexPaths.first else { return }
+        guard let first = indexPaths.first,
+              NSApp.currentEvent?.type == .leftMouseDown || NSApp.currentEvent?.type == .leftMouseUp
+        else { return }
         collectionView.deselectItems(at: indexPaths)
+        activateItem(at: first)
+    }
+
+    private func activateItem(at indexPath: IndexPath) {
         switch content {
-        case .continueWatching(let items) where items.indices.contains(first.item):
-            onSelectContinue?(items[first.item])
-        case .posters(let items) where items.indices.contains(first.item):
-            onSelectPoster?(items[first.item])
+        case .continueWatching(let items) where items.indices.contains(indexPath.item):
+            onSelectContinue?(items[indexPath.item])
+        case .posters(let items) where items.indices.contains(indexPath.item):
+            onSelectPoster?(items[indexPath.item])
         default:
             break
         }
@@ -146,7 +155,14 @@ final class HomeBrowserViewController: NSViewController {
     // Hero views
     private let heroContainer = NSView()
     private let heroBackdrop = NSImageView()
-    private let heroFallbackGradient = CAGradientLayer()
+    private let heroFallbackView: GradientLayerView = {
+        let colors = ArtworkPlaceholder.gradient(for: "cinma-hero").compactMap { NSColor(cgColor: $0) }
+        return GradientLayerView(
+            colors: colors,
+            start: CGPoint(x: 0.2, y: 0.1),
+            end: CGPoint(x: 0.9, y: 0.9)
+        )
+    }()
     private let heroKicker = NSTextField(labelWithString: String(localized: "Featured"))
     private let heroTitle = NSTextField(wrappingLabelWithString: "CINMA")
     private let heroMeta = NSTextField(labelWithString: "")
@@ -158,6 +174,7 @@ final class HomeBrowserViewController: NSViewController {
     private var heroItems: [MetaPreviewInfo] = []
     private var heroIndex = 0
     private var heroTimer: Task<Void, Never>?
+    private var windowObservers: [NSObjectProtocol] = []
 
     private let continueRail = CatalogRailView(title: String(localized: "Continue Watching"))
     private var continueHeight: NSLayoutConstraint?
@@ -232,6 +249,7 @@ final class HomeBrowserViewController: NSViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
+        installWindowObserversIfNeeded()
         startHeroRotationIfNeeded()
     }
 
@@ -239,41 +257,85 @@ final class HomeBrowserViewController: NSViewController {
         super.viewWillDisappear()
         heroTimer?.cancel()
         heroTimer = nil
+        removeWindowObservers()
     }
 
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        heroFallbackGradient.frame = heroContainer.bounds
-        CATransaction.commit()
+    private func installWindowObserversIfNeeded() {
+        guard windowObservers.isEmpty else { return }
+        let nc = NotificationCenter.default
+        if let window = view.window {
+            windowObservers.append(
+                nc.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+                    Task { @MainActor in self?.syncHeroRotationWithVisibility() }
+                }
+            )
+        }
+        windowObservers.append(
+            nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    self?.heroTimer?.cancel()
+                    self?.heroTimer = nil
+                }
+            }
+        )
+        windowObservers.append(
+            nc.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.syncHeroRotationWithVisibility() }
+            }
+        )
+    }
+
+    private func removeWindowObservers() {
+        for obs in windowObservers {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        windowObservers.removeAll()
+    }
+
+    private func syncHeroRotationWithVisibility() {
+        let visible = view.window?.occlusionState.contains(.visible) == true && NSApp.isActive
+        if visible {
+            startHeroRotationIfNeeded()
+        } else {
+            heroTimer?.cancel()
+            heroTimer = nil
+        }
     }
 
     private func setupHero() {
         heroContainer.wantsLayer = true
-        heroContainer.layer?.insertSublayer(heroFallbackGradient, at: 0)
-        heroFallbackGradient.colors = ArtworkPlaceholder.gradient(for: "cinma-hero")
-        heroFallbackGradient.startPoint = CGPoint(x: 0.2, y: 0.1)
-        heroFallbackGradient.endPoint = CGPoint(x: 0.9, y: 0.9)
+        heroContainer.layer?.masksToBounds = true
         heroContainer.translatesAutoresizingMaskIntoConstraints = false
+        heroFallbackView.translatesAutoresizingMaskIntoConstraints = false
 
-        heroBackdrop.imageScaling = .scaleAxesIndependently
+        heroBackdrop.imageScaling = .scaleProportionallyUpOrDown
+        heroBackdrop.wantsLayer = true
+        heroBackdrop.layer?.contentsGravity = .resizeAspectFill
+        heroBackdrop.layer?.masksToBounds = true
         heroBackdrop.translatesAutoresizingMaskIntoConstraints = false
 
         let leftScrim = GradientLayerView(
             colors: [
-                CinemaTheme.background.withAlphaComponent(0.94),
-                CinemaTheme.background.withAlphaComponent(0.55),
+                CinemaTheme.background.withAlphaComponent(0.95),
+                CinemaTheme.background.withAlphaComponent(0.70),
+                CinemaTheme.background.withAlphaComponent(0.32),
+                CinemaTheme.background.withAlphaComponent(0.08),
                 .clear,
             ],
-            locations: [0, 0.42, 0.78],
+            locations: [0, 0.24, 0.48, 0.72, 0.96],
             start: CGPoint(x: 0, y: 0.5),
             end: CGPoint(x: 1, y: 0.5)
         )
         leftScrim.translatesAutoresizingMaskIntoConstraints = false
 
         let bottomScrim = GradientLayerView(
-            colors: [.clear, CinemaTheme.background],
+            colors: [
+                .clear,
+                CinemaTheme.background.withAlphaComponent(0.45),
+                CinemaTheme.background.withAlphaComponent(0.88),
+                CinemaTheme.background,
+            ],
+            locations: [0, 0.38, 0.78, 1],
             start: CGPoint(x: 0.5, y: 1),
             end: CGPoint(x: 0.5, y: 0)
         )
@@ -320,9 +382,7 @@ final class HomeBrowserViewController: NSViewController {
         libButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             playButton.heightAnchor.constraint(equalToConstant: 40),
-            playButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 112),
             detailsButton.heightAnchor.constraint(equalToConstant: 40),
-            detailsButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 138),
             libButton.heightAnchor.constraint(equalToConstant: 40),
             libButton.widthAnchor.constraint(equalToConstant: 40),
         ])
@@ -340,6 +400,7 @@ final class HomeBrowserViewController: NSViewController {
         heroDotsStack.spacing = 6
         heroDotsStack.translatesAutoresizingMaskIntoConstraints = false
 
+        heroContainer.addSubview(heroFallbackView)
         heroContainer.addSubview(heroBackdrop)
         heroContainer.addSubview(leftScrim)
         heroContainer.addSubview(bottomScrim)
@@ -348,6 +409,11 @@ final class HomeBrowserViewController: NSViewController {
 
         NSLayoutConstraint.activate([
             heroContainer.heightAnchor.constraint(equalToConstant: 560),
+
+            heroFallbackView.topAnchor.constraint(equalTo: heroContainer.topAnchor),
+            heroFallbackView.leadingAnchor.constraint(equalTo: heroContainer.leadingAnchor),
+            heroFallbackView.trailingAnchor.constraint(equalTo: heroContainer.trailingAnchor),
+            heroFallbackView.bottomAnchor.constraint(equalTo: heroContainer.bottomAnchor),
 
             heroBackdrop.topAnchor.constraint(equalTo: heroContainer.topAnchor),
             heroBackdrop.leadingAnchor.constraint(equalTo: heroContainer.leadingAnchor),
@@ -362,7 +428,7 @@ final class HomeBrowserViewController: NSViewController {
             bottomScrim.leadingAnchor.constraint(equalTo: heroContainer.leadingAnchor),
             bottomScrim.trailingAnchor.constraint(equalTo: heroContainer.trailingAnchor),
             bottomScrim.bottomAnchor.constraint(equalTo: heroContainer.bottomAnchor),
-            bottomScrim.heightAnchor.constraint(equalToConstant: 240),
+            bottomScrim.heightAnchor.constraint(equalToConstant: 280),
 
             textStack.leadingAnchor.constraint(equalTo: heroContainer.leadingAnchor, constant: 64),
             textStack.bottomAnchor.constraint(equalTo: heroContainer.bottomAnchor, constant: -88),
@@ -498,7 +564,7 @@ final class HomeBrowserViewController: NSViewController {
     private func renderHero() {
         guard heroItems.indices.contains(heroIndex) else { return }
         let item = heroItems[heroIndex]
-        heroFallbackGradient.colors = ArtworkPlaceholder.gradient(for: item.id)
+        heroFallbackView.updateColors(ArtworkPlaceholder.gradient(for: item.id).compactMap { NSColor(cgColor: $0) })
         heroTitle.stringValue = item.name.uppercased()
         heroMeta.stringValue = [
             item.releaseInfo,
@@ -509,7 +575,7 @@ final class HomeBrowserViewController: NSViewController {
         .joined(separator: " · ")
         heroOverview.stringValue = item.description ?? ""
         let art = item.background ?? item.poster
-        heroBackdrop.setRemoteImage(art, pointSize: NSSize(width: 1280, height: 560), taskStorage: &heroLoadTask)
+        heroBackdrop.setRemoteImage(art, pointSize: NSSize(width: 960, height: 420), taskStorage: &heroLoadTask)
         refreshHeroLibraryButton()
         renderHeroDots()
     }
@@ -535,6 +601,7 @@ final class HomeBrowserViewController: NSViewController {
             dot.wantsLayer = true
             dot.layer?.cornerRadius = 2
             dot.layer?.backgroundColor = (i == heroIndex ? CinemaTheme.textPrimary : NSColor(white: 1, alpha: 0.35)).cgColor
+            dot.setAccessibilityLabel(String(localized: "Featured slide \(i + 1)"))
             dot.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
                 dot.widthAnchor.constraint(equalToConstant: i == heroIndex ? 22 : 8),
@@ -546,11 +613,19 @@ final class HomeBrowserViewController: NSViewController {
 
     private func startHeroRotationIfNeeded() {
         heroTimer?.cancel()
+        heroTimer = nil
         guard !CinemaTheme.reduceMotion else { return }
+        if let window = view.window, !window.occlusionState.contains(.visible) || !NSApp.isActive {
+            return
+        }
         heroTimer = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled, let self, self.heroItems.count > 1 else { continue }
+                guard self.view.window?.occlusionState.contains(.visible) == true, NSApp.isActive else {
+                    self.heroTimer = nil
+                    return
+                }
                 self.heroIndex = (self.heroIndex + 1) % self.heroItems.count
                 self.renderHero()
             }

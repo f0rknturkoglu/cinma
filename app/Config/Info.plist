@@ -3,6 +3,8 @@
 <!-- Merged with the generated Info.plist (GENERATE_INFOPLIST_FILE). -->
 <plist version="1.0">
 <dict>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

@@ -714,11 +714,20 @@ impl Core {
         Ok(id)
     }
 
-    /// Reads the active profile's downloads straight from SQLite without spinning up engines.
+    /// Reads the active profile's downloads from SQLite and overlays any live
+    /// in-memory progress without spawning engines or writing to disk.
     pub fn downloads(&self) -> Result<Vec<DownloadRow>, CoreError> {
         let profile = self.active_profile()?;
-        let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
-        Ok(db.downloads(profile)?)
+        let mut rows = {
+            let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
+            db.downloads(profile)?
+        };
+        if let Ok(guard) = self.queue.lock()
+            && let Some(q) = guard.as_ref()
+        {
+            q.overlay_live_progress(&mut rows);
+        }
+        Ok(rows)
     }
 
     pub fn pause_download(self: &Arc<Self>, id: i64) -> Result<(), CoreError> {

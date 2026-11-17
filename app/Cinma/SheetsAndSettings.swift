@@ -108,7 +108,7 @@ struct AddonManagerView: View {
                 newUrl = ""
                 reload()
             } catch {
-                status = String(localized: "Install failed: \(error.localizedDescription)")
+                status = FriendlyError.explain(error)
             }
         }
     }
@@ -204,7 +204,7 @@ struct ProfilePickerView: View {
                                     try core.deleteProfile(id: profile.id)
                                     reload()
                                 } catch {
-                                    errorText = error.localizedDescription
+                                    errorText = FriendlyError.explain(error)
                                 }
                             } label: {
                                 Image(systemName: "trash")
@@ -275,7 +275,7 @@ struct ProfilePickerView: View {
                 errorText = String(localized: "Incorrect PIN")
             }
         } catch {
-            errorText = error.localizedDescription
+            errorText = FriendlyError.explain(error)
         }
     }
 
@@ -286,7 +286,7 @@ struct ProfilePickerView: View {
             newPin = ""
             reload()
         } catch {
-            errorText = error.localizedDescription
+            errorText = FriendlyError.explain(error)
         }
     }
 
@@ -305,7 +305,7 @@ struct ProfilePickerView: View {
             reload()
             onDismiss()
         } catch {
-            errorText = error.localizedDescription
+            errorText = FriendlyError.explain(error)
         }
     }
 }
@@ -318,27 +318,36 @@ struct OnboardingView: View {
 
     @State private var addonUrl = ""
     @State private var tmdbKey = ""
-    @State private var language = "tr-TR"
+    @State private var language = Bundle.main.preferredLocalizations.first?.hasPrefix("tr") == true ? "tr-TR" : "en-US"
     @State private var keepMenuBar = true
-    @State private var status = ""
+    @State private var addonFeedback = ""
+    @State private var tmdbFeedback = ""
     @State private var busy = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(String(localized: "Welcome to Cinma"))
-                .font(.largeTitle.bold())
-            Text(String(localized: "Cinma ships without built-in content sources. Set up your addons, optional TMDB metadata key, and preferences below — you can skip or change everything anytime."))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(String(localized: "Welcome to Cinma"))
+                    .font(.largeTitle.bold())
+                Text(String(localized: "Cinma ships without built-in content sources. Add a Stremio addon, optional TMDB metadata key, and language preference below — you can skip or change everything later."))
+                    .foregroundStyle(.secondary)
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Label(String(localized: "1. Stremio Addon URL (optional)"), systemImage: "puzzlepiece.extension")
                     .font(.headline)
                 HStack {
-                    TextField("https://…/manifest.json", text: $addonUrl)
+                    TextField("https://example.com/manifest.json", text: $addonUrl)
                         .textFieldStyle(.roundedBorder)
                         .accessibilityLabel(String(localized: "Stremio addon manifest URL"))
+                        .onSubmit(installAddon)
                     Button(String(localized: "Install"), action: installAddon)
                         .disabled(busy || addonUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                if !addonFeedback.isEmpty {
+                    Text(addonFeedback)
+                        .font(.caption)
+                        .foregroundStyle(addonFeedback.hasPrefix("✓") ? .green : .orange)
                 }
             }
 
@@ -348,17 +357,23 @@ struct OnboardingView: View {
                 SecureField("TMDB v3 API key", text: $tmdbKey)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(String(localized: "TMDB API Key"))
-                Text(String(localized: "If skipped, Cinma uses installed metadata addons (such as Cinemeta) as fallback."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if !tmdbFeedback.isEmpty {
+                    Text(tmdbFeedback)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else {
+                    Text(String(localized: "If skipped, Cinma uses installed metadata addons (such as Cinemeta) as fallback."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 Label(String(localized: "3. Preferences"), systemImage: "slider.horizontal.3")
                     .font(.headline)
                 Picker(String(localized: "Metadata Language"), selection: $language) {
-                    Text("Türkçe (tr-TR)").tag("tr-TR")
                     Text("English (en-US)").tag("en-US")
+                    Text("Türkçe (tr-TR)").tag("tr-TR")
                 }
                 .onChange(of: language) { _, val in
                     try? core.setMetadataLanguage(lang: val)
@@ -369,16 +384,11 @@ struct OnboardingView: View {
                     }
             }
 
-            if !status.isEmpty {
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             Spacer()
 
             HStack {
                 Button(String(localized: "Skip")) {
+                    try? core.setMetadataLanguage(lang: language)
                     try? core.setOnboardingCompleted(completed: true)
                     onFinish()
                 }
@@ -394,33 +404,55 @@ struct OnboardingView: View {
             }
         }
         .padding(28)
-        .frame(width: 560, height: 470)
+        .frame(width: 560, height: 500)
+        .onAppear {
+            try? core.setMetadataLanguage(lang: language)
+        }
     }
 
     private func installAddon() {
-        let url = addonUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !url.isEmpty else { return }
+        let raw = addonUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+        let lower = raw.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.hasPrefix("stremio://") else {
+            addonFeedback = String(localized: "Enter a full URL starting with https:// or stremio://")
+            return
+        }
         busy = true
-        status = String(localized: "Installing addon…")
+        addonFeedback = String(localized: "Checking addon manifest…")
         Task {
             defer { busy = false }
             do {
-                let addon = try await core.installAddon(url: url)
-                status = String(localized: "Installed \(addon.name) \(addon.version)")
+                let addon = try await core.installAddon(url: raw)
+                addonFeedback = "✓ \(String(localized: "Installed \(addon.name) \(addon.version)"))"
                 addonUrl = ""
             } catch {
-                status = String(localized: "Install failed: \(error.localizedDescription)")
+                addonFeedback = FriendlyError.explain(error)
             }
         }
     }
 
     private func saveAndContinue() {
         let key = tmdbKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !key.isEmpty {
-            try? core.setTmdbKey(key: key)
+        try? core.setMetadataLanguage(lang: language)
+        guard !key.isEmpty else {
+            try? core.setOnboardingCompleted(completed: true)
+            onFinish()
+            return
         }
-        try? core.setOnboardingCompleted(completed: true)
-        onFinish()
+        busy = true
+        tmdbFeedback = ""
+        Task {
+            defer { busy = false }
+            do {
+                try await core.verifyTmdbKey(key: key)
+                try core.setTmdbKey(key: key)
+                try core.setOnboardingCompleted(completed: true)
+                onFinish()
+            } catch {
+                tmdbFeedback = FriendlyError.explain(error)
+            }
+        }
     }
 }
 
@@ -480,7 +512,62 @@ struct SettingsView: View {
     @State private var keyMonitor: Any?
     @State private var status = ""
 
+    private enum SettingsTab: String, CaseIterable {
+        case general, playback, subtitles, downloads, shortcuts, backup
+    }
+    @State private var selectedTab: SettingsTab = .general
+
     var body: some View {
+        VStack(spacing: 0) {
+            TabView(selection: $selectedTab) {
+                generalTab
+                    .tabItem { Label(String(localized: "General"), systemImage: "gearshape") }
+                    .tag(SettingsTab.general)
+                playbackTab
+                    .tabItem { Label(String(localized: "Playback"), systemImage: "play.rectangle") }
+                    .tag(SettingsTab.playback)
+                subtitlesTab
+                    .tabItem { Label(String(localized: "Subtitles"), systemImage: "captions.bubble") }
+                    .tag(SettingsTab.subtitles)
+                downloadsTab
+                    .tabItem { Label(String(localized: "Downloads"), systemImage: "arrow.down.circle") }
+                    .tag(SettingsTab.downloads)
+                shortcutsTab
+                    .tabItem { Label(String(localized: "Shortcuts"), systemImage: "keyboard") }
+                    .tag(SettingsTab.shortcuts)
+                backupTab
+                    .tabItem { Label(String(localized: "Backup"), systemImage: "externaldrive") }
+                    .tag(SettingsTab.backup)
+            }
+            .padding(.top, 12)
+
+            if !status.isEmpty {
+                Divider()
+                HStack {
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button(String(localized: "Close")) {
+                    saveSubSettings()
+                    stopRecording()
+                    onDismiss()
+                }
+            }
+        }
+        .frame(width: 680, height: 520)
+        .onAppear(perform: reload)
+        .onDisappear { stopRecording() }
+    }
+
+    private var generalTab: some View {
         Form {
             Section(String(localized: "Metadata (TMDB & Language)")) {
                 HStack {
@@ -500,15 +587,39 @@ struct SettingsView: View {
                     }
                 }
                 Picker(String(localized: "Metadata Language"), selection: $language) {
-                    Text("Türkçe (tr-TR)").tag("tr-TR")
                     Text("English (en-US)").tag("en-US")
+                    Text("Türkçe (tr-TR)").tag("tr-TR")
                 }
                 .onChange(of: language) { _, newValue in
                     try? core.setMetadataLanguage(lang: newValue)
                 }
             }
 
-            Section(String(localized: "Subtitles & Audio (OpenSubtitles + Style)")) {
+            Section(String(localized: "Features")) {
+                Toggle(String(localized: "Stremio Addons"), isOn: $addonsEnabled)
+                    .onChange(of: addonsEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "addons", enabled: val) }
+                    }
+                Toggle(String(localized: "BitTorrent Engine"), isOn: $torrentEnabled)
+                    .onChange(of: torrentEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "torrent", enabled: val) }
+                    }
+                Toggle(String(localized: "LAN Casting (Chromecast / DLNA)"), isOn: $castingEnabled)
+                    .onChange(of: castingEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "casting", enabled: val) }
+                    }
+                Toggle(String(localized: "Watch Tracking (Trakt / Simkl / AniList / MAL)"), isOn: $trackingEnabled)
+                    .onChange(of: trackingEnabled) { _, val in
+                        Task { try? await core.setFeatureEnabled(name: "tracking", enabled: val) }
+                    }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var subtitlesTab: some View {
+        Form {
+            Section(String(localized: "OpenSubtitles & Languages")) {
                 HStack {
                     SecureField(
                         hasOpenSubKey ? String(localized: "OpenSubtitles key saved in Keychain") : "OpenSubtitles API key",
@@ -546,6 +657,9 @@ struct SettingsView: View {
                         .frame(width: 120)
                         .onSubmit { saveSubSettings() }
                 }
+            }
+
+            Section(String(localized: "SRT Appearance")) {
                 HStack {
                     Text(String(localized: "SRT Custom Font"))
                     Spacer()
@@ -560,7 +674,12 @@ struct SettingsView: View {
                 Toggle(String(localized: "Override ASS/SSA Script Styling"), isOn: $subSettings.assOverride)
                     .onChange(of: subSettings.assOverride) { _, _ in saveSubSettings() }
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var playbackTab: some View {
+        Form {
             Section(String(localized: "Playback & Video")) {
                 Toggle(String(localized: "Exact Relative Seeks (vs Keyframe)"), isOn: $playerPrefs.exactSeek)
                     .onChange(of: playerPrefs.exactSeek) { _, _ in savePlayerPrefs() }
@@ -594,27 +713,13 @@ struct SettingsView: View {
                         .onChange(of: playerPrefs.autoplayCountdownS) { _, _ in savePlayerPrefs() }
                 }
             }
+        }
+        .formStyle(.grouped)
+    }
 
-            Section(String(localized: "Features")) {
-                Toggle(String(localized: "Stremio Addons"), isOn: $addonsEnabled)
-                    .onChange(of: addonsEnabled) { _, val in
-                        Task { try? await core.setFeatureEnabled(name: "addons", enabled: val) }
-                    }
-                Toggle(String(localized: "BitTorrent Engine"), isOn: $torrentEnabled)
-                    .onChange(of: torrentEnabled) { _, val in
-                        Task { try? await core.setFeatureEnabled(name: "torrent", enabled: val) }
-                    }
-                Toggle(String(localized: "LAN Casting (Chromecast / DLNA)"), isOn: $castingEnabled)
-                    .onChange(of: castingEnabled) { _, val in
-                        Task { try? await core.setFeatureEnabled(name: "casting", enabled: val) }
-                    }
-                Toggle(String(localized: "Watch Tracking (Trakt / Simkl / AniList / MAL)"), isOn: $trackingEnabled)
-                    .onChange(of: trackingEnabled) { _, val in
-                        Task { try? await core.setFeatureEnabled(name: "tracking", enabled: val) }
-                    }
-            }
-
-            Section(String(localized: "Downloads, Disk Policy & Menu Bar")) {
+    private var downloadsTab: some View {
+        Form {
+            Section(String(localized: "Folders & Menu Bar")) {
                 Toggle(String(localized: "Keep Running in Menu Bar when Window Closes"), isOn: $menubarEnabled)
                     .onChange(of: menubarEnabled) { _, val in
                         try? core.setMenubarEnabled(enabled: val)
@@ -627,7 +732,9 @@ struct SettingsView: View {
                     diskPolicy.audioFolder = picked
                     saveDiskPolicy()
                 }
+            }
 
+            Section(String(localized: "Torrent Seeding Policy")) {
                 Picker(String(localized: "Torrent Seeding Policy"), selection: $diskPolicy.seedingMode) {
                     Text(String(localized: "Off (stop after finish)")).tag("off")
                     Text(String(localized: "Target Ratio")).tag("ratio")
@@ -645,24 +752,19 @@ struct SettingsView: View {
 
                 Stepper("\(String(localized: "Upload Limit")): \(diskPolicy.uploadLimitKbps == 0 ? String(localized: "Unlimited") : "\(diskPolicy.uploadLimitKbps) KB/s")", value: $diskPolicy.uploadLimitKbps, in: 0...50_000, step: 512)
                     .onChange(of: diskPolicy.uploadLimitKbps) { _, _ in saveDiskPolicy() }
-
             }
 
-            Section(String(localized: "Backup & Restore (SQLite)")) {
+            Section(String(localized: "Trailers & Web Downloads (yt-dlp)")) {
                 HStack {
-                    Button(String(localized: "Export Backup…")) { exportBackup() }
-                    Button(String(localized: "Restore Backup…")) { restoreBackup() }
-                }
-                Text(String(localized: "Exports a consistent snapshot of profiles, library, progress, addons, and settings. Secrets stay in macOS Keychain."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section(String(localized: "Trailers (yt-dlp)")) {
-                HStack {
-                    Text(ytdlpStatus.path ?? String(localized: "Not installed"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(ytdlpStatus.available ? String(localized: "yt-dlp installed") : String(localized: "Not installed"))
+                            .font(.subheadline.weight(.medium))
+                        if let path = ytdlpStatus.path {
+                            Text((path as NSString).abbreviatingWithTildeInPath)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     Spacer()
                     Button(ytdlpStatus.available ? String(localized: "Update yt-dlp") : String(localized: "Install yt-dlp")) {
                         status = String(localized: "Downloading yt-dlp…")
@@ -672,13 +774,18 @@ struct SettingsView: View {
                                 ytdlpStatus = core.ytdlpStatus()
                                 status = "yt-dlp: \(path)"
                             } catch {
-                                status = error.localizedDescription
+                                status = FriendlyError.explain(error)
                             }
                         }
                     }
                 }
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var shortcutsTab: some View {
+        Form {
             Section(String(localized: "Key Bindings")) {
                 ForEach(commands, id: \.id) { cmd in
                     HStack {
@@ -699,9 +806,7 @@ struct SettingsView: View {
                             Text(cmd.key ?? "—")
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
-                            Button(String(localized: "Record")) {
-                                startRecording(cmd.id)
-                            }
+                            Button(String(localized: "Record")) { startRecording(cmd.id) }
                             Button(String(localized: "Edit")) {
                                 editingCommandId = cmd.id
                                 keyDraft = cmd.key ?? ""
@@ -714,26 +819,23 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+        .formStyle(.grouped)
+    }
 
-            if !status.isEmpty {
-                Text(status)
+    private var backupTab: some View {
+        Form {
+            Section(String(localized: "Backup & Restore (SQLite)")) {
+                HStack {
+                    Button(String(localized: "Export Backup…")) { exportBackup() }
+                    Button(String(localized: "Restore Backup…")) { restoreBackup() }
+                }
+                Text(String(localized: "Exports a consistent snapshot of profiles, library, progress, addons, and settings. Secrets stay in macOS Keychain."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button(String(localized: "Close")) {
-                    saveSubSettings()
-                    stopRecording()
-                    onDismiss()
-                }
-            }
-        }
-        .frame(width: 640, height: 600)
-        .onAppear(perform: reload)
-        .onDisappear { stopRecording() }
     }
 
     private func reload() {
@@ -813,7 +915,7 @@ struct SettingsView: View {
             try core.exportBackup(destPath: url.path)
             status = "\(String(localized: "Backup saved to")) \(url.lastPathComponent)"
         } catch {
-            status = error.localizedDescription
+            status = FriendlyError.explain(error)
         }
     }
 
@@ -827,7 +929,7 @@ struct SettingsView: View {
             reload()
             status = "\(String(localized: "Restored backup (schema")) v\(schema))"
         } catch {
-            status = error.localizedDescription
+            status = FriendlyError.explain(error)
         }
     }
 
@@ -843,7 +945,7 @@ struct SettingsView: View {
                 tmdbKey = ""
                 status = String(localized: "TMDB key verified and saved to Keychain")
             } catch {
-                status = error.localizedDescription
+                status = FriendlyError.explain(error)
             }
         }
     }
@@ -857,7 +959,7 @@ struct SettingsView: View {
             openSubKey = ""
             status = String(localized: "OpenSubtitles key saved to Keychain")
         } catch {
-            status = error.localizedDescription
+            status = FriendlyError.explain(error)
         }
     }
 
@@ -895,7 +997,7 @@ struct SettingsView: View {
             editingCommandId = nil
             reload()
         } catch {
-            status = error.localizedDescription
+            status = FriendlyError.explain(error)
         }
     }
 }

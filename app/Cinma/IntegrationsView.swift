@@ -173,7 +173,7 @@ struct IntegrationsSheetView: View {
                 let n = try await core.drainTrackingOutbox()
                 statusMessage = String(localized: "Synced \(n) outbox entries")
             } catch {
-                statusMessage = error.localizedDescription
+                statusMessage = FriendlyError.explain(error)
             }
         }
     }
@@ -187,7 +187,7 @@ struct IntegrationsSheetView: View {
                 traktDevice = dev
                 if let u = URL(string: dev.verificationUrl) { NSWorkspace.shared.open(u) }
             } catch {
-                statusMessage = error.localizedDescription
+                statusMessage = FriendlyError.explain(error)
             }
         }
     }
@@ -203,7 +203,7 @@ struct IntegrationsSheetView: View {
                 statusMessage = ok ? String(localized: "Trakt connected") : String(localized: "Still waiting for authorization on trakt.tv/activate")
                 if ok { traktDevice = nil; reload() }
             } catch {
-                statusMessage = error.localizedDescription
+                statusMessage = FriendlyError.explain(error)
             }
         }
     }
@@ -215,7 +215,7 @@ struct IntegrationsSheetView: View {
             do {
                 letterboxdEntries = try await core.letterboxdRss(username: letterboxdUser)
             } catch {
-                statusMessage = error.localizedDescription
+                statusMessage = FriendlyError.explain(error)
             }
         }
     }
@@ -229,7 +229,7 @@ struct IntegrationsSheetView: View {
             let count = try core.exportLetterboxdCsv(destPath: dest.path)
             statusMessage = String(localized: "Exported \(count) watched films to CSV")
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = FriendlyError.explain(error)
         }
     }
 
@@ -245,7 +245,7 @@ struct IntegrationsSheetView: View {
                 let res = try await core.importStremioAccount(email: email, password: pw)
                 statusMessage = String(localized: "Imported \(res.addonsImported) addons and \(res.libraryImported) library items")
             } catch {
-                statusMessage = error.localizedDescription
+                statusMessage = FriendlyError.explain(error)
             }
         }
     }
@@ -348,7 +348,7 @@ struct CastDeviceSheetView: View {
                     status = String(localized: "No Chromecast or DLNA devices responded on your LAN.")
                 }
             } catch {
-                status = error.localizedDescription
+                status = FriendlyError.explain(error)
             }
         }
     }

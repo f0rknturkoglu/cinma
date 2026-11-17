@@ -6,6 +6,7 @@ import AppKit
 final class DiscoverViewController: NSViewController, NSCollectionViewDataSource, NSCollectionViewDelegate {
     private let core: CinmaCore
     private let onOpenDetail: (MetaPreviewInfo) -> Void
+    var onOpenAddons: (() -> Void)?
 
     private let titleLabel = NSTextField(labelWithString: String(localized: "Discover"))
     private let subtitleLabel = NSTextField(labelWithString: "")
@@ -17,7 +18,17 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         target: nil,
         action: #selector(loadMore)
     )
-    private let collectionView = NSCollectionView()
+    private let emptyStack = NSStackView()
+    private let emptyMessageLabel = NSTextField(wrappingLabelWithString: "")
+    private let emptyActionButton = CinemaTheme.makePillButton(
+        title: String(localized: "Open Addons…"),
+        symbol: "puzzlepiece.extension",
+        primary: true,
+        target: nil,
+        action: #selector(emptyActionClicked)
+    )
+    private let spinner = NSProgressIndicator()
+    private let collectionView = KeyboardCollectionView()
 
     private var catalogs: [CatalogInfo] = []
     private var selectedGenre: String?
@@ -83,6 +94,27 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.register(PosterCardItem.self, forItemWithIdentifier: PosterCardItem.identifier)
+        collectionView.onActivateSelection = { [weak self] ip in
+            guard let self, self.items.indices.contains(ip.item) else { return }
+            self.onOpenDetail(self.items[ip.item])
+        }
+
+        spinner.style = .spinning
+        spinner.controlSize = .regular
+        spinner.isDisplayedWhenStopped = false
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+
+        emptyMessageLabel.font = .systemFont(ofSize: 15, weight: .regular)
+        emptyMessageLabel.textColor = CinemaTheme.textMuted
+        emptyMessageLabel.alignment = .center
+        emptyActionButton.target = self
+        emptyStack.orientation = .vertical
+        emptyStack.alignment = .centerX
+        emptyStack.spacing = 12
+        emptyStack.addArrangedSubview(emptyMessageLabel)
+        emptyStack.addArrangedSubview(emptyActionButton)
+        emptyStack.isHidden = true
+        emptyStack.translatesAutoresizingMaskIntoConstraints = false
 
         let gridScroll = NSScrollView()
         gridScroll.documentView = collectionView
@@ -98,6 +130,8 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
 
         root.addSubview(topStack)
         root.addSubview(gridScroll)
+        root.addSubview(emptyStack)
+        root.addSubview(spinner)
         root.addSubview(loadMoreButton)
 
         NSLayoutConstraint.activate([
@@ -111,6 +145,13 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             gridScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             gridScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             gridScroll.bottomAnchor.constraint(equalTo: loadMoreButton.topAnchor, constant: -10),
+
+            emptyStack.centerXAnchor.constraint(equalTo: gridScroll.centerXAnchor),
+            emptyStack.centerYAnchor.constraint(equalTo: gridScroll.centerYAnchor),
+            emptyMessageLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 440),
+
+            spinner.centerXAnchor.constraint(equalTo: gridScroll.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: gridScroll.centerYAnchor),
 
             loadMoreButton.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             loadMoreButton.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
@@ -150,6 +191,8 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         subtitleLabel.stringValue = String(localized: "Searching…")
         items = []
         seenIds = []
+        emptyStack.isHidden = true
+        spinner.startAnimation(nil)
         collectionView.reloadData()
 
         activeTask?.cancel()
@@ -165,8 +208,14 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             let tmdb = await tmdbResults
             _ = await addonPages
             guard !Task.isCancelled, let self else { return }
+            self.spinner.stopAnimation(nil)
             self.appendSearchItems(tmdb, prepend: true)
             self.subtitleLabel.stringValue = String(localized: "\(self.items.count) results")
+            if self.items.isEmpty {
+                self.emptyMessageLabel.stringValue = String(localized: "No matches found for “\(trimmed)”.")
+                self.emptyActionButton.title = String(localized: "Clear Search")
+                self.emptyStack.isHidden = false
+            }
         }
     }
 
@@ -194,10 +243,15 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         guard catalogs.indices.contains(idx) else {
             items = []
             collectionView.reloadData()
+            spinner.stopAnimation(nil)
             subtitleLabel.stringValue = String(localized: "No browsable catalog addons installed")
+            emptyMessageLabel.stringValue = String(localized: "Install a catalog addon (such as Cinemeta) or add your TMDB key to browse titles.")
+            emptyActionButton.title = String(localized: "Open Addons…")
+            emptyStack.isHidden = false
             loadMoreButton.isHidden = true
             return
         }
+        emptyStack.isHidden = true
         let cat = catalogs[idx]
         if reset {
             items = []
@@ -205,6 +259,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             hasMore = false
             collectionView.reloadData()
             rebuildGenrePills(cat.genres)
+            spinner.startAnimation(nil)
         }
         subtitleLabel.stringValue = "\(cat.addonName) · \(cat.name)"
         let skip: UInt32? = reset || items.isEmpty ? nil : UInt32(items.count)
@@ -221,14 +276,27 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
                     query: CatalogQueryInput(search: nil, genre: genre, skip: skip)
                 )
                 guard !Task.isCancelled, let self else { return }
+                self.spinner.stopAnimation(nil)
                 let fresh = page.items.filter { self.seenIds.insert("\($0.mediaType):\($0.id)").inserted }
                 self.items.append(contentsOf: fresh)
                 self.hasMore = page.hasMore && cat.supportsSkip && !fresh.isEmpty
                 self.loadMoreButton.isHidden = !self.hasMore
+                self.emptyStack.isHidden = !self.items.isEmpty
+                if self.items.isEmpty {
+                    self.emptyMessageLabel.stringValue = String(localized: "This catalog returned no titles.")
+                    self.emptyActionButton.title = String(localized: "Retry")
+                }
                 self.collectionView.reloadData()
             } catch {
                 guard !Task.isCancelled, let self else { return }
-                self.subtitleLabel.stringValue = error.localizedDescription
+                self.spinner.stopAnimation(nil)
+                let friendly = FriendlyError.explain(error)
+                self.subtitleLabel.stringValue = friendly
+                if self.items.isEmpty {
+                    self.emptyMessageLabel.stringValue = friendly
+                    self.emptyActionButton.title = String(localized: "Retry")
+                    self.emptyStack.isHidden = false
+                }
             }
         }
     }
@@ -272,6 +340,16 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         loadSelectedCatalog(reset: true)
     }
 
+    @objc private func emptyActionClicked() {
+        if searchModeQuery != nil {
+            clearSearch()
+        } else if catalogs.isEmpty {
+            onOpenAddons?()
+        } else {
+            loadSelectedCatalog(reset: true)
+        }
+    }
+
     @objc private func loadMore() {
         loadSelectedCatalog(reset: false)
     }
@@ -292,7 +370,10 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     }
 
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
-        guard let first = indexPaths.first, items.indices.contains(first.item) else { return }
+        guard let first = indexPaths.first,
+              items.indices.contains(first.item),
+              NSApp.currentEvent?.type == .leftMouseDown || NSApp.currentEvent?.type == .leftMouseUp
+        else { return }
         collectionView.deselectItems(at: indexPaths)
         onOpenDetail(items[first.item])
     }

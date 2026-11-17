@@ -21,8 +21,10 @@ use crate::{RqbitEngine, TorrentFileRequest, normalize_info_hash};
 
 /// Folder (inside each download folder) that holds unfinished torrents.
 pub const PARTIAL_DIR: &str = ".cinma-partial";
-/// Progress is written to SQLite this often while downloading.
-const PROGRESS_INTERVAL: Duration = Duration::from_secs(5);
+/// In-memory progress refresh cadence for smooth UI bars (no disk write).
+const LIVE_INTERVAL: Duration = Duration::from_secs(1);
+/// Progress is written to SQLite every 5 ticks (~5 s) while downloading.
+const PERSIST_TICKS: u32 = 5;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "mode", rename_all = "lowercase")]
@@ -143,7 +145,8 @@ async fn download(
     let total = source.size();
     drop(source);
 
-    // Download, writing progress every few seconds (only while active).
+    // Update in-memory progress every second; write to SQLite only every 5 s.
+    let mut ticks = 0u32;
     let completed = loop {
         tokio::select! {
             () = job.cancel.cancelled() => break false,
@@ -151,9 +154,14 @@ async fn download(
                 res.map_err(|e| e.to_string())?;
                 break true;
             }
-            () = tokio::time::sleep(PROGRESS_INTERVAL) => {
+            () = tokio::time::sleep(LIVE_INTERVAL) => {
                 let done = handle.stats().progress_bytes.min(total);
-                let _ = job.report_bytes(done, Some(total));
+                ticks = ticks.wrapping_add(1);
+                if ticks % PERSIST_TICKS == 0 {
+                    let _ = job.report_bytes(done, Some(total));
+                } else {
+                    job.report_live_bytes(done, Some(total));
+                }
             }
         }
     };
