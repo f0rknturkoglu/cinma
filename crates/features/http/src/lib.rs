@@ -22,9 +22,11 @@ use url::Url;
 
 const CHUNK_SIZE: u64 = 2 * 1024 * 1024;
 const CURSOR_WINDOW: u64 = 2 * 1024 * 1024;
-const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(2);
+/// Each checkpoint fsyncs the blob, rewrites its sidecar and commits SQLite.
+/// 10 s keeps SSD writes low; a crash re-downloads at most ~10 s of data.
+const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(10);
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HttpSourceSpec {
     pub url: String,
     #[serde(default)]
@@ -33,6 +35,13 @@ pub struct HttpSourceSpec {
     pub meta_id: Option<String>,
     #[serde(default)]
     pub media_type: Option<String>,
+    /// Signed URLs (yt-dlp) change on every probe; resume then matches on
+    /// size + ETag/Last-Modified only.
+    #[serde(default)]
+    pub url_may_change: bool,
+    /// Extension of the finished file when the URL doesn't tell (yt-dlp).
+    #[serde(default)]
+    pub file_ext: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -210,7 +219,7 @@ impl HttpDownloadEngine {
         };
 
         let existing_valid = self.load_validator(job.download.id).is_some_and(|prev| {
-            prev.url == validator.url
+            (spec.url_may_change || prev.url == validator.url)
                 && prev.size == validator.size
                 && prev.etag == validator.etag
                 && prev.last_modified == validator.last_modified

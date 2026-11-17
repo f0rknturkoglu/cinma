@@ -92,6 +92,11 @@ fn disk_lru_quota_evicts_oldest_and_respects_keep_rules() {
 fn http_download_and_play_now_and_outbox_retry() {
     let dir = tempfile::tempdir().unwrap();
     let core = Core::open(dir.path()).unwrap();
+    // Never write test downloads into the real ~/Movies.
+    let out = dir.path().join("Movies");
+    let mut policy = core.disk_policy_settings().unwrap();
+    policy.movie_folder = Some(out.to_string_lossy().into_owned());
+    core.set_disk_policy_settings(&policy).unwrap();
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -224,6 +229,39 @@ fn http_download_and_play_now_and_outbox_retry() {
     }
     assert_eq!(got, payload);
 
+    // The finished file lands in the folder (moved, not copied) as Title.ext.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let row = loop {
+        let row = core
+            .downloads()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == dl_id)
+            .unwrap();
+        if row.blob_id.is_none() {
+            break row;
+        }
+        assert!(std::time::Instant::now() < deadline, "file was not placed");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let placed = out.join("Sample Movie.mp4");
+    assert_eq!(row.file_path.as_deref(), Some(placed.to_str().unwrap()));
+    assert_eq!(std::fs::read(&placed).unwrap(), payload);
+    assert!(core.blob_store().unwrap().ids().unwrap().is_empty());
+    // Play Now still works from the finished file.
+    let mut buf = vec![0u8; 16];
+    let n = core
+        .download_byte_source(dl_id)
+        .unwrap()
+        .open_reader()
+        .unwrap()
+        .read_at(0, &mut buf, &cancel)
+        .unwrap();
+    assert_eq!(&buf[..n], &payload[..16]);
+    // Removing with data deletes exactly that file.
+    core.remove_download(dl_id, true).unwrap();
+    assert!(!placed.exists());
+
     // 2. Enable tracking, wire mock Trakt, mark watched -> outbox failure -> backoff -> drain succeeds.
     core.seed_anime_id_map().unwrap();
     rt.block_on(core.set_feature_enabled(Feature::Tracking, true))
@@ -255,9 +293,15 @@ fn http_download_and_play_now_and_outbox_retry() {
     })
     .unwrap();
 
-    // First drain hits 500 -> schedules retry
+    // The worker's first delivery hits 500 -> a retry is scheduled.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while outbox_hits.load(Ordering::SeqCst) == 0 {
+        assert!(std::time::Instant::now() < deadline, "no delivery attempt");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
     let first = rt.block_on(core.drain_tracking_outbox()).unwrap();
-    assert_eq!(first, 0);
+    assert_eq!(first, 0, "the row is not due again yet");
     let statuses = core.tracking_adapters().unwrap();
     assert_eq!(statuses[0].outbox_pending, 1);
 
@@ -468,4 +512,109 @@ fn watched_items_sync_without_a_manual_drain() {
     }
     assert!(hits.load(Ordering::SeqCst) >= 1);
     unsafe { std::env::remove_var("CINMA_TRACKING_SIMKL_TOKEN") };
+}
+
+#[test]
+fn ytdlp_single_track_goes_through_http_engine_into_the_audio_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(dir.path()).unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let audio = dir.path().join("Music");
+    let mut policy = core.disk_policy_settings().unwrap();
+    policy.audio_folder = Some(audio.to_string_lossy().into_owned());
+    core.set_disk_policy_settings(&policy).unwrap();
+
+    let body: Vec<u8> = (0..(96 * 1024)).map(|i| (i % 199) as u8).collect();
+    let served = body.clone();
+    let url = rt.block_on(async move {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let body = served.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let n = sock.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let range = req
+                        .lines()
+                        .find_map(|l| l.strip_prefix("Range: bytes=").or_else(|| l.strip_prefix("range: bytes=")))
+                        .and_then(|r| {
+                            let (a, b) = r.trim().split_once('-')?;
+                            let a: usize = a.parse().ok()?;
+                            let b: usize = b.parse().unwrap_or(body.len() - 1).min(body.len() - 1);
+                            Some((a, b))
+                        });
+                    let head = req.starts_with("HEAD");
+                    let (status, slice) = match range {
+                        Some((a, b)) => ("206 Partial Content", &body[a..=b]),
+                        None => ("200 OK", &body[..]),
+                    };
+                    let hdr = format!(
+                        "HTTP/1.1 {status}\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
+                        slice.len()
+                    );
+                    let _ = sock.write_all(hdr.as_bytes()).await;
+                    if !head {
+                        let _ = sock.write_all(slice).await;
+                    }
+                });
+            }
+        });
+        format!("http://{addr}/stream?sig=abc")
+    });
+
+    // A stand-in yt-dlp: prints the probe JSON and exits (short-lived child).
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("yt-dlp");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\necho '{{\"url\":\"{url}\",\"ext\":\"m4a\",\"http_headers\":{{}}}}'\n"),
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let id = core
+        .add_ytdlp_download(
+            "Song / Live".into(),
+            "https://example.invalid/v".into(),
+            None,
+            true,
+            1,
+        )
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let row = loop {
+        let row = core
+            .downloads()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.id == id)
+            .unwrap();
+        if row.state == cinma_db::DownloadState::Completed {
+            break row;
+        }
+        assert!(
+            row.state != cinma_db::DownloadState::Failed,
+            "yt-dlp download failed: {:?}",
+            row.error
+        );
+        assert!(std::time::Instant::now() < deadline, "timed out: {row:?}");
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    };
+    let placed = audio.join("Song Live.m4a");
+    assert_eq!(row.file_path.as_deref(), Some(placed.to_str().unwrap()));
+    assert_eq!(std::fs::read(&placed).unwrap(), body);
+    assert!(row.blob_id.is_none());
+    assert!(
+        core.blob_store().unwrap().ids().unwrap().is_empty(),
+        "single copy"
+    );
 }

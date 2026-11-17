@@ -200,8 +200,20 @@ impl Playback {
         Ok(())
     }
 
-    /// Streams an active, paused, or completed unified download via `Blob::source()`.
+    /// Plays a download: a finished file directly (mpv opens it), otherwise
+    /// the bytes so far (blob or live torrent) through the stream protocol.
     pub fn play_download(&self, download_id: i64) -> Result<(), CoreError> {
+        let finished = self
+            .core
+            .downloads()?
+            .into_iter()
+            .find(|r| r.id == download_id)
+            .filter(|r| r.blob_id.is_none())
+            .and_then(|r| r.file_path)
+            .filter(|p| Path::new(p).is_file());
+        if let Some(path) = finished {
+            return self.play_url(&path);
+        }
         self.reset_media_state();
         self.player.begin_load();
         let source = self.core.download_byte_source(download_id)?;
@@ -395,18 +407,13 @@ impl Playback {
     pub async fn stop(&self) -> Result<(), CoreError> {
         self.reset_media_state();
         self.player.shutdown();
+        // Any profile's torrent download keeps the session alive.
         let has_torrent_download = self
             .core
-            .downloads()
-            .map(|rows| {
-                rows.iter().any(|r| {
-                    r.kind == cinma_db::DownloadKind::Torrent
-                        && matches!(
-                            r.state,
-                            cinma_db::DownloadState::Active | cinma_db::DownloadState::Queued
-                        )
-                })
-            })
+            .db
+            .lock()
+            .ok()
+            .and_then(|db| db.has_unfinished_torrent_downloads().ok())
             .unwrap_or(false);
         let engine = self
             .core

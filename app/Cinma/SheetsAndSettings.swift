@@ -441,18 +441,14 @@ struct SettingsView: View {
     @State private var trackingEnabled = false
     @State private var menubarEnabled = true
     @State private var diskPolicy = DiskPolicySettingsInfo(
+        videoFolder: "",
+        audioFolder: "",
         cacheQuotaMb: 10_240,
         keepWatchedGlobal: false,
         seedingMode: "off",
         seedingRatio: 1.0,
         seedingMinutes: 60,
         uploadLimitKbps: 0
-    )
-    @State private var diskUsage = DiskUsageSummaryInfo(
-        totalBytes: 0,
-        keptBytes: 0,
-        evictableBytes: 0,
-        entryCount: 0
     )
     @State private var ytdlpStatus = YtdlpStatusInfo(available: false, path: nil, managed: false)
     @State private var subSettings = SubtitleSettingsFfi(
@@ -623,17 +619,14 @@ struct SettingsView: View {
                     .onChange(of: menubarEnabled) { _, val in
                         try? core.setMenubarEnabled(enabled: val)
                     }
-                Picker(String(localized: "Cache & Download Quota"), selection: $diskPolicy.cacheQuotaMb) {
-                    Text("5 GB").tag(UInt64(5_120))
-                    Text("10 GB").tag(UInt64(10_240))
-                    Text("25 GB").tag(UInt64(25_600))
-                    Text("50 GB").tag(UInt64(51_200))
-                    Text(String(localized: "Unlimited")).tag(UInt64(0))
+                folderRow(String(localized: "Video Downloads"), path: diskPolicy.videoFolder) { picked in
+                    diskPolicy.videoFolder = picked
+                    saveDiskPolicy()
                 }
-                .onChange(of: diskPolicy.cacheQuotaMb) { _, _ in saveDiskPolicy() }
-
-                Toggle(String(localized: "Keep Watched Titles Offline by Default"), isOn: $diskPolicy.keepWatchedGlobal)
-                    .onChange(of: diskPolicy.keepWatchedGlobal) { _, _ in saveDiskPolicy() }
+                folderRow(String(localized: "Audio Downloads"), path: diskPolicy.audioFolder) { picked in
+                    diskPolicy.audioFolder = picked
+                    saveDiskPolicy()
+                }
 
                 Picker(String(localized: "Torrent Seeding Policy"), selection: $diskPolicy.seedingMode) {
                     Text(String(localized: "Off (stop after finish)")).tag("off")
@@ -653,20 +646,6 @@ struct SettingsView: View {
                 Stepper("\(String(localized: "Upload Limit")): \(diskPolicy.uploadLimitKbps == 0 ? String(localized: "Unlimited") : "\(diskPolicy.uploadLimitKbps) KB/s")", value: $diskPolicy.uploadLimitKbps, in: 0...50_000, step: 512)
                     .onChange(of: diskPolicy.uploadLimitKbps) { _, _ in saveDiskPolicy() }
 
-                HStack {
-                    let totalStr = ByteCountFormatter.string(fromByteCount: Int64(diskUsage.totalBytes), countStyle: .file)
-                    let keptStr = ByteCountFormatter.string(fromByteCount: Int64(diskUsage.keptBytes), countStyle: .file)
-                    Text("\(String(localized: "Tracked")): \(totalStr) · \(String(localized: "Kept")): \(keptStr)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button(String(localized: "Trim Cache Now")) {
-                        let freed = (try? core.enforceDiskQuota()) ?? 0
-                        diskUsage = (try? core.diskUsageSummary()) ?? diskUsage
-                        let freedStr = ByteCountFormatter.string(fromByteCount: Int64(freed), countStyle: .file)
-                        status = "\(String(localized: "Freed")) \(freedStr)"
-                    }
-                }
             }
 
             Section(String(localized: "Backup & Restore (SQLite)")) {
@@ -767,7 +746,6 @@ struct SettingsView: View {
         trackingEnabled = (try? core.featureEnabled(name: "tracking")) ?? false
         menubarEnabled = (try? core.menubarEnabled()) ?? true
         if let dp = try? core.diskPolicySettings() { diskPolicy = dp }
-        if let du = try? core.diskUsageSummary() { diskUsage = du }
         ytdlpStatus = core.ytdlpStatus()
         if let s = try? core.subtitleSettings() {
             subSettings = s
@@ -797,6 +775,30 @@ struct SettingsView: View {
 
     private func savePlayerPrefs() {
         try? core.setPlayerPreferences(prefs: playerPrefs)
+    }
+
+    private func folderRow(_ label: String, path: String, onPick: @escaping (String) -> Void) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text((path as NSString).abbreviatingWithTildeInPath)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(path)
+            Button(String(localized: "Choose…")) {
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.canCreateDirectories = true
+                panel.allowsMultipleSelection = false
+                panel.directoryURL = URL(fileURLWithPath: path)
+                if panel.runModal() == .OK, let url = panel.url {
+                    onPick(url.path)
+                }
+            }
+        }
     }
 
     private func saveDiskPolicy() {

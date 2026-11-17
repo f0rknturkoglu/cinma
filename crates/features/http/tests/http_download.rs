@@ -115,6 +115,7 @@ fn segmented_http_downloads_validates_etag_prioritizes_cursor_and_recovers_from_
         headers: HashMap::new(),
         meta_id: None,
         media_type: None,
+        ..Default::default()
     })
     .unwrap();
     let dl_id = queue
@@ -227,6 +228,7 @@ fn run_kill_child(arg: &str) {
         headers: HashMap::new(),
         meta_id: None,
         media_type: None,
+        ..Default::default()
     })
     .unwrap();
     queue

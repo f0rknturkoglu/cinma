@@ -24,6 +24,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0004_library_and_progress.sql"),
     include_str!("../migrations/0005_disk_policy.sql"),
     include_str!("../migrations/0006_tracking_outbox.sql"),
+    include_str!("../migrations/0007_download_file_path.sql"),
 ];
 
 /// Schema version this build understands.

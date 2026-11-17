@@ -166,7 +166,7 @@ fn streams_head_tail_and_middle_from_local_seeder() {
 
 #[test]
 fn torrent_download_engine_completes_via_queue_on_local_seeder() {
-    use cinma_blobstore::{BlobId, BlobStore};
+    use cinma_blobstore::BlobStore;
     use cinma_db::{Database, DownloadKind, DownloadState, NewDownload};
     use cinma_queue::Queue;
     use cinma_torrent::{SeedingPolicy, TorrentDownloadEngine, TorrentPolicy, TorrentSourceSpec};
@@ -208,16 +208,22 @@ fn torrent_download_engine_completes_via_queue_on_local_seeder() {
         1,
     )
     .unwrap();
+    let out = dir.path().join("Movies");
+    // A user's unrelated file with the same name must survive.
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("movie.mkv"), b"user file").unwrap();
+    let folder = out.clone();
     let dl_engine = Arc::new(TorrentDownloadEngine::new(
         Arc::clone(&engine),
         SeedingPolicy::Off,
+        Arc::new(move |_row: &cinma_db::DownloadRow| folder.clone()),
     ));
     queue
         .register_engine(DownloadKind::Torrent, dl_engine)
         .unwrap();
 
     let spec = serde_json::to_string(&TorrentSourceSpec {
-        info_hash,
+        info_hash: info_hash.clone(),
         file_idx: None,
         trackers: vec![],
         meta_id: Some("tt1".into()),
@@ -234,7 +240,7 @@ fn torrent_download_engine_completes_via_queue_on_local_seeder() {
         })
         .unwrap();
 
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
     let completed = loop {
         let row = db.lock().unwrap().download(1, id).unwrap().unwrap();
         if row.state == DownloadState::Completed {
@@ -247,11 +253,26 @@ fn torrent_download_engine_completes_via_queue_on_local_seeder() {
         std::thread::sleep(Duration::from_millis(50));
     };
 
-    let blob = store
-        .open_blob(&BlobId::parse(completed.blob_id.as_deref().unwrap()).unwrap())
-        .unwrap();
-    assert!(blob.is_complete());
-    assert_eq!(blob.size(), FILE_LEN as u64);
+    // One copy, in the user's folder, under a free name; nothing else left.
+    let dest = std::path::PathBuf::from(completed.file_path.as_deref().unwrap());
+    assert_eq!(dest, out.join("movie (2).mkv"));
+    assert_eq!(std::fs::read(&dest).unwrap(), data);
+    assert_eq!(std::fs::read(out.join("movie.mkv")).unwrap(), b"user file");
+    assert!(completed.blob_id.is_none(), "no blob copy");
+    assert!(store.ids().unwrap().is_empty(), "no blob copy");
+    assert!(
+        !out.join(cinma_torrent::PARTIAL_DIR).exists(),
+        "staging removed"
+    );
+    assert!(
+        !dir.path()
+            .join("dl_root")
+            .join("downloads")
+            .join("movie.mkv")
+            .exists(),
+        "nothing in the cache folder"
+    );
+    assert_eq!(completed.bytes_done, FILE_LEN as u64);
 
     runtime.block_on(async {
         engine.release_all().await;
@@ -419,5 +440,107 @@ fn stream_left_by_a_crash_is_removed_when_the_session_restarts() {
     seeder_rt.block_on(async {
         seeder_a.stop().await;
         seeder_b.stop().await;
+    });
+}
+
+#[test]
+fn paused_torrent_download_stops_and_resumes_from_its_partial_file() {
+    use cinma_blobstore::BlobStore;
+    use cinma_db::{Database, DownloadKind, DownloadState, NewDownload};
+    use cinma_queue::Queue;
+    use cinma_torrent::{SeedingPolicy, TorrentDownloadEngine, TorrentPolicy, TorrentSourceSpec};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let seed_dir = dir.path().join("seed");
+    std::fs::create_dir_all(&seed_dir).unwrap();
+    let data = content();
+    let (seeder, info_hash, addr) = runtime.block_on(start_seeder(&seed_dir, &data));
+    let engine = Arc::new(RqbitEngine::with_policy(
+        TorrentConfig {
+            root: dir.path().join("dl_root"),
+            extra_peers: vec![addr],
+            local_only: true,
+        },
+        runtime.handle().clone(),
+        TorrentPolicy {
+            download_bps: Some(1024 * 1024), // ~6 s for the whole file
+            ..app_policy()
+        },
+    ));
+    let db = Arc::new(std::sync::Mutex::new(
+        Database::open(&dir.path().join("db.sqlite3")).unwrap(),
+    ));
+    let store = Arc::new(BlobStore::open(&dir.path().join("blobs")).unwrap());
+    let queue = Queue::new(Arc::clone(&db), store, runtime.handle().clone(), 1).unwrap();
+    let out = dir.path().join("Movies");
+    let folder = out.clone();
+    queue
+        .register_engine(
+            DownloadKind::Torrent,
+            Arc::new(TorrentDownloadEngine::new(
+                Arc::clone(&engine),
+                SeedingPolicy::Off,
+                Arc::new(move |_row: &cinma_db::DownloadRow| folder.clone()),
+            )),
+        )
+        .unwrap();
+    let id = queue
+        .add(&NewDownload {
+            profile_id: 1,
+            kind: DownloadKind::Torrent,
+            title: "movie.mkv".into(),
+            source_json: serde_json::to_string(&TorrentSourceSpec {
+                info_hash: info_hash.clone(),
+                file_idx: None,
+                trackers: vec![],
+                meta_id: None,
+                media_type: Some("movie".into()),
+            })
+            .unwrap(),
+            priority: 1,
+        })
+        .unwrap();
+
+    std::thread::sleep(Duration::from_millis(2500));
+    queue.pause(1, id).unwrap();
+    std::thread::sleep(Duration::from_millis(800));
+    let staging = out.join(cinma_torrent::PARTIAL_DIR).join(&info_hash);
+    assert!(staging.join("movie.mkv").exists(), "partial file is kept");
+    let row = db.lock().unwrap().download(1, id).unwrap().unwrap();
+    assert_eq!(row.state, DownloadState::Paused);
+    assert!(row.bytes_done < FILE_LEN as u64, "paused before the end");
+    assert!(
+        !std::fs::read_to_string(dir.path().join("dl_root/session/session.json"))
+            .unwrap_or_default()
+            .contains(&info_hash),
+        "a paused download is not in the session"
+    );
+
+    queue.resume(1, id).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let done = loop {
+        let row = db.lock().unwrap().download(1, id).unwrap().unwrap();
+        if row.state == DownloadState::Completed {
+            break row;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "resume timed out: {row:?}"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    assert_eq!(
+        std::fs::read(done.file_path.as_deref().unwrap()).unwrap(),
+        data
+    );
+    assert!(!staging.exists());
+    runtime.block_on(async {
+        engine.release_all().await;
+        seeder.stop().await;
     });
 }

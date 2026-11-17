@@ -4,7 +4,6 @@
 //! - Seeding policy & rate limit settings (`off` | `ratio` | `minutes`)
 
 use std::collections::HashSet;
-use std::path::PathBuf;
 
 use cinma_blobstore::BlobId;
 use cinma_db::{DiskEntryRow, DiskKind};
@@ -247,14 +246,10 @@ impl Core {
                         let _ = store.remove(&id);
                     }
                 }
-                DiskKind::Torrent => {
-                    let p = PathBuf::from(&entry.path);
-                    if p.is_dir() {
-                        let _ = std::fs::remove_dir_all(&p);
-                    } else if p.is_file() {
-                        let _ = std::fs::remove_file(&p);
-                    }
-                }
+                // Never delete folders by a stored path: torrent data is
+                // either a stream (removed when playback stops) or a
+                // download in the user's folder (never cache).
+                DiskKind::Torrent => continue,
             }
             let _ = self
                 .db

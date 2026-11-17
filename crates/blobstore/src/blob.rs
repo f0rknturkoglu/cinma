@@ -350,6 +350,55 @@ impl BlobStore {
         Ok(())
     }
 
+    /// Moves a blob's bytes to `dest` and forgets the blob. Never overwrites:
+    /// on the same volume it hard-links then unlinks (no data is copied, and
+    /// the link fails if `dest` exists); across volumes it copies to a
+    /// `.part` file, fsyncs and renames. Open readers keep working because
+    /// they hold the inode. Re-running after a crash is safe: if `dest` is
+    /// already the blob's file, only the blob entry is removed.
+    pub fn finalize_to(&self, id: &BlobId, dest: &Path) -> io::Result<()> {
+        use std::os::unix::fs::MetadataExt;
+        let (data_path, _) = self.paths(id);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        match fs::hard_link(&data_path, dest) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                let (a, b) = (fs::metadata(&data_path)?, fs::metadata(dest)?);
+                if a.ino() != b.ino() || a.dev() != b.dev() {
+                    return Err(e);
+                }
+            }
+            Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
+                let mut part_name = dest.file_name().unwrap_or_default().to_os_string();
+                part_name.push(".part");
+                let part = dest.with_file_name(part_name);
+                {
+                    let mut src = File::open(&data_path)?;
+                    let mut out = File::create(&part)?;
+                    io::copy(&mut src, &mut out)?;
+                    out.sync_all()?;
+                }
+                if dest.exists() {
+                    let _ = fs::remove_file(&part);
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "destination exists",
+                    ));
+                }
+                fs::rename(&part, dest)?;
+            }
+            Err(e) => return Err(e),
+        }
+        if let Some(parent) = dest.parent()
+            && let Ok(dir) = File::open(parent)
+        {
+            let _ = dir.sync_all();
+        }
+        self.remove(id)
+    }
+
     pub fn ids(&self) -> io::Result<Vec<BlobId>> {
         let mut ids = Vec::new();
         for entry in fs::read_dir(&self.root)? {
@@ -562,5 +611,56 @@ mod tests {
         assert!(BlobId::parse("../etc").is_err());
         assert!(BlobId::parse("").is_err());
         assert!(BlobId::parse("abc123").is_ok());
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod finalize_tests {
+    use super::*;
+
+    #[test]
+    fn finalize_moves_bytes_without_overwriting_and_is_rerunnable() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = BlobStore::open(&dir.path().join("blobs")).unwrap();
+        let blob = store.create(5).unwrap();
+        blob.write_available(0, b"hello").unwrap();
+        blob.checkpoint().unwrap();
+        let reader = blob.source();
+
+        // An unrelated file with the target name is never touched.
+        let taken = dir.path().join("out").join("taken.mkv");
+        fs::create_dir_all(taken.parent().unwrap()).unwrap();
+        fs::write(&taken, b"user data").unwrap();
+        assert!(store.finalize_to(blob.id(), &taken).is_err());
+        assert_eq!(fs::read(&taken).unwrap(), b"user data");
+
+        let dest = dir.path().join("out").join("movie.mkv");
+        store.finalize_to(blob.id(), &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"hello");
+        assert!(store.ids().unwrap().is_empty(), "blob entry is gone");
+        // An open reader still reads the (moved) bytes.
+        let mut buf = [0u8; 5];
+        let n = reader
+            .open_reader()
+            .unwrap()
+            .read_at(0, &mut buf, &crate::CancellationToken::new())
+            .unwrap();
+        assert_eq!(&buf[..n], b"hello");
+    }
+
+    #[test]
+    fn finalize_after_a_crash_between_link_and_unlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = BlobStore::open(&dir.path().join("blobs")).unwrap();
+        let blob = store.create(3).unwrap();
+        blob.write_available(0, b"abc").unwrap();
+        blob.checkpoint().unwrap();
+        let dest = dir.path().join("movie.mkv");
+        // Simulate: the link was made, then the process died.
+        fs::hard_link(store.paths(blob.id()).0, &dest).unwrap();
+        store.finalize_to(blob.id(), &dest).unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"abc");
+        assert!(store.ids().unwrap().is_empty());
     }
 }

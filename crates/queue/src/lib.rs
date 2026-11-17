@@ -71,6 +71,33 @@ impl Job {
     }
 }
 
+impl Job {
+    /// The same job with a different source description (an engine that
+    /// resolves its source, like yt-dlp, hands the result to another engine).
+    pub fn with_source_json(mut self, source_json: String) -> Job {
+        self.download.source_json = source_json;
+        self
+    }
+
+    /// Records where the finished file lives (engines that write files directly).
+    pub fn set_file_path(&self, path: &std::path::Path) -> Result<(), QueueError> {
+        self.db
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .set_download_file_path(self.download.id, Some(&path.to_string_lossy()))?;
+        Ok(())
+    }
+
+    /// Progress for engines without a blob (the bytes are durable in their file).
+    pub fn report_bytes(&self, done: u64, total: Option<u64>) -> Result<(), QueueError> {
+        self.db
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .set_download_bytes(self.download.id, done, total)?;
+        Ok(())
+    }
+}
+
 pub trait DownloadEngine: Send + Sync {
     /// Runs until the blob is complete, an error, or `job.cancel`.
     /// Returning `Ok` with the job cancelled means "stopped", not "done".

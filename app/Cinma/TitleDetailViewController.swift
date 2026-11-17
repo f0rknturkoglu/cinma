@@ -25,7 +25,6 @@ final class TitleDetailViewController: NSViewController {
     private let overviewLabel = NSTextField(wrappingLabelWithString: "")
     private let castLabel = NSTextField(wrappingLabelWithString: "")
     private var libraryButton: NSButton?
-    private var keepOfflineButton: NSButton?
     private var trailerButton: NSButton?
 
     private let seasonsStack = NSStackView()
@@ -119,13 +118,6 @@ final class TitleDetailViewController: NSViewController {
             target: self,
             action: #selector(toggleLibrary)
         )
-        let keepBtn = CinemaTheme.makePillButton(
-            title: String(localized: "Keep Offline"),
-            symbol: "pin",
-            primary: false,
-            target: self,
-            action: #selector(toggleKeepOffline)
-        )
         let trBtn = CinemaTheme.makePillButton(
             title: String(localized: "Trailer"),
             symbol: "film",
@@ -135,14 +127,13 @@ final class TitleDetailViewController: NSViewController {
         )
         trBtn.isHidden = true
         libraryButton = libBtn
-        keepOfflineButton = keepBtn
         trailerButton = trBtn
-        for b in [backBtn, libBtn, keepBtn, trBtn] {
+        for b in [backBtn, libBtn, trBtn] {
             b.translatesAutoresizingMaskIntoConstraints = false
             b.heightAnchor.constraint(equalToConstant: 36).isActive = true
             b.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
         }
-        let topBar = NSStackView(views: [backBtn, libBtn, keepBtn, trBtn])
+        let topBar = NSStackView(views: [backBtn, libBtn, trBtn])
         topBar.spacing = 10
         topBar.translatesAutoresizingMaskIntoConstraints = false
 
@@ -707,21 +698,6 @@ final class TitleDetailViewController: NSViewController {
             systemSymbolName: saved ? "checkmark" : "plus",
             accessibilityDescription: nil
         )
-        let kept = (try? core.itemKeepWatched(metaId: metaId, mediaType: mediaType)) ?? false
-        keepOfflineButton?.title = kept ? String(localized: "Kept Offline") : String(localized: "Keep Offline")
-        keepOfflineButton?.image = NSImage(
-            systemSymbolName: kept ? "pin.fill" : "pin",
-            accessibilityDescription: nil
-        )
-    }
-
-    @objc private func toggleKeepOffline() {
-        let meta = richMeta?.meta
-        let metaId = meta?.id ?? preview.id
-        let mediaType = meta?.mediaType ?? preview.mediaType
-        let kept = (try? core.itemKeepWatched(metaId: metaId, mediaType: mediaType)) ?? false
-        try? core.setItemKeepWatched(metaId: metaId, mediaType: mediaType, keep: !kept)
-        refreshLibraryButton()
     }
 
     @objc private func downloadStreamClicked(_ sender: NSButton) {

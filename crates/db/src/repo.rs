@@ -79,10 +79,12 @@ pub struct DownloadRow {
     pub bytes_total: Option<u64>,
     pub bytes_done: u64,
     pub error: Option<String>,
+    /// The finished file in the user's download folder (`None` until placed).
+    pub file_path: Option<String>,
 }
 
 const DOWNLOAD_COLUMNS: &str = "id, profile_id, kind, title, source_json, state, priority, \
-                                blob_id, bytes_total, bytes_done, error";
+                                blob_id, bytes_total, bytes_done, error, file_path";
 
 fn download_from_row(row: &Row<'_>) -> rusqlite::Result<(DownloadRow, String, String)> {
     Ok((
@@ -98,6 +100,7 @@ fn download_from_row(row: &Row<'_>) -> rusqlite::Result<(DownloadRow, String, St
             bytes_total: row.get::<_, Option<i64>>(8)?.map(|v| v.max(0) as u64),
             bytes_done: row.get::<_, i64>(9)?.max(0) as u64,
             error: row.get(10)?,
+            file_path: row.get(11)?,
         },
         row.get(2)?,
         row.get(5)?,
@@ -471,6 +474,70 @@ impl Database {
             .prepare_cached("SELECT blob_id FROM download WHERE blob_id IS NOT NULL")?;
         let rows = stmt.query_map([], |r| r.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// A download by id regardless of profile (internal bookkeeping).
+    pub fn download_any_profile(&self, id: i64) -> Result<Option<DownloadRow>, DbError> {
+        let mut stmt = self.conn.prepare_cached(&format!(
+            "SELECT {DOWNLOAD_COLUMNS} FROM download WHERE id = ?1"
+        ))?;
+        let mut rows = stmt.query_map([id], download_from_row)?;
+        match rows.next() {
+            Some(r) => Ok(Some(finish(r?)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn set_download_file_path(&self, id: i64, path: Option<&str>) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE download SET file_path = ?2, updated_at = unixepoch() WHERE id = ?1",
+            params![id, path],
+        )?;
+        Ok(())
+    }
+
+    /// Drops the row's blob reference once its bytes were moved to `file_path`.
+    pub fn clear_download_blob(&self, id: i64) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE download SET blob_id = NULL, updated_at = unixepoch() WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
+
+    /// Progress for engines that write straight to a file (no blob).
+    pub fn set_download_bytes(
+        &self,
+        id: i64,
+        bytes_done: u64,
+        bytes_total: Option<u64>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE download SET bytes_done = ?2, bytes_total = COALESCE(?3, bytes_total),
+                    updated_at = unixepoch() WHERE id = ?1",
+            params![id, bytes_done as i64, bytes_total.map(|v| v as i64)],
+        )?;
+        Ok(())
+    }
+
+    /// Completed downloads whose bytes still sit in a blob (crash recovery).
+    pub fn completed_downloads_with_blob(&self) -> Result<Vec<DownloadRow>, DbError> {
+        let mut stmt = self.conn.prepare_cached(&format!(
+            "SELECT {DOWNLOAD_COLUMNS} FROM download
+             WHERE state = 'completed' AND blob_id IS NOT NULL"
+        ))?;
+        let rows = stmt.query_map([], download_from_row)?;
+        rows.map(|r| finish(r?)).collect()
+    }
+
+    /// Any torrent download in any profile that still needs the session.
+    pub fn has_unfinished_torrent_downloads(&self) -> Result<bool, DbError> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM download
+             WHERE kind = 'torrent' AND state IN ('queued', 'active'))",
+            [],
+            |r| r.get(0),
+        )?)
     }
 
     pub fn delete_download(&self, profile: ProfileId, id: i64) -> Result<(), DbError> {

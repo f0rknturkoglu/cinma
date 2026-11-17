@@ -1807,6 +1807,11 @@ impl CinmaCore {
 
     pub fn set_disk_policy_settings(&self, s: DiskPolicySettingsInfo) -> Result<(), CinmaError> {
         let mut current = self.inner.disk_policy_settings()?;
+        let video = Some(s.video_folder.trim().to_owned()).filter(|p| !p.is_empty());
+        current.movie_folder.clone_from(&video);
+        current.series_folder.clone_from(&video);
+        current.ytdlp_folder = video;
+        current.audio_folder = Some(s.audio_folder.trim().to_owned()).filter(|p| !p.is_empty());
         current.cache_quota_mb = s.cache_quota_mb;
         current.keep_watched_global = s.keep_watched_global;
         current.seeding_mode = s.seeding_mode;
@@ -2062,6 +2067,8 @@ pub struct DownloadInfo {
     pub bytes_done: u64,
     pub error: Option<String>,
     pub can_play_now: bool,
+    /// The finished file in the download folder (for "Show in Finder").
+    pub file_path: Option<String>,
 }
 
 impl From<cinma_core::DownloadRow> for DownloadInfo {
@@ -2074,14 +2081,22 @@ impl From<cinma_core::DownloadRow> for DownloadInfo {
             priority: r.priority,
             bytes_total: r.bytes_total,
             bytes_done: r.bytes_done,
+            can_play_now: r.blob_id.is_some()
+                || r.file_path.is_some()
+                || (r.kind == cinma_core::DownloadKind::Torrent
+                    && r.state == cinma_core::DownloadState::Active),
             error: r.error,
-            can_play_now: r.blob_id.is_some(),
+            file_path: r.file_path,
         }
     }
 }
 
 #[derive(uniffi::Record)]
 pub struct DiskPolicySettingsInfo {
+    /// Folder for movies, series and web video (resolved default if unset).
+    pub video_folder: String,
+    /// Folder for audio-only downloads (resolved default if unset).
+    pub audio_folder: String,
     pub cache_quota_mb: u64,
     pub keep_watched_global: bool,
     pub seeding_mode: String,
@@ -2092,7 +2107,14 @@ pub struct DiskPolicySettingsInfo {
 
 impl From<cinma_core::DiskPolicySettings> for DiskPolicySettingsInfo {
     fn from(s: cinma_core::DiskPolicySettings) -> Self {
+        let folder = |v: &Option<String>, fallback: std::path::PathBuf| {
+            v.clone()
+                .filter(|p| !p.trim().is_empty())
+                .unwrap_or_else(|| fallback.to_string_lossy().into_owned())
+        };
         Self {
+            video_folder: folder(&s.movie_folder, cinma_core::default_video_folder()),
+            audio_folder: folder(&s.audio_folder, cinma_core::default_audio_folder()),
             cache_quota_mb: s.cache_quota_mb,
             keep_watched_global: s.keep_watched_global,
             seeding_mode: s.seeding_mode,

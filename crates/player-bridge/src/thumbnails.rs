@@ -761,6 +761,9 @@ mod tests {
 
     #[test]
     fn empty_stream_thumbnail_returns_none_without_blocking() {
+        // Load FFmpeg first: the test is about not waiting for missing data,
+        // not about dlopen time (which varies under parallel test load).
+        let _ = ThumbnailExtractor::ffmpeg_available();
         let source = Arc::new(MemorySource::new(vec![0u8; 4096], 0));
         let extractor = ThumbnailExtractor::from_source(source);
         let started = Instant::now();

@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 cinma-blobstore.workspace = true
+cinma-db.workspace = true
 cinma-queue.workspace = true
 librqbit.workspace = true
 serde.workspace = true

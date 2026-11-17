@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 mod blob;
+mod files;
 mod hash;
 mod plan;
 mod ranges;
@@ -24,6 +25,7 @@ use tokio::sync::Notify;
 pub use tokio_util::sync::CancellationToken;
 
 pub use blob::{Blob, BlobId, BlobStore, DEFAULT_READAHEAD, PriorityListener, ReadHint};
+pub use files::{FileSource, move_file_no_overwrite, sanitize_file_name, unique_destination};
 pub use hash::{
     OPENSUBTITLES_CHUNK_SIZE, compute_opensubtitles_hash_file,
     compute_opensubtitles_hash_nonblocking, opensubtitles_hash_from_chunks,

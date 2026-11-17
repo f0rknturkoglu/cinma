@@ -2,7 +2,6 @@
   "sourceLanguage" : "en",
   "strings" : {
     "" : {
-      "localizations" : {},
       "shouldTranslate" : false
     },
     "%@ %@" : {
@@ -113,22 +112,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@: %@"
-          }
-        }
-      }
-    },
-    "%@: %@ · %@: %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@: %2$@ · %3$@: %4$@"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@: %2$@ · %3$@: %4$@"
           }
         }
       }
@@ -311,16 +294,6 @@
         }
       }
     },
-    "10 GB" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "10 GB"
-          }
-        }
-      }
-    },
     "1000 nits" : {
       "localizations" : {
         "tr" : {
@@ -357,16 +330,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "2. TMDB API anahtarı (isteğe bağlı, Anahtar Zinciri'ne kaydedilir)"
-          }
-        }
-      }
-    },
-    "25 GB" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "25 GB"
           }
         }
       }
@@ -427,26 +390,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "4K (2160p)"
-          }
-        }
-      }
-    },
-    "5 GB" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "5 GB"
-          }
-        }
-      }
-    },
-    "50 GB" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "50 GB"
           }
         }
       }
@@ -531,6 +474,32 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A/B Döngü: B Noktasını Seç"
+          }
+        }
+      }
+    },
+    "A/B loop: A = %@" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A/B döngüsü: A = %@"
+          }
+        }
+      }
+    },
+    "A/B loop: A = %@, B = %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "A/B loop: A = %1$@, B = %2$@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A/B döngüsü: A = %1$@, B = %2$@"
           }
         }
       }
@@ -809,6 +778,16 @@
         }
       }
     },
+    "Audio Downloads" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ses İndirmeleri"
+          }
+        }
+      }
+    },
     "Audio Only (M4A)" : {
       "localizations" : {
         "tr" : {
@@ -1025,16 +1004,6 @@
         }
       }
     },
-    "Cache & Download Quota" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Önbellek ve İndirme Kotası"
-          }
-        }
-      }
-    },
     "Calendar" : {
       "localizations" : {
         "en" : {
@@ -1187,6 +1156,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kütüphanedeki dizilerin yaklaşan bölümleri kontrol ediliyor…"
+          }
+        }
+      }
+    },
+    "Choose…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seç…"
           }
         }
       }
@@ -1821,16 +1800,6 @@
         }
       }
     },
-    "Freed" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Boşaltıldı"
-          }
-        }
-      }
-    },
     "Fullscreen (F)" : {
       "localizations" : {
         "en" : {
@@ -2137,16 +2106,6 @@
         }
       }
     },
-    "Keep Offline" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Çevrimdışı Sakla"
-          }
-        }
-      }
-    },
     "Keep Running in Menu Bar when Window Closes" : {
       "localizations" : {
         "tr" : {
@@ -2157,42 +2116,12 @@
         }
       }
     },
-    "Keep Watched Titles Offline by Default" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "İzlenenleri Varsayılan Olarak Çevrimdışı Sakla"
-          }
-        }
-      }
-    },
     "Keep downloads running in Menu Bar when closed" : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kapatınca indirmeler menü çubuğunda sürsün"
-          }
-        }
-      }
-    },
-    "Kept" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saklanan"
-          }
-        }
-      }
-    },
-    "Kept Offline" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Çevrimdışı Saklanıyor"
           }
         }
       }
@@ -2513,6 +2442,16 @@
         }
       }
     },
+    "Move File to Trash" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosyayı Çöp Sepetine Taşı"
+          }
+        }
+      }
+    },
     "Movie" : {
       "localizations" : {
         "en" : {
@@ -2811,6 +2750,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Çevrimiçi Sonuçlar"
+          }
+        }
+      }
+    },
+    "Open Download Folder" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "İndirme Klasörünü Aç"
           }
         }
       }
@@ -3313,6 +3262,26 @@
         }
       }
     },
+    "Remove from List" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listeden Kaldır"
+          }
+        }
+      }
+    },
+    "Remove “%@”?" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” kaldırılsın mı?"
+          }
+        }
+      }
+    },
     "Reset" : {
       "localizations" : {
         "en" : {
@@ -3381,6 +3350,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Duraklatılan İndirmeleri Sürdür"
+          }
+        }
+      }
+    },
+    "S%u · E%u — %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "S%1$u · E%2$u — %3$@"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "S%1$u · B%2$u — %3$@"
           }
         }
       }
@@ -3821,6 +3806,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cinma'yı Göster"
+          }
+        }
+      }
+    },
+    "Show in Finder" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder'da Göster"
           }
         }
       }
@@ -4417,16 +4412,6 @@
         }
       }
     },
-    "Tracked" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Takipte"
-          }
-        }
-      }
-    },
     "Trailer" : {
       "localizations" : {
         "en" : {
@@ -4553,36 +4538,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Haftanın Popüler Dizileri"
-          }
-        }
-      }
-    },
-    "Trim Cache" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Önbelleği Küçült"
-          }
-        }
-      }
-    },
-    "Trim Cache Now" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Önbelleği Şimdi Küçült"
-          }
-        }
-      }
-    },
-    "Trim disk cache to quota" : {
-      "localizations" : {
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Disk önbelleğini kotaya indir"
           }
         }
       }
@@ -4733,6 +4688,16 @@
         }
       }
     },
+    "Video Downloads" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video İndirmeleri"
+          }
+        }
+      }
+    },
     "Video, A/B Loop & Sleep Timer" : {
       "localizations" : {
         "en" : {
@@ -4845,6 +4810,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pencere"
+          }
+        }
+      }
+    },
+    "You can keep the file in your download folder or move it to the Trash." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dosyayı indirme klasörünüzde tutabilir ya da Çöp Sepeti'ne taşıyabilirsiniz."
           }
         }
       }

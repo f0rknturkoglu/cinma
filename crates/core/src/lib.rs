@@ -55,7 +55,7 @@ pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
 };
 pub use disk::{DiskPolicySettings, DiskUsageSummary};
-pub use downloads::YtdlpSourceSpec;
+pub use downloads::{YtdlpSourceSpec, default_audio_folder, default_video_folder};
 pub use events::{CoreEvent, CoreEventListener};
 pub use integrations::{AdapterStatus, StremioImportResult};
 pub use library::WatchProgressInput;

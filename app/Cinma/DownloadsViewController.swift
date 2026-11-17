@@ -53,16 +53,16 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
         )
         addBtn.setAccessibilityLabel(String(localized: "Add download by URL"))
 
-        let trimBtn = CinemaTheme.makePillButton(
-            title: String(localized: "Trim Cache"),
-            symbol: "internaldrive",
+        let folderBtn = CinemaTheme.makePillButton(
+            title: String(localized: "Open Download Folder"),
+            symbol: "folder",
             primary: false,
             target: self,
-            action: #selector(trimCacheClicked)
+            action: #selector(openFolderClicked)
         )
-        trimBtn.setAccessibilityLabel(String(localized: "Trim disk cache to quota"))
+        folderBtn.setAccessibilityLabel(String(localized: "Open Download Folder"))
 
-        let topBar = NSStackView(views: [header, usageLabel, NSView(), trimBtn, addBtn])
+        let topBar = NSStackView(views: [header, usageLabel, NSView(), folderBtn, addBtn])
         topBar.orientation = .horizontal
         topBar.alignment = .centerY
         topBar.spacing = 12
@@ -157,15 +157,10 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
     }
 
     private func refreshUsageSummary() {
-        if let usage = try? core.diskUsageSummary(),
-           let settings = try? core.diskPolicySettings()
-        {
-            let used = ByteCountFormatter.string(fromByteCount: Int64(usage.totalBytes), countStyle: .file)
-            let kept = ByteCountFormatter.string(fromByteCount: Int64(usage.keptBytes), countStyle: .file)
-            let quotaText = settings.cacheQuotaMb == 0
-                ? String(localized: "Unlimited")
-                : ByteCountFormatter.string(fromByteCount: Int64(settings.cacheQuotaMb) * 1024 * 1024, countStyle: .file)
-            usageLabel.stringValue = "\(used) / \(quotaText) · \(String(localized: "Kept")): \(kept)"
+        if let settings = try? core.diskPolicySettings() {
+            let path = (settings.videoFolder as NSString).abbreviatingWithTildeInPath
+            usageLabel.stringValue = path
+            usageLabel.toolTip = settings.videoFolder
         }
     }
 
@@ -239,6 +234,10 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
                 let resumeBtn = makeSmallButton("play.circle", tooltip: String(localized: "Resume"), tag: info.id, action: #selector(resumeClicked(_:)))
                 buttons.append(resumeBtn)
             }
+            if info.filePath != nil {
+                let showBtn = makeSmallButton("magnifyingglass", tooltip: String(localized: "Show in Finder"), tag: info.id, action: #selector(showInFinderClicked(_:)))
+                buttons.append(showBtn)
+            }
             let delBtn = makeSmallButton("trash", tooltip: String(localized: "Remove"), tag: info.id, action: #selector(removeClicked(_:)))
             buttons.append(delBtn)
 
@@ -301,13 +300,51 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
     }
 
     @objc private func removeClicked(_ sender: NSButton) {
-        try? core.removeDownload(id: Int64(sender.tag), deleteData: true)
-        reload()
+        let id = Int64(sender.tag)
+        guard let info = rowsById[id] else { return }
+        guard let path = info.filePath, FileManager.default.fileExists(atPath: path) else {
+            // Unfinished: its partial data is useless, remove it with the row.
+            try? core.removeDownload(id: id, deleteData: true)
+            reload()
+            return
+        }
+        // Finished files belong to the user: ask, and only ever use the Trash.
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Remove “\(info.title)”?")
+        alert.informativeText = String(localized: "You can keep the file in your download folder or move it to the Trash.")
+        alert.addButton(withTitle: String(localized: "Remove from List"))
+        alert.addButton(withTitle: String(localized: "Move File to Trash"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.buttons[1].hasDestructiveAction = true
+        let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn:
+                try? self.core.removeDownload(id: id, deleteData: false)
+            case .alertSecondButtonReturn:
+                try? self.core.removeDownload(id: id, deleteData: false)
+                NSWorkspace.shared.recycle([URL(fileURLWithPath: path)])
+            default:
+                return
+            }
+            self.reload()
+        }
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: handle)
+        } else {
+            handle(alert.runModal())
+        }
     }
 
-    @objc private func trimCacheClicked() {
-        _ = try? core.enforceDiskQuota()
-        refreshUsageSummary()
+    @objc private func showInFinderClicked(_ sender: NSButton) {
+        guard let path = rowsById[Int64(sender.tag)]?.filePath else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
+    @objc private func openFolderClicked() {
+        guard let folder = try? core.diskPolicySettings().videoFolder else { return }
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(URL(fileURLWithPath: folder))
     }
 
     @objc private func openAddSheet() {

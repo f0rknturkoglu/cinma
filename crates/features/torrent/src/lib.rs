@@ -22,7 +22,10 @@ use cinma_blobstore::{
     ByteSource, CancellationToken, OPENSUBTITLES_CHUNK_SIZE, RangeSet, SourceReader,
     cancelled_error,
 };
-pub use download::{SeedingPolicy, TorrentDownloadEngine, TorrentSourceSpec};
+pub use download::{
+    FolderResolver, PARTIAL_DIR, SeedingPolicy, TorrentDownloadEngine, TorrentSourceSpec,
+    remove_staging, staging_dir,
+};
 use librqbit::dht::DhtPersistenceConfig;
 use librqbit::limits::LimitsConfig;
 use librqbit::{
@@ -243,7 +246,7 @@ impl RqbitEngine {
         self.config.root.join("downloads")
     }
 
-    async fn session(&self) -> Result<Arc<Session>, TorrentError> {
+    pub(crate) async fn session(&self) -> Result<Arc<Session>, TorrentError> {
         let mut guard = self.session.lock().await;
         if let Some(session) = guard.as_ref() {
             return Ok(Arc::clone(session));
@@ -314,13 +317,44 @@ impl RqbitEngine {
         let info_hash = normalize_info_hash(&request.info_hash)?;
         // Mark before adding, so a crash during add is cleaned up next start.
         self.mark_stream(&info_hash);
-        self.open_with_handle(request).await.map(|(_, s)| s)
+        self.open_with_handle(request, None)
+            .await
+            .map(|(_, s, _)| s)
+    }
+
+    /// Opens a torrent for downloading into `staging` (a folder we own: the
+    /// torrent may write any file name inside it). If the torrent is already
+    /// in the session (e.g. it was streaming), it stays where it is; callers
+    /// must use the returned path, not assume `staging`.
+    pub async fn open_download(
+        &self,
+        request: TorrentFileRequest,
+        staging: &std::path::Path,
+    ) -> Result<(Arc<ManagedTorrent>, Arc<dyn ByteSource>, PathBuf), TorrentError> {
+        let info_hash = normalize_info_hash(&request.info_hash)?;
+        self.mark_download(&info_hash);
+        let (handle, source, path) = self.open_with_handle(request, Some(staging)).await?;
+        let path = path.ok_or(TorrentError::NoFiles)?;
+        Ok((handle, source, path))
+    }
+
+    /// Removes a torrent from the session but keeps its files (pause, finish).
+    pub async fn forget(&self, handle: &Arc<ManagedTorrent>) {
+        let session = self.session.lock().await.clone();
+        if let Some(session) = session
+            && let Err(e) = session
+                .delete(librqbit::api::TorrentIdOrHash::Id(handle.id()), false)
+                .await
+        {
+            eprintln!("[cinma] torrent: could not detach download: {e}");
+        }
     }
 
     pub(crate) async fn open_with_handle(
         &self,
         request: TorrentFileRequest,
-    ) -> Result<(Arc<ManagedTorrent>, Arc<dyn ByteSource>), TorrentError> {
+        output_folder: Option<&std::path::Path>,
+    ) -> Result<(Arc<ManagedTorrent>, Arc<dyn ByteSource>, Option<PathBuf>), TorrentError> {
         let info_hash = normalize_info_hash(&request.info_hash)?;
         let session = self.session().await?;
         let mut trackers = request.trackers.clone();
@@ -392,7 +426,10 @@ impl RqbitEngine {
                 add_source,
                 Some(AddTorrentOptions {
                     only_files: Some(vec![file_idx]),
+                    // Safe: streams go to our cache folder and downloads to a
+                    // per-torrent staging folder we own, never a user folder.
                     overwrite: true,
+                    output_folder: output_folder.map(|p| p.to_string_lossy().into_owned()),
                     initial_peers,
                     trackers: Some(trackers),
                     ..Default::default()
@@ -449,6 +486,7 @@ impl RqbitEngine {
             len,
             Arc::clone(&available),
         ))));
+        let file_path = disk_path.clone();
         Ok((
             Arc::clone(&handle),
             Arc::new(TorrentSource {
@@ -462,6 +500,7 @@ impl RqbitEngine {
                 runtime: self.runtime.clone(),
                 warmup,
             }),
+            file_path,
         ))
     }
 
