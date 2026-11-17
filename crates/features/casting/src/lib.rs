@@ -6,6 +6,7 @@
 pub mod chromecast;
 pub mod discovery;
 pub mod dlna;
+pub mod mdns;
 pub mod server;
 
 use std::time::Duration;

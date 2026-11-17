@@ -541,7 +541,7 @@ impl Core {
         candidates: Vec<StreamCandidate>,
         prefs: Option<RankerPreferences>,
     ) -> RankResult {
-        let caps = MachineCapabilities::detect();
+        let caps = machine_capabilities();
         let prefs = prefs.unwrap_or_default();
         let raw = candidates
             .into_iter()
@@ -551,6 +551,16 @@ impl Core {
     }
 
     pub fn hardware_av1_supported(&self) -> bool {
-        MachineCapabilities::detect().hardware_av1
+        machine_capabilities().hardware_av1
     }
+}
+
+/// Detected once per process, in-process via `sysctlbyname`.
+fn machine_capabilities() -> MachineCapabilities {
+    static CACHED: std::sync::OnceLock<MachineCapabilities> = std::sync::OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let brand = cinma_player::sysctl_string("machdep.cpu.brand_string").unwrap_or_default();
+        let model = cinma_player::sysctl_string("hw.model").unwrap_or_default();
+        MachineCapabilities::from_sysctl(&brand, &model)
+    })
 }

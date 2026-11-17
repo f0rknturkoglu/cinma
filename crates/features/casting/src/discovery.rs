@@ -105,87 +105,30 @@ fn extract_avtransport_control_url(xml: &str) -> Option<String> {
 }
 
 async fn discover_chromecast(timeout: Duration) -> Result<Vec<CastDevice>, CastError> {
-    // Use macOS `dns-sd -B _googlecast._tcp` bounded by `timeout` (short-lived child).
-    let mut child = tokio::process::Command::new("/usr/bin/dns-sd")
-        .args(["-B", "_googlecast._tcp", "local"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-
-    let mut instances = Vec::new();
-    if let Some(mut stdout) = child.stdout.take() {
-        use tokio::io::AsyncReadExt;
-        let mut buf = vec![0u8; 8192];
-        let deadline = tokio::time::Instant::now() + timeout.min(Duration::from_millis(1500));
-        while tokio::time::Instant::now() < deadline {
-            let rem = deadline.saturating_duration_since(tokio::time::Instant::now());
-            match tokio::time::timeout(rem, stdout.read(&mut buf)).await {
-                Ok(Ok(0)) | Err(_) => break,
-                Ok(Ok(n)) => {
-                    let s = String::from_utf8_lossy(&buf[..n]);
-                    for line in s.lines() {
-                        if line.contains("_googlecast._tcp.")
-                            && line.contains("Add")
-                            && let Some(instance) = line.split("_googlecast._tcp.").nth(1)
-                        {
-                            let name = instance.trim().to_owned();
-                            if !name.is_empty() && !instances.contains(&name) {
-                                instances.push(name);
-                            }
-                        }
-                    }
-                }
-                Ok(Err(_)) => break,
-            }
-        }
-    }
-    let _ = child.kill().await;
-
-    let mut out = Vec::new();
-    for instance in instances {
-        if let Some((host, port)) = resolve_chromecast_instance(&instance).await {
-            out.push(CastDevice {
-                id: format!("cast:{host}:{port}"),
-                kind: CastKind::Chromecast,
-                name: instance,
-                host,
-                port,
-                control_url: None,
+    // In-process mDNS (no `dns-sd` child process), bounded by `timeout`.
+    let services = crate::mdns::browse(
+        crate::mdns::GOOGLECAST_SERVICE,
+        timeout.min(Duration::from_millis(2000)),
+    )
+    .await?;
+    Ok(services
+        .into_iter()
+        .map(|s| {
+            let suffix = format!(".{}", crate::mdns::GOOGLECAST_SERVICE);
+            let name = s.friendly_name.clone().unwrap_or_else(|| {
+                s.instance
+                    .strip_suffix(&suffix)
+                    .unwrap_or(&s.instance)
+                    .to_owned()
             });
-        }
-    }
-    Ok(out)
-}
-
-async fn resolve_chromecast_instance(instance: &str) -> Option<(String, u16)> {
-    let mut child = tokio::process::Command::new("/usr/bin/dns-sd")
-        .args(["-L", instance, "_googlecast._tcp", "local"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok()?;
-    let mut host_port = None;
-    if let Some(mut stdout) = child.stdout.take() {
-        use tokio::io::AsyncReadExt;
-        let mut buf = vec![0u8; 4096];
-        if let Ok(Ok(n)) =
-            tokio::time::timeout(Duration::from_millis(800), stdout.read(&mut buf)).await
-        {
-            let s = String::from_utf8_lossy(&buf[..n]);
-            for line in s.lines() {
-                if let Some(pos) = line.find("can be reached at ") {
-                    let rest = &line[pos + "can be reached at ".len()..];
-                    if let Some(hp) = rest.split_whitespace().next()
-                        && let Some((h, p)) = hp.rsplit_once(':')
-                        && let Ok(port) = p.parse::<u16>()
-                    {
-                        host_port = Some((h.trim_end_matches('.').to_owned(), port));
-                        break;
-                    }
-                }
+            CastDevice {
+                id: format!("cast:{}:{}", s.ip, s.port),
+                kind: CastKind::Chromecast,
+                name,
+                host: s.ip.to_string(),
+                port: s.port,
+                control_url: None,
             }
-        }
-    }
-    let _ = child.kill().await;
-    host_port
+        })
+        .collect())
 }

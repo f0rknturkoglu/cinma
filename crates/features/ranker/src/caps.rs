@@ -1,6 +1,3 @@
-use std::process::Command;
-use std::sync::OnceLock;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MachineCapabilities {
     /// Apple Silicon M3 and newer include hardware AV1 decode.
@@ -8,27 +5,12 @@ pub struct MachineCapabilities {
 }
 
 impl MachineCapabilities {
-    pub fn detect() -> Self {
-        static CACHED: OnceLock<MachineCapabilities> = OnceLock::new();
-        *CACHED.get_or_init(detect_uncached)
-    }
-}
-
-fn detect_uncached() -> MachineCapabilities {
-    let output = Command::new("/usr/sbin/sysctl")
-        .args(["-n", "machdep.cpu.brand_string", "hw.model"])
-        .output();
-    let Ok(output) = output else {
-        return MachineCapabilities {
-            hardware_av1: false,
-        };
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut lines = text.lines();
-    let brand = lines.next().unwrap_or("");
-    let model = lines.next().unwrap_or("");
-    MachineCapabilities {
-        hardware_av1: parse_hardware_av1(brand, model),
+    /// Builds capabilities from `machdep.cpu.brand_string` and `hw.model`
+    /// (read in-process by the caller; the ranker stays platform-free).
+    pub fn from_sysctl(brand: &str, model: &str) -> Self {
+        Self {
+            hardware_av1: parse_hardware_av1(brand, model),
+        }
     }
 }
 

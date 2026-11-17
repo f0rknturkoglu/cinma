@@ -859,6 +859,61 @@ pub fn release_heap_pressure() {
     }
 }
 
+/// Reads a string `sysctl` value in-process (no `/usr/sbin/sysctl` child).
+pub fn sysctl_string(name: &str) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe extern "C" {
+            fn sysctlbyname(
+                name: *const c_char,
+                oldp: *mut c_void,
+                oldlenp: *mut usize,
+                newp: *mut c_void,
+                newlen: usize,
+            ) -> c_int;
+        }
+        let name = CString::new(name).ok()?;
+        let mut len: usize = 0;
+        // SAFETY: size query with a valid NUL-terminated name and null buffer.
+        let rc = unsafe {
+            sysctlbyname(
+                name.as_ptr(),
+                std::ptr::null_mut(),
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 || len == 0 || len > 4096 {
+            return None;
+        }
+        let mut buf = vec![0u8; len];
+        // SAFETY: `buf` has `len` writable bytes, as reported by the size query.
+        let rc = unsafe {
+            sysctlbyname(
+                name.as_ptr(),
+                buf.as_mut_ptr().cast(),
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if rc != 0 {
+            return None;
+        }
+        buf.truncate(len);
+        while buf.last() == Some(&0) {
+            buf.pop();
+        }
+        String::from_utf8(buf).ok()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = name;
+        None
+    }
+}
+
 /// Checks whether a local `Contents/Frameworks/libmpv.2.dylib` or Homebrew dylib exists.
 pub use sys::api as ensure_libmpv_available;
 
@@ -1093,5 +1148,15 @@ fn map_f64(fields: &[(String, MpvNode)], key: &str) -> Option<f64> {
         MpvNode::Double(d) => Some(*d),
         MpvNode::Int(i) => Some(*i as f64),
         _ => None,
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod sysctl_tests {
+    #[test]
+    fn reads_cpu_brand_in_process() {
+        let brand = super::sysctl_string("machdep.cpu.brand_string").unwrap_or_default();
+        assert!(!brand.is_empty(), "brand string should be readable");
+        assert!(super::sysctl_string("no.such.sysctl").is_none());
     }
 }
