@@ -69,7 +69,7 @@ pub use metadata::RichMetaResult;
 pub use phase9::{
     DebridProviderStatus, DiscordPresenceInput, OAuthStartResult, TitleExtras, TraktPullSummary,
 };
-pub use playback::{NextEpisodePrefetch, Playback, VideoFileIdentity};
+pub use playback::{NextEpisodePrefetch, Playback, StreamStats, VideoFileIdentity};
 pub use settings::Feature;
 pub use subtitles::{PlayerPreferences, SubtitleSearchRequest, SubtitleSettings, VideoOffsets};
 pub use trailers::YtdlpStatus;

@@ -66,6 +66,22 @@
         }
       }
     },
+    "%@ / %@ (%lld%%)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ / %2$@ (%3$lld%%)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ / %2$@ (%%%3$lld)"
+          }
+        }
+      }
+    },
     "%@ seeders": {
       "localizations": {
         "en": {
@@ -758,6 +774,22 @@
         }
       }
     },
+    "Addon": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Addon"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eklenti"
+          }
+        }
+      }
+    },
     "Addon Catalog": {
       "localizations": {
         "en": {
@@ -1262,6 +1294,22 @@
         }
       }
     },
+    "Buffered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buffered"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Önbelleklenen"
+          }
+        }
+      }
+    },
     "Buffering…": {
       "localizations": {
         "en": {
@@ -1274,6 +1322,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arabelleğe alınıyor…"
+          }
+        }
+      }
+    },
+    "Cache": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Önbellek"
           }
         }
       }
@@ -1887,6 +1951,22 @@
         }
       }
     },
+    "Decoder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decoder"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Çözücü"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "tr": {
@@ -2022,6 +2102,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "İndirmeler, Disk Politikası ve Menü Çubuğu"
+          }
+        }
+      }
+    },
+    "Drops": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drops"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Düşen Kare"
           }
         }
       }
@@ -2550,6 +2646,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ana Sayfa"
+          }
+        }
+      }
+    },
+    "Host": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Host"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sunucu"
           }
         }
       }
@@ -4021,6 +4133,22 @@
         }
       }
     },
+    "Peers": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Peers"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eşler (Peer)"
+          }
+        }
+      }
+    },
     "Phase 9 Optional Modules (Off by Default)": {
       "localizations": {
         "tr": {
@@ -4301,6 +4429,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "İzleme Listesini ve Geçmişi Çek"
+          }
+        }
+      }
+    },
+    "Quality": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kalite"
           }
         }
       }
@@ -5443,6 +5587,22 @@
         }
       }
     },
+    "Streaming Details": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming Details"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yayın Ayrıntıları"
+          }
+        }
+      }
+    },
     "Stremio Addons": {
       "localizations": {
         "en": {
@@ -6212,6 +6372,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "%u EPG programı güncellendi"
+          }
+        }
+      }
+    },
+    "Upload": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yükleme"
           }
         }
       }

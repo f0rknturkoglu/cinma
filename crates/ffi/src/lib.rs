@@ -886,6 +886,41 @@ impl From<cinma_core::Chapter> for ChapterInfo {
 }
 
 #[derive(uniffi::Record)]
+pub struct StreamStatsInfo {
+    pub is_torrent: bool,
+    pub info_hash: Option<String>,
+    pub filename: Option<String>,
+    pub source_url: Option<String>,
+    pub download_speed_bps: u64,
+    pub upload_speed_bps: u64,
+    pub peers_connected: u32,
+    pub peers_queued: u32,
+    pub peers_seen: u32,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub finished: bool,
+}
+
+impl From<cinma_core::StreamStats> for StreamStatsInfo {
+    fn from(s: cinma_core::StreamStats) -> Self {
+        Self {
+            is_torrent: s.is_torrent,
+            info_hash: s.info_hash,
+            filename: s.filename,
+            source_url: s.source_url,
+            download_speed_bps: s.download_speed_bps,
+            upload_speed_bps: s.upload_speed_bps,
+            peers_connected: s.peers_connected,
+            peers_queued: s.peers_queued,
+            peers_seen: s.peers_seen,
+            downloaded_bytes: s.downloaded_bytes,
+            total_bytes: s.total_bytes,
+            finished: s.finished,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
 pub struct PlayerStatsInfo {
     pub video_codec: String,
     pub width: i64,
@@ -2833,6 +2868,10 @@ impl PlaybackSession {
 
     pub fn stats(&self) -> PlayerStatsInfo {
         self.inner.player().stats().into()
+    }
+
+    pub fn stream_stats(&self) -> StreamStatsInfo {
+        self.inner.stream_stats().into()
     }
 
     pub fn set_audio_track(&self, id: Option<i64>) -> Result<(), CinmaError> {

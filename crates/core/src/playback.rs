@@ -24,6 +24,22 @@ pub struct VideoFileIdentity {
     pub filename: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StreamStats {
+    pub is_torrent: bool,
+    pub info_hash: Option<String>,
+    pub filename: Option<String>,
+    pub source_url: Option<String>,
+    pub download_speed_bps: u64,
+    pub upload_speed_bps: u64,
+    pub peers_connected: u32,
+    pub peers_queued: u32,
+    pub peers_seen: u32,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub finished: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct NextEpisodePrefetch {
     pub video_id: String,
@@ -41,6 +57,7 @@ pub struct Playback {
     player: Player,
     source: Mutex<Option<Arc<dyn ByteSource>>>,
     local_path: Mutex<Option<PathBuf>>,
+    source_url: Mutex<Option<String>>,
     thumbs: Mutex<Option<Arc<ThumbnailExtractor>>>,
     cached_identity: Mutex<Option<VideoFileIdentity>>,
     prefetch_abort: Mutex<Option<AbortHandle>>,
@@ -84,6 +101,7 @@ impl Core {
             player: Player::new_with_config(events, config)?,
             source: Mutex::new(None),
             local_path: Mutex::new(None),
+            source_url: Mutex::new(None),
             thumbs: Mutex::new(None),
             cached_identity: Mutex::new(None),
             prefetch_abort: Mutex::new(None),
@@ -213,6 +231,8 @@ impl Playback {
             && let Ok(mut guard) = self.local_path.lock()
         {
             *guard = Some(PathBuf::from(local));
+        } else if let Ok(mut guard) = self.source_url.lock() {
+            *guard = Some(url.to_owned());
         }
         self.player.load_url(url)?;
         Ok(())
@@ -248,6 +268,9 @@ impl Playback {
             *g = None;
         }
         if let Ok(mut g) = self.local_path.lock() {
+            *g = None;
+        }
+        if let Ok(mut g) = self.source_url.lock() {
             *g = None;
         }
         if let Ok(mut g) = self.thumbs.lock() {
@@ -417,6 +440,45 @@ impl Playback {
 
     pub fn player(&self) -> &Player {
         &self.player
+    }
+
+    pub fn stream_stats(&self) -> StreamStats {
+        if let Some(source) = self.source.lock().ok().and_then(|g| g.clone()) {
+            let st = source.stats().unwrap_or_default();
+            return StreamStats {
+                is_torrent: st.is_torrent,
+                info_hash: st.info_hash,
+                filename: source.filename().map(str::to_owned),
+                source_url: None,
+                download_speed_bps: st.download_speed_bps,
+                upload_speed_bps: st.upload_speed_bps,
+                peers_connected: st.peers_connected,
+                peers_queued: st.peers_queued,
+                peers_seen: st.peers_seen,
+                downloaded_bytes: st.downloaded_bytes,
+                total_bytes: if st.total_bytes > 0 {
+                    st.total_bytes
+                } else {
+                    source.size()
+                },
+                finished: st.finished,
+            };
+        }
+        if let Some(path) = self.local_path.lock().ok().and_then(|g| g.clone()) {
+            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            return StreamStats {
+                filename: path.file_name().and_then(|s| s.to_str()).map(str::to_owned),
+                downloaded_bytes: size,
+                total_bytes: size,
+                finished: true,
+                ..StreamStats::default()
+            };
+        }
+        let url = self.source_url.lock().ok().and_then(|g| g.clone());
+        StreamStats {
+            source_url: url,
+            ..StreamStats::default()
+        }
     }
 
     /// Destroys mpv, cancels prefetching, and stops torrent activity (unless

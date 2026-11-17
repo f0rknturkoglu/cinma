@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cinma_blobstore::{
-    ByteSource, CancellationToken, OPENSUBTITLES_CHUNK_SIZE, RangeSet, SourceReader,
+    ByteSource, CancellationToken, OPENSUBTITLES_CHUNK_SIZE, RangeSet, SourceReader, SourceStats,
     cancelled_error,
 };
 pub use download::{
@@ -875,6 +875,32 @@ impl ByteSource for TorrentSource {
 
     fn available_ranges(&self) -> Option<RangeSet> {
         self.available.lock().ok().map(|r| r.clone())
+    }
+
+    fn stats(&self) -> Option<SourceStats> {
+        let st = self.handle.stats();
+        let (dl_bps, ul_bps, live_peers, queued_peers, seen_peers) = match st.live.as_ref() {
+            Some(live) => (
+                (live.download_speed.mbps * 1_048_576.0).max(0.0) as u64,
+                (live.upload_speed.mbps * 1_048_576.0).max(0.0) as u64,
+                live.snapshot.peer_stats.live,
+                live.snapshot.peer_stats.queued + live.snapshot.peer_stats.connecting,
+                live.snapshot.peer_stats.seen,
+            ),
+            None => (0, 0, 0, 0, 0),
+        };
+        Some(SourceStats {
+            is_torrent: true,
+            info_hash: Some(self.handle.info_hash().as_string()),
+            download_speed_bps: dl_bps,
+            upload_speed_bps: ul_bps,
+            peers_connected: live_peers,
+            peers_queued: queued_peers,
+            peers_seen: seen_peers,
+            downloaded_bytes: st.progress_bytes.min(self.len),
+            total_bytes: self.len,
+            finished: st.finished,
+        })
     }
 
     fn try_read_at(&self, offset: u64, buf: &mut [u8]) -> Option<usize> {

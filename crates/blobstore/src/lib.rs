@@ -37,6 +37,21 @@ pub use plan::{HEAD_BYTES, TAIL_BYTES, fetch_order};
 pub use ranges::RangeSet;
 use wait::wait_until;
 
+/// Live transfer metrics for a [`ByteSource`] (e.g. active BitTorrent stream).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SourceStats {
+    pub is_torrent: bool,
+    pub info_hash: Option<String>,
+    pub download_speed_bps: u64,
+    pub upload_speed_bps: u64,
+    pub peers_connected: u32,
+    pub peers_queued: u32,
+    pub peers_seen: u32,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub finished: bool,
+}
+
 /// Something with a known size that can be read at arbitrary offsets.
 pub trait ByteSource: Send + Sync + 'static {
     fn size(&self) -> u64;
@@ -50,6 +65,10 @@ pub trait ByteSource: Send + Sync + 'static {
     }
     /// Snapshot of byte ranges currently available without network I/O.
     fn available_ranges(&self) -> Option<RangeSet> {
+        None
+    }
+    /// Non-blocking live transfer & peer counters when supported.
+    fn stats(&self) -> Option<SourceStats> {
         None
     }
     /// Non-blocking read of already-available bytes only. Must NEVER block

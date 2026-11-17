@@ -424,3 +424,153 @@ struct StreamSwitcherPopoverView: View {
         return parts.joined(separator: " · ")
     }
 }
+
+/// Live streaming & P2P transfer details popover (`globe` button in bottom bar).
+struct StreamDetailsPopoverView: View {
+    let session: PlaybackSession?
+    let addonName: String?
+    let streamSummary: String?
+
+    @State private var streamStats: StreamStatsInfo?
+    @State private var playerStats: PlayerStatsInfo?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack {
+                Image(systemName: "globe")
+                    .foregroundStyle(.orange)
+                Text(String(localized: "Streaming Details"))
+                    .font(.headline)
+                Spacer()
+                Text(sourceTypeBadge)
+                    .font(.caption2.bold())
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(.orange.opacity(0.22))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            }
+
+            if let addonName, !addonName.isEmpty {
+                detailRow(String(localized: "Addon"), value: addonName)
+            }
+            if let streamSummary, !streamSummary.isEmpty {
+                detailRow(String(localized: "Quality"), value: streamSummary)
+            }
+
+            if let st = streamStats {
+                if st.isTorrent {
+                    Divider()
+                    HStack(spacing: 16) {
+                        metricBox(
+                            title: String(localized: "Download"),
+                            value: formatSpeed(st.downloadSpeedBps)
+                        )
+                        metricBox(
+                            title: String(localized: "Upload"),
+                            value: formatSpeed(st.uploadSpeedBps)
+                        )
+                        metricBox(
+                            title: String(localized: "Peers"),
+                            value: "\(st.peersConnected) / \(st.peersSeen)"
+                        )
+                    }
+
+                    if st.totalBytes > 0 {
+                        let ratio = min(max(Double(st.downloadedBytes) / Double(st.totalBytes), 0), 1)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(String(localized: "Buffered"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(
+                                    "\(ByteCountFormatter.string(fromByteCount: Int64(st.downloadedBytes), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(st.totalBytes), countStyle: .file)) (\(Int((ratio * 100).rounded()))%)"
+                                )
+                                .font(.system(.caption2, design: .monospaced))
+                            }
+                            ProgressView(value: ratio)
+                                .tint(.orange)
+                        }
+                    }
+
+                    if let hash = st.infoHash {
+                        detailRow("Hash", value: String(hash.prefix(12)) + "…")
+                    }
+                } else if let url = st.sourceUrl, let host = URL(string: url)?.host {
+                    Divider()
+                    detailRow(String(localized: "Host"), value: host)
+                }
+
+                if let file = st.filename, !file.isEmpty {
+                    detailRow(String(localized: "File"), value: file)
+                }
+            }
+
+            if let ps = playerStats {
+                Divider()
+                HStack(spacing: 16) {
+                    metricBox(
+                        title: String(localized: "Cache"),
+                        value: String(format: "%.1fs", ps.cacheSeconds)
+                    )
+                    metricBox(
+                        title: String(localized: "Decoder"),
+                        value: ps.hwdec.isEmpty ? "sw" : ps.hwdec
+                    )
+                    metricBox(
+                        title: String(localized: "Drops"),
+                        value: "\(ps.droppedFrames)"
+                    )
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 360)
+        .preferredColorScheme(.dark)
+        .task {
+            while !Task.isCancelled {
+                streamStats = session?.streamStats()
+                playerStats = session?.stats()
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    private var sourceTypeBadge: String {
+        guard let st = streamStats else { return "—" }
+        if st.isTorrent { return "BitTorrent P2P" }
+        if st.sourceUrl != nil { return "HTTP / CDN" }
+        return String(localized: "Local File")
+    }
+
+    private func formatSpeed(_ bps: UInt64) -> String {
+        let kb = Double(bps) / 1024.0
+        if kb >= 1024.0 {
+            return String(format: "%.1f MB/s", kb / 1024.0)
+        }
+        return String(format: "%.0f KB/s", kb)
+    }
+
+    private func detailRow(_ label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+
+    private func metricBox(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.callout, design: .monospaced).weight(.semibold))
+        }
+    }
+}

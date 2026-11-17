@@ -356,6 +356,7 @@ final class PlayerViewController: NSViewController {
         let subBtn = makeIconButton("captions.bubble", tooltip: String(localized: "Subtitles"), action: #selector(showSubtitlesPopover(_:)))
         let audioBtn = makeIconButton("waveform", tooltip: String(localized: "Audio Track & Delay"), action: #selector(showAudioMenu(_:)))
         let chapBtn = makeIconButton("list.bullet.rectangle", tooltip: String(localized: "Chapters"), action: #selector(showChaptersMenu(_:)))
+        let globeBtn = makeIconButton("globe", tooltip: String(localized: "Streaming Details"), action: #selector(showStreamDetailsPopover(_:)))
         let streamsBtn = makeIconButton("rectangle.stack", tooltip: String(localized: "Switch Stream"), action: #selector(showStreamSwitcher(_:)))
         let castBtn = makeIconButton("tv.and.mediabox", tooltip: String(localized: "Cast to LAN Device"), action: #selector(openCastSheet(_:)))
         let pipBtn = makeIconButton("pip.enter", tooltip: String(localized: "Mini Player (P)"), action: #selector(enterPiPClicked))
@@ -373,7 +374,7 @@ final class PlayerViewController: NSViewController {
             back10, playButton, fwd10, timeLabel, infoLabel,
             spacer,
             volumeButton, speedButton, subBtn, audioBtn, chapBtn,
-            streamsBtn, castBtn, pipBtn, statsBtn, shotBtn, moreBtn, fsBtn,
+            globeBtn, streamsBtn, castBtn, pipBtn, statsBtn, shotBtn, moreBtn, fsBtn,
         ])
         transportRow.orientation = .horizontal
         transportRow.alignment = .centerY
@@ -1195,6 +1196,17 @@ final class PlayerViewController: NSViewController {
 
     // MARK: - Popovers & Menus
 
+    @objc private func showStreamDetailsPopover(_ sender: NSButton) {
+        showHudAndCancelTimer()
+        let addon: String? = if case .stream(let s, _) = request { s.addonName } else { nil }
+        let view = StreamDetailsPopoverView(
+            session: session,
+            addonName: addon,
+            streamSummary: metadata?.streamSummary
+        )
+        presentFloatingPopover(view, relativeTo: sender)
+    }
+
     @objc private func showStreamSwitcher(_ sender: NSButton) {
         showHudAndCancelTimer()
         let streams = metadata?.rankedStreams ?? []
@@ -1745,6 +1757,8 @@ final class PlayerViewController: NSViewController {
         case "player.close":
             if popoverBackdrop != nil {
                 dismissFloatingPopover()
+            } else if view.window?.styleMask.contains(.fullScreen) == true {
+                toggleFullscreen()
             } else {
                 close()
             }
