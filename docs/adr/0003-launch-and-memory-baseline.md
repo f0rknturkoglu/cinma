@@ -9,13 +9,13 @@ A trivial AppKit app (one `NSWindow`, nothing else, `swiftc -O`) on this machine
 | | first frame | RSS | phys_footprint |
 |---|---|---|---|
 | Bare AppKit floor | ~152 ms | 77.5 MB | 17 MB |
-| Cinma Phase 0 | ~150 ms (median of 7) | 82 MB | 20 MB |
+| Cinma Phase 0 | 150–160 ms (medians of 3 sessions: 158.5, ~160, 150.5) | 82 MB | 20 MB |
 
 ~70 ms of the launch is `NSApplication.shared` alone, ~30 ms is AppKit's `finishLaunching`; both are outside our control. Our own code (menu, window, home view, first frame) costs ~45 ms, mostly first-use framework costs (first `NSWindow` ≈ 20 ms).
 
 ## Consequences
 
-1. **Phase 0 exit "< 150 ms"** sits at the OS floor on this machine, so it's met only by a hair and is noise-sensitive. The §6 target (**< 250 ms**) is met comfortably.
+1. **Phase 0 exit "< 150 ms" is not met as written**: it sits at the OS floor on this machine (a bare AppKit window can't meet it either). Owner decides whether to accept the floor-relative reading. The §6 target (**< 250 ms**) is met comfortably.
 2. **RSS cannot reach ≤ 70 MB**: macOS RSS counts shared dyld-cache pages, and bare AppKit is already at 77 MB. RSS mostly measures the OS.
 
 ## Proposal
