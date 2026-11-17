@@ -3,8 +3,8 @@ use std::time::Duration;
 use url::Url;
 
 use crate::{
-    AddonError, CatalogQuery, CatalogResponse, Manifest, Meta, Stream, parse_catalog, parse_meta,
-    parse_streams,
+    AddonError, AddonSubtitle, CatalogQuery, CatalogResponse, Manifest, Meta, Stream,
+    SubtitleQuery, parse_catalog, parse_meta, parse_streams, parse_subtitles,
 };
 
 /// Normalizes user input (`https://…/manifest.json`, `stremio://…`) to the
@@ -67,6 +67,28 @@ pub fn catalog_url(
         .map_err(|()| AddonError::InvalidUrl(base.to_string()))?
         .pop_if_empty()
         .extend(["catalog", media_type, catalog_id]);
+    let extra = query.encode_extra();
+    let base_path = url.path().trim_end_matches('/');
+    url.set_path(&format!("{base_path}/{extra}.json"));
+    Ok(url)
+}
+
+/// Builds `{base}/subtitles/{type}/{id}.json` or
+/// `{base}/subtitles/{type}/{id}/{extra}.json` (`videoHash`, `videoSize`, `filename`).
+pub fn subtitles_url(
+    base: &Url,
+    media_type: &str,
+    id: &str,
+    query: &SubtitleQuery,
+) -> Result<Url, AddonError> {
+    if query.is_empty() {
+        return resource_url(base, "subtitles", media_type, id);
+    }
+    let mut url = base.clone();
+    url.path_segments_mut()
+        .map_err(|()| AddonError::InvalidUrl(base.to_string()))?
+        .pop_if_empty()
+        .extend(["subtitles", media_type, id]);
     let extra = query.encode_extra();
     let base_path = url.path().trim_end_matches('/');
     url.set_path(&format!("{base_path}/{extra}.json"));
@@ -136,5 +158,20 @@ impl AddonClient {
     ) -> Result<Option<Meta>, AddonError> {
         let (_, base) = normalize_manifest_url(transport_url)?;
         parse_meta(&self.get(meta_url(&base, media_type, id)?).await?)
+    }
+
+    pub async fn fetch_subtitles(
+        &self,
+        transport_url: &str,
+        media_type: &str,
+        id: &str,
+        query: &SubtitleQuery,
+    ) -> Result<Vec<AddonSubtitle>, AddonError> {
+        let (_, base) = normalize_manifest_url(transport_url)?;
+        parse_subtitles(
+            &self
+                .get(subtitles_url(&base, media_type, id, query)?)
+                .await?,
+        )
     }
 }

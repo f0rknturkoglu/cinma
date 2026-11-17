@@ -331,13 +331,39 @@ struct SettingsView: View {
 
     @State private var tmdbKey = ""
     @State private var hasTmdbKey = false
+    @State private var openSubKey = ""
+    @State private var hasOpenSubKey = false
     @State private var language = "tr-TR"
     @State private var addonsEnabled = true
     @State private var torrentEnabled = true
     @State private var ytdlpStatus = YtdlpStatusInfo(available: false, path: nil, managed: false)
+    @State private var subSettings = SubtitleSettingsFfi(
+        preferredLangs: ["tur", "eng"],
+        audioLangs: ["eng", "jpn", "tur"],
+        dualSecondaryLang: "eng",
+        srtFont: nil,
+        srtFontSize: 46,
+        srtColor: nil,
+        srtPos: 95,
+        assOverride: false
+    )
+    @State private var playerPrefs = PlayerPreferencesFfi(
+        exactSeek: true,
+        hdrTargetPeak: nil,
+        shaderPreset: "none",
+        autoplayNext: true,
+        autoplayCountdownS: 10,
+        forceHdrSurface: false
+    )
+    @State private var subLangsText = "tur, eng"
+    @State private var audioLangsText = "eng, jpn, tur"
+    @State private var dualLangText = "eng"
+    @State private var srtFontText = ""
     @State private var commands: [CommandInfo] = []
     @State private var editingCommandId: String?
     @State private var keyDraft = ""
+    @State private var recordingCommandId: String?
+    @State private var keyMonitor: Any?
     @State private var status = ""
 
     var body: some View {
@@ -365,6 +391,93 @@ struct SettingsView: View {
                 }
                 .onChange(of: language) { _, newValue in
                     try? core.setMetadataLanguage(lang: newValue)
+                }
+            }
+
+            Section(String(localized: "Subtitles & Audio (OpenSubtitles + Style)")) {
+                HStack {
+                    SecureField(
+                        hasOpenSubKey ? String(localized: "OpenSubtitles key saved in Keychain") : "OpenSubtitles API key",
+                        text: $openSubKey
+                    )
+                    Button(String(localized: "Save")) { saveOpenSubKey() }
+                        .disabled(openSubKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if hasOpenSubKey {
+                        Button(String(localized: "Clear")) {
+                            try? core.setOpensubtitlesCredentials(apiKey: nil, token: nil)
+                            openSubKey = ""
+                            hasOpenSubKey = false
+                            status = String(localized: "OpenSubtitles key removed from Keychain")
+                        }
+                    }
+                }
+                HStack {
+                    Text(String(localized: "Subtitle Priority"))
+                    Spacer()
+                    TextField("tur, eng", text: $subLangsText)
+                        .frame(width: 180)
+                        .onSubmit { saveSubSettings() }
+                }
+                HStack {
+                    Text(String(localized: "Audio Priority"))
+                    Spacer()
+                    TextField("eng, jpn, tur", text: $audioLangsText)
+                        .frame(width: 180)
+                        .onSubmit { saveSubSettings() }
+                }
+                HStack {
+                    Text(String(localized: "Dual Subtitle Language"))
+                    Spacer()
+                    TextField("eng", text: $dualLangText)
+                        .frame(width: 120)
+                        .onSubmit { saveSubSettings() }
+                }
+                HStack {
+                    Text(String(localized: "SRT Custom Font"))
+                    Spacer()
+                    TextField("SF Pro Text", text: $srtFontText)
+                        .frame(width: 180)
+                        .onSubmit { saveSubSettings() }
+                }
+                Stepper("\(String(localized: "SRT Font Size")): \(subSettings.srtFontSize) px", value: $subSettings.srtFontSize, in: 20...84, step: 2)
+                    .onChange(of: subSettings.srtFontSize) { _, _ in saveSubSettings() }
+                Stepper("\(String(localized: "SRT Position")): \(subSettings.srtPos)%", value: $subSettings.srtPos, in: 10...100, step: 5)
+                    .onChange(of: subSettings.srtPos) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Override ASS/SSA Script Styling"), isOn: $subSettings.assOverride)
+                    .onChange(of: subSettings.assOverride) { _, _ in saveSubSettings() }
+            }
+
+            Section(String(localized: "Playback & Video")) {
+                Toggle(String(localized: "Exact Relative Seeks (vs Keyframe)"), isOn: $playerPrefs.exactSeek)
+                    .onChange(of: playerPrefs.exactSeek) { _, _ in savePlayerPrefs() }
+                Picker(String(localized: "Upscaling / Shader"), selection: $playerPrefs.shaderPreset) {
+                    Text(String(localized: "Off")).tag("none")
+                    Text(String(localized: "Adaptive Sharpen (CAS)")).tag("sharpen")
+                }
+                .onChange(of: playerPrefs.shaderPreset) { _, _ in savePlayerPrefs() }
+                Picker(
+                    String(localized: "HDR Target Peak"),
+                    selection: Binding(
+                        get: { playerPrefs.hdrTargetPeak ?? 0 },
+                        set: { val in
+                            playerPrefs.hdrTargetPeak = val == 0 ? nil : val
+                            savePlayerPrefs()
+                        }
+                    )
+                ) {
+                    Text(String(localized: "Auto")).tag(UInt32(0))
+                    Text("400 nits").tag(UInt32(400))
+                    Text("600 nits").tag(UInt32(600))
+                    Text("1000 nits").tag(UInt32(1000))
+                    Text("1600 nits").tag(UInt32(1600))
+                }
+                Toggle(String(localized: "Force 16-bit HDR Surface on SDR"), isOn: $playerPrefs.forceHdrSurface)
+                    .onChange(of: playerPrefs.forceHdrSurface) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Auto-Play Next Episode"), isOn: $playerPrefs.autoplayNext)
+                    .onChange(of: playerPrefs.autoplayNext) { _, _ in savePlayerPrefs() }
+                if playerPrefs.autoplayNext {
+                    Stepper("\(String(localized: "Auto-Play Countdown")): \(playerPrefs.autoplayCountdownS)s", value: $playerPrefs.autoplayCountdownS, in: 3...30)
+                        .onChange(of: playerPrefs.autoplayCountdownS) { _, _ in savePlayerPrefs() }
                 }
             }
 
@@ -406,7 +519,12 @@ struct SettingsView: View {
                         Text(cmd.id)
                             .font(.system(.body, design: .monospaced))
                         Spacer()
-                        if editingCommandId == cmd.id {
+                        if recordingCommandId == cmd.id {
+                            Text(String(localized: "Press shortcut… (Esc cancels)"))
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                            Button(String(localized: "Cancel")) { stopRecording() }
+                        } else if editingCommandId == cmd.id {
                             TextField("cmd+k", text: $keyDraft)
                                 .frame(width: 110)
                                 .onSubmit { commitBinding(cmd.id) }
@@ -415,6 +533,9 @@ struct SettingsView: View {
                             Text(cmd.key ?? "—")
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
+                            Button(String(localized: "Record")) {
+                                startRecording(cmd.id)
+                            }
                             Button(String(localized: "Edit")) {
                                 editingCommandId = cmd.id
                                 keyDraft = cmd.key ?? ""
@@ -437,20 +558,53 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button(String(localized: "Close"), action: onDismiss)
+                Button(String(localized: "Close")) {
+                    saveSubSettings()
+                    stopRecording()
+                    onDismiss()
+                }
             }
         }
-        .frame(width: 600, height: 520)
+        .frame(width: 640, height: 600)
         .onAppear(perform: reload)
+        .onDisappear { stopRecording() }
     }
 
     private func reload() {
         hasTmdbKey = (try? core.hasTmdbKey()) ?? false
+        hasOpenSubKey = (try? core.hasOpensubtitlesKey()) ?? false
         language = (try? core.metadataLanguage()) ?? "tr-TR"
         addonsEnabled = (try? core.featureEnabled(name: "addons")) ?? true
         torrentEnabled = (try? core.featureEnabled(name: "torrent")) ?? true
         ytdlpStatus = core.ytdlpStatus()
+        if let s = try? core.subtitleSettings() {
+            subSettings = s
+            subLangsText = s.preferredLangs.joined(separator: ", ")
+            audioLangsText = s.audioLangs.joined(separator: ", ")
+            dualLangText = s.dualSecondaryLang ?? ""
+            srtFontText = s.srtFont ?? ""
+        }
+        if let p = try? core.playerPreferences() {
+            playerPrefs = p
+        }
         commands = (try? core.commands()) ?? []
+    }
+
+    private func saveSubSettings() {
+        let parseList: (String) -> [String] = { text in
+            text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        }
+        subSettings.preferredLangs = parseList(subLangsText)
+        subSettings.audioLangs = parseList(audioLangsText)
+        let dual = dualLangText.trimmingCharacters(in: .whitespacesAndNewlines)
+        subSettings.dualSecondaryLang = dual.isEmpty ? nil : dual
+        let font = srtFontText.trimmingCharacters(in: .whitespacesAndNewlines)
+        subSettings.srtFont = font.isEmpty ? nil : font
+        try? core.setSubtitleSettings(settings: subSettings)
+    }
+
+    private func savePlayerPrefs() {
+        try? core.setPlayerPreferences(prefs: playerPrefs)
     }
 
     private func saveTmdbKey() {
@@ -467,6 +621,46 @@ struct SettingsView: View {
             } catch {
                 status = error.localizedDescription
             }
+        }
+    }
+
+    private func saveOpenSubKey() {
+        let trimmed = openSubKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try core.setOpensubtitlesCredentials(apiKey: trimmed, token: nil)
+            hasOpenSubKey = true
+            openSubKey = ""
+            status = String(localized: "OpenSubtitles key saved to Keychain")
+        } catch {
+            status = error.localizedDescription
+        }
+    }
+
+    private func startRecording(_ id: String) {
+        stopRecording()
+        editingCommandId = nil
+        recordingCommandId = id
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { // Escape cancels recording unless binding escape
+                stopRecording()
+                return nil
+            }
+            if let combo = KeyCombo.from(event) {
+                keyDraft = combo
+                commitBinding(id)
+                stopRecording()
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func stopRecording() {
+        recordingCommandId = nil
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
         }
     }
 

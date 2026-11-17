@@ -13,7 +13,34 @@ pub struct mpv_handle {
 pub const FORMAT_NONE: c_int = 0;
 pub const FORMAT_STRING: c_int = 1;
 pub const FORMAT_FLAG: c_int = 3;
+pub const FORMAT_INT64: c_int = 4;
 pub const FORMAT_DOUBLE: c_int = 5;
+pub const FORMAT_NODE: c_int = 6;
+pub const FORMAT_NODE_ARRAY: c_int = 7;
+pub const FORMAT_NODE_MAP: c_int = 8;
+
+#[repr(C)]
+pub union mpv_node_union {
+    pub string: *mut c_char,
+    pub flag: c_int,
+    pub int64: i64,
+    pub double_: f64,
+    pub list: *mut mpv_node_list,
+    pub ba: *mut c_void,
+}
+
+#[repr(C)]
+pub struct mpv_node {
+    pub u: mpv_node_union,
+    pub format: c_int,
+}
+
+#[repr(C)]
+pub struct mpv_node_list {
+    pub num: c_int,
+    pub values: *mut mpv_node,
+    pub keys: *mut *mut c_char,
+}
 
 pub const EVENT_SHUTDOWN: c_int = 1;
 pub const EVENT_LOG_MESSAGE: c_int = 2;
@@ -94,6 +121,9 @@ pub const RENDER_PARAM_API_TYPE: c_int = 1;
 pub const RENDER_PARAM_OPENGL_INIT_PARAMS: c_int = 2;
 pub const RENDER_PARAM_OPENGL_FBO: c_int = 3;
 pub const RENDER_PARAM_FLIP_Y: c_int = 4;
+pub const RENDER_PARAM_ADVANCED_CONTROL: c_int = 10;
+pub const RENDER_PARAM_BLOCK_FOR_TARGET_TIME: c_int = 12;
+pub const RENDER_UPDATE_FRAME: u64 = 1;
 
 pub type GetProcAddressFn =
     unsafe extern "C" fn(ctx: *mut c_void, name: *const c_char) -> *mut c_void;
@@ -125,6 +155,13 @@ pub struct Api {
     pub initialize: unsafe extern "C" fn(*mut mpv_handle) -> c_int,
     pub set_option_string:
         unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int,
+    pub set_property_string:
+        unsafe extern "C" fn(*mut mpv_handle, *const c_char, *const c_char) -> c_int,
+    pub get_property:
+        unsafe extern "C" fn(*mut mpv_handle, *const c_char, c_int, *mut c_void) -> c_int,
+    pub get_property_string: unsafe extern "C" fn(*mut mpv_handle, *const c_char) -> *mut c_char,
+    pub free_node_contents: unsafe extern "C" fn(*mut mpv_node),
+    pub free: unsafe extern "C" fn(*mut c_void),
     pub command_async: unsafe extern "C" fn(*mut mpv_handle, u64, *mut *const c_char) -> c_int,
     pub observe_property: unsafe extern "C" fn(*mut mpv_handle, u64, *const c_char, c_int) -> c_int,
     pub request_log_messages: unsafe extern "C" fn(*mut mpv_handle, *const c_char) -> c_int,
@@ -140,6 +177,7 @@ pub struct Api {
     ) -> c_int,
     pub render_context_set_update_callback:
         unsafe extern "C" fn(*mut mpv_render_context, Option<UpdateFn>, *mut c_void),
+    pub render_context_update: unsafe extern "C" fn(*mut mpv_render_context) -> u64,
     pub render_context_render:
         unsafe extern "C" fn(*mut mpv_render_context, *mut mpv_render_param) -> c_int,
     pub render_context_free: unsafe extern "C" fn(*mut mpv_render_context),
@@ -181,6 +219,11 @@ fn resolve(lib: libloading::Library) -> Result<Api, libloading::Error> {
             create: *lib.get(b"mpv_create\0")?,
             initialize: *lib.get(b"mpv_initialize\0")?,
             set_option_string: *lib.get(b"mpv_set_option_string\0")?,
+            set_property_string: *lib.get(b"mpv_set_property_string\0")?,
+            get_property: *lib.get(b"mpv_get_property\0")?,
+            get_property_string: *lib.get(b"mpv_get_property_string\0")?,
+            free_node_contents: *lib.get(b"mpv_free_node_contents\0")?,
+            free: *lib.get(b"mpv_free\0")?,
             command_async: *lib.get(b"mpv_command_async\0")?,
             observe_property: *lib.get(b"mpv_observe_property\0")?,
             request_log_messages: *lib.get(b"mpv_request_log_messages\0")?,
@@ -191,6 +234,7 @@ fn resolve(lib: libloading::Library) -> Result<Api, libloading::Error> {
             render_context_create: *lib.get(b"mpv_render_context_create\0")?,
             render_context_set_update_callback: *lib
                 .get(b"mpv_render_context_set_update_callback\0")?,
+            render_context_update: *lib.get(b"mpv_render_context_update\0")?,
             render_context_render: *lib.get(b"mpv_render_context_render\0")?,
             render_context_free: *lib.get(b"mpv_render_context_free\0")?,
             _lib: lib,

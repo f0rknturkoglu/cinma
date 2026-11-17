@@ -1,30 +1,34 @@
 import AppKit
 import OpenGL.GL3
 
-/// mpv draws into this layer through the libmpv OpenGL render API (ADR 0004).
-/// `isAsynchronous` is off, so every callback below runs on the main thread;
-/// that is what makes the `@unchecked Sendable` sound.
+/// mpv draws into this layer through the libmpv OpenGL render API (ADR 0004 & ADR 0011).
+/// `isAsynchronous = true` lets Core Animation invoke `canDraw` / `draw` on its
+/// background display-link thread (`CVDisplayLink`), keeping the main AppKit thread
+/// free for 120 Hz HUD & thumbnail hover responsiveness.
 ///
-/// The layer is always a PQ/BT.2020 EDR surface and mpv always outputs PQ
-/// (SDR content is mapped into it). CAOpenGLLayer ignores colorspace/EDR
-/// changes once its surface exists, and swapping layers mid-playback kills
-/// mpv's video output, so the mode is fixed up front.
-final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
-    private(set) var session: PlaybackSession?
-    /// Called once mpv's render context exists; `loadfile` must wait for it.
-    var onRenderReady: (@Sendable () -> Void)?
+/// `hdrMode` must be configured before `attach(_:)`: HDR streams use a 16-bit float
+/// PQ/BT.2020 EDR surface, while known SDR content uses an 8-bit BT.709 surface to
+/// avoid float framebuffer bandwidth overhead.
+final class VideoLayer: CAOpenGLLayer {
+    private let stateLock = NSLock()
+    private var _session: PlaybackSession?
+    private var _onRenderReady: (@Sendable () -> Void)?
     private var renderReady = false
+    private var hdrSurface = true
     private var context: CGLContextObj?
     private var pixelFormat: CGLPixelFormatObj?
 
+    var session: PlaybackSession? {
+        stateLock.withLock { _session }
+    }
+
     override init() {
         super.init()
-        isAsynchronous = false
+        isAsynchronous = true
         isOpaque = true
         needsDisplayOnBoundsChange = true
         backgroundColor = NSColor.black.cgColor
-        wantsExtendedDynamicRangeContent = true
-        colorspace = CGColorSpace(name: CGColorSpace.itur_2100_PQ)
+        applySurfaceColorSpace(hdr: true)
     }
 
     /// Used by Core Animation for presentation copies.
@@ -40,37 +44,69 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
         if let pixelFormat { CGLReleasePixelFormat(pixelFormat) }
     }
 
-    func attach(_ session: PlaybackSession) {
-        self.session = session
+    func configureSurface(hdr: Bool) {
+        stateLock.withLock {
+            guard !renderReady else { return }
+            hdrSurface = hdr
+        }
+        applySurfaceColorSpace(hdr: hdr)
+    }
+
+    private func applySurfaceColorSpace(hdr: Bool) {
+        wantsExtendedDynamicRangeContent = hdr
+        colorspace = CGColorSpace(
+            name: hdr ? CGColorSpace.itur_2100_PQ : CGColorSpace.itur_709
+        )
+    }
+
+    func attach(_ session: PlaybackSession, onReady: (@Sendable () -> Void)? = nil) {
+        stateLock.withLock {
+            _session = session
+            _onRenderReady = onReady
+        }
         setNeedsDisplay()
     }
 
-    /// Frees mpv's render context with our GL context current. Must run
-    /// before `PlaybackSession.stop()`.
+    /// Frees mpv's render context with our GL context current and locked.
+    /// Must run before `PlaybackSession.stop()`.
     func detach() {
-        if renderReady, let session, let context {
-            CGLSetCurrentContext(context)
-            session.renderFree()
-            CGLSetCurrentContext(nil)
+        let (sess, ready, ctx) = stateLock.withLock { () -> (PlaybackSession?, Bool, CGLContextObj?) in
+            let s = _session
+            let r = renderReady
+            let c = context
+            _session = nil
+            _onRenderReady = nil
+            renderReady = false
+            return (s, r, c)
         }
-        renderReady = false
-        session = nil
+        guard ready, let sess, let ctx else { return }
+        CGLLockContext(ctx)
+        CGLSetCurrentContext(ctx)
+        sess.renderFree()
+        CGLSetCurrentContext(nil)
+        CGLUnlockContext(ctx)
     }
 
     override func copyCGLPixelFormat(forDisplayMask mask: UInt32) -> CGLPixelFormatObj {
-        if let pixelFormat { return CGLRetainPixelFormat(pixelFormat) }
+        let existing = stateLock.withLock { pixelFormat }
+        if let existing { return CGLRetainPixelFormat(existing) }
+        let useHdr = stateLock.withLock { hdrSurface }
+
         let base: [CGLPixelFormatAttribute] = [
             kCGLPFAOpenGLProfile, CGLPixelFormatAttribute(kCGLOGLPVersion_3_2_Core.rawValue),
             kCGLPFAAccelerated, kCGLPFADoubleBuffer, kCGLPFAAllowOfflineRenderers,
         ]
-        // 16-bit float framebuffer for EDR; fall back to 8-bit if unavailable.
-        let float: [CGLPixelFormatAttribute] = [kCGLPFAColorSize, CGLPixelFormatAttribute(64), kCGLPFAColorFloat]
-        for extra in [float, []] {
+        // 16-bit float framebuffer for HDR/EDR; 8-bit surface for SDR avoids float cost.
+        let candidates: [[CGLPixelFormatAttribute]] = useHdr
+            ? [[kCGLPFAColorSize, CGLPixelFormatAttribute(64), kCGLPFAColorFloat], []]
+            : [[kCGLPFAColorSize, CGLPixelFormatAttribute(32)], []]
+
+        for extra in candidates {
             var attributes = base + extra + [CGLPixelFormatAttribute(0)]
             var format: CGLPixelFormatObj?
             var count: GLint = 0
             if CGLChoosePixelFormat(&attributes, &format, &count) == kCGLNoError, let format {
-                pixelFormat = format
+                stateLock.withLock { pixelFormat = format }
                 return CGLRetainPixelFormat(format)
             }
         }
@@ -78,10 +114,10 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
     }
 
     override func copyCGLContext(forPixelFormat format: CGLPixelFormatObj) -> CGLContextObj {
-        // One context for the layer's lifetime: mpv's render context is bound to it.
-        if let context { return CGLRetainContext(context) }
+        let existing = stateLock.withLock { context }
+        if let existing { return CGLRetainContext(existing) }
         let created = super.copyCGLContext(forPixelFormat: format)
-        context = CGLRetainContext(created)
+        stateLock.withLock { context = CGLRetainContext(created) }
         return created
     }
 
@@ -89,19 +125,26 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
         inCGLContext ctx: CGLContextObj, pixelFormat pf: CGLPixelFormatObj,
         forLayerTime t: CFTimeInterval, displayTime ts: UnsafePointer<CVTimeStamp>?
     ) -> Bool {
-        true
+        let (sess, ready) = stateLock.withLock { (_session, renderReady) }
+        guard let sess else { return false }
+        if !ready { return true }
+        return sess.renderShouldDraw()
     }
 
     override func draw(
         inCGLContext ctx: CGLContextObj, pixelFormat pf: CGLPixelFormatObj,
         forLayerTime t: CFTimeInterval, displayTime ts: UnsafePointer<CVTimeStamp>?
     ) {
-        guard let session else {
+        CGLLockContext(ctx)
+        defer { CGLUnlockContext(ctx) }
+
+        let (sess, ready) = stateLock.withLock { (_session, renderReady) }
+        guard let sess else {
             glClearColor(0, 0, 0, 1)
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
             return
         }
-        if !renderReady {
+        if !ready {
             // Drain errors left by Core Animation's own GL calls so mpv's
             // post-init error check doesn't report them as its own.
             while glGetError() != GLenum(GL_NO_ERROR) {}
@@ -110,14 +153,19 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
             glBindFramebuffer(GLenum(GL_FRAMEBUFFER), 0)
             defer { glBindFramebuffer(GLenum(GL_FRAMEBUFFER), GLuint(bound)) }
             do {
-                try session.renderInit(observer: RedrawRequest(layer: self))
-                renderReady = true
-                let ready = onRenderReady
-                onRenderReady = nil
-                DispatchQueue.main.async { ready?() }
+                try sess.renderInit(observer: NoOpRenderObserver())
+                let readyCb = stateLock.withLock { () -> (@Sendable () -> Void)? in
+                    renderReady = true
+                    let cb = _onRenderReady
+                    _onRenderReady = nil
+                    return cb
+                }
+                if let readyCb {
+                    DispatchQueue.main.async { readyCb() }
+                }
             } catch {
                 NSLog("cinma: render init failed: %@", error.localizedDescription)
-                self.session = nil
+                stateLock.withLock { _session = nil }
                 return
             }
         }
@@ -125,20 +173,13 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
         glGetIntegerv(GLenum(GL_FRAMEBUFFER_BINDING), &fbo)
         var viewport = [GLint](repeating: 0, count: 4)
         glGetIntegerv(GLenum(GL_VIEWPORT), &viewport)
-        try? session.render(fbo: fbo, width: viewport[2], height: viewport[3])
+        try? sess.renderFrame(fbo: fbo, width: viewport[2], height: viewport[3], blockForTargetTime: false)
         glFlush()
     }
 }
 
-/// Bridges mpv's "new frame" callback (mpv thread) to a main-thread redraw.
-private final class RedrawRequest: RenderObserver, @unchecked Sendable {
-    private weak var layer: VideoLayer?
-
-    init(layer: VideoLayer) {
-        self.layer = layer
-    }
-
-    func needsDisplay() {
-        DispatchQueue.main.async { [weak layer] in layer?.setNeedsDisplay() }
-    }
+/// Asynchronous `CAOpenGLLayer` polls `mpv_render_context_update` inside `canDraw`,
+/// so no main-thread redraw hop is needed per frame.
+private final class NoOpRenderObserver: RenderObserver, @unchecked Sendable {
+    func needsDisplay() {}
 }

@@ -826,11 +826,280 @@ pub enum PlaybackEvent {
         name: String,
         millis: f64,
     },
+    TracksChanged,
+    ChaptersChanged,
     EndFile {
         reason: PlaybackEndReason,
         error: Option<String>,
     },
     Shutdown,
+}
+
+#[derive(uniffi::Record)]
+pub struct MediaTrackInfo {
+    pub id: i64,
+    pub track_type: String,
+    pub title: Option<String>,
+    pub lang: Option<String>,
+    pub codec: Option<String>,
+    pub selected: bool,
+    pub external: bool,
+    pub forced: bool,
+    pub hearing_impaired: bool,
+}
+
+impl From<cinma_core::MediaTrack> for MediaTrackInfo {
+    fn from(t: cinma_core::MediaTrack) -> Self {
+        Self {
+            id: t.id,
+            track_type: t.track_type,
+            title: t.title,
+            lang: t.lang,
+            codec: t.codec,
+            selected: t.selected,
+            external: t.external,
+            forced: t.forced,
+            hearing_impaired: t.hearing_impaired,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct ChapterInfo {
+    pub title: String,
+    pub start_s: f64,
+}
+
+impl From<cinma_core::Chapter> for ChapterInfo {
+    fn from(c: cinma_core::Chapter) -> Self {
+        Self {
+            title: c.title,
+            start_s: c.start_s,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct PlayerStatsInfo {
+    pub video_codec: String,
+    pub width: i64,
+    pub height: i64,
+    pub fps: f64,
+    pub estimated_fps: f64,
+    pub hwdec: String,
+    pub gamma: String,
+    pub audio_codec: String,
+    pub audio_channels: i64,
+    pub cache_seconds: f64,
+    pub dropped_frames: i64,
+    pub ab_loop_a: Option<f64>,
+    pub ab_loop_b: Option<f64>,
+    pub speed: f64,
+    pub volume: f64,
+    pub muted: bool,
+    pub sub_delay: f64,
+    pub audio_delay: f64,
+}
+
+impl From<cinma_core::PlayerStats> for PlayerStatsInfo {
+    fn from(s: cinma_core::PlayerStats) -> Self {
+        Self {
+            video_codec: s.video_codec,
+            width: s.width,
+            height: s.height,
+            fps: s.fps,
+            estimated_fps: s.estimated_fps,
+            hwdec: s.hwdec,
+            gamma: s.gamma,
+            audio_codec: s.audio_codec,
+            audio_channels: s.audio_channels,
+            cache_seconds: s.cache_seconds,
+            dropped_frames: s.dropped_frames,
+            ab_loop_a: s.ab_loop_a,
+            ab_loop_b: s.ab_loop_b,
+            speed: s.speed,
+            volume: s.volume,
+            muted: s.muted,
+            sub_delay: s.sub_delay,
+            audio_delay: s.audio_delay,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct ThumbnailImageInfo {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+#[derive(uniffi::Record)]
+pub struct VideoFileIdentityInfo {
+    pub hash: Option<String>,
+    pub size: Option<u64>,
+    pub filename: Option<String>,
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct SubtitleSettingsFfi {
+    pub preferred_langs: Vec<String>,
+    pub audio_langs: Vec<String>,
+    pub dual_secondary_lang: Option<String>,
+    pub srt_font: Option<String>,
+    pub srt_font_size: u32,
+    pub srt_color: Option<String>,
+    pub srt_pos: u32,
+    pub ass_override: bool,
+}
+
+impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
+    fn from(s: cinma_core::SubtitleSettings) -> Self {
+        Self {
+            preferred_langs: s.preferred_langs,
+            audio_langs: s.audio_langs,
+            dual_secondary_lang: s.dual_secondary_lang,
+            srt_font: s.srt_font,
+            srt_font_size: s.srt_font_size,
+            srt_color: s.srt_color,
+            srt_pos: s.srt_pos,
+            ass_override: s.ass_override,
+        }
+    }
+}
+
+impl From<SubtitleSettingsFfi> for cinma_core::SubtitleSettings {
+    fn from(s: SubtitleSettingsFfi) -> Self {
+        Self {
+            preferred_langs: s.preferred_langs,
+            audio_langs: s.audio_langs,
+            dual_secondary_lang: s.dual_secondary_lang,
+            srt_font: s.srt_font,
+            srt_font_size: s.srt_font_size,
+            srt_color: s.srt_color,
+            srt_pos: s.srt_pos,
+            ass_override: s.ass_override,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct PlayerPreferencesFfi {
+    pub exact_seek: bool,
+    pub hdr_target_peak: Option<u32>,
+    pub shader_preset: String,
+    pub autoplay_next: bool,
+    pub autoplay_countdown_s: u32,
+    pub force_hdr_surface: bool,
+}
+
+impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
+    fn from(p: cinma_core::PlayerPreferences) -> Self {
+        Self {
+            exact_seek: p.exact_seek,
+            hdr_target_peak: p.hdr_target_peak,
+            shader_preset: p.shader_preset,
+            autoplay_next: p.autoplay_next,
+            autoplay_countdown_s: p.autoplay_countdown_s,
+            force_hdr_surface: p.force_hdr_surface,
+        }
+    }
+}
+
+impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
+    fn from(p: PlayerPreferencesFfi) -> Self {
+        Self {
+            exact_seek: p.exact_seek,
+            hdr_target_peak: p.hdr_target_peak,
+            shader_preset: p.shader_preset,
+            autoplay_next: p.autoplay_next,
+            autoplay_countdown_s: p.autoplay_countdown_s,
+            force_hdr_surface: p.force_hdr_surface,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct VideoOffsetsFfi {
+    pub sub_delay: f64,
+    pub audio_delay: f64,
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct SubtitleSearchInput {
+    pub media_type: String,
+    pub video_id: String,
+    pub imdb_id: Option<String>,
+    pub season: Option<u32>,
+    pub episode: Option<u32>,
+    pub video_hash: Option<String>,
+    pub video_size: Option<u64>,
+    pub filename: Option<String>,
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct SubtitleCandidateInfo {
+    pub id: String,
+    pub provider: String,
+    pub lang: String,
+    pub title: Option<String>,
+    pub download_url: String,
+    pub opensubtitles_file_id: Option<i64>,
+    pub encoding_hint: Option<String>,
+    pub is_sdh: bool,
+    pub is_forced: bool,
+    pub hash_matched: bool,
+}
+
+impl From<cinma_core::SubtitleCandidate> for SubtitleCandidateInfo {
+    fn from(c: cinma_core::SubtitleCandidate) -> Self {
+        Self {
+            id: c.id,
+            provider: c.provider,
+            lang: c.lang,
+            title: c.title,
+            download_url: c.download_url,
+            opensubtitles_file_id: c.opensubtitles_file_id,
+            encoding_hint: c.encoding_hint,
+            is_sdh: c.is_sdh,
+            is_forced: c.is_forced,
+            hash_matched: c.hash_matched,
+        }
+    }
+}
+
+impl From<SubtitleCandidateInfo> for cinma_core::SubtitleCandidate {
+    fn from(c: SubtitleCandidateInfo) -> Self {
+        Self {
+            id: c.id,
+            provider: c.provider,
+            lang: c.lang,
+            title: c.title,
+            download_url: c.download_url,
+            opensubtitles_file_id: c.opensubtitles_file_id,
+            encoding_hint: c.encoding_hint,
+            is_sdh: c.is_sdh,
+            is_forced: c.is_forced,
+            hash_matched: c.hash_matched,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct PreparedSubtitleInfo {
+    pub local_path: String,
+    pub format: String,
+    pub detected_encoding: String,
+    pub restyled_ass: bool,
+}
+
+#[derive(uniffi::Record)]
+pub struct NextEpisodePrefetchInfo {
+    pub video_id: String,
+    pub season: u32,
+    pub episode: u32,
+    pub title: String,
+    pub still: Option<String>,
+    pub best_stream: Option<StreamInfo>,
 }
 
 impl From<PlayerEvent> for PlaybackEvent {
@@ -847,6 +1116,8 @@ impl From<PlayerEvent> for PlaybackEvent {
                 name: name.to_owned(),
                 millis,
             },
+            PlayerEvent::TracksChanged => Self::TracksChanged,
+            PlayerEvent::ChaptersChanged => Self::ChaptersChanged,
             PlayerEvent::EndFile { reason, error } => Self::EndFile {
                 reason: match reason {
                     EndReason::Eof => PlaybackEndReason::Eof,
@@ -1311,16 +1582,130 @@ impl CinmaCore {
         &self,
         observer: Arc<dyn PlaybackObserver>,
     ) -> Result<Arc<PlaybackSession>, CinmaError> {
+        self.create_playback_for_surface(observer, true)
+    }
+
+    pub fn create_playback_for_surface(
+        &self,
+        observer: Arc<dyn PlaybackObserver>,
+        hdr_surface: bool,
+    ) -> Result<Arc<PlaybackSession>, CinmaError> {
         let inner = self
             .inner
-            .create_playback(Arc::new(ObserverAdapter(observer)))?;
-        Ok(Arc::new(PlaybackSession { inner }))
+            .create_playback_for_surface(Arc::new(ObserverAdapter(observer)), hdr_surface)?;
+        Ok(Arc::new(PlaybackSession {
+            inner: Arc::new(inner),
+        }))
+    }
+
+    pub fn subtitle_settings(&self) -> Result<SubtitleSettingsFfi, CinmaError> {
+        Ok(self.inner.subtitle_settings()?.into())
+    }
+
+    pub fn set_subtitle_settings(&self, settings: SubtitleSettingsFfi) -> Result<(), CinmaError> {
+        Ok(self.inner.set_subtitle_settings(&settings.into())?)
+    }
+
+    pub fn player_preferences(&self) -> Result<PlayerPreferencesFfi, CinmaError> {
+        Ok(self.inner.player_preferences()?.into())
+    }
+
+    pub fn set_player_preferences(&self, prefs: PlayerPreferencesFfi) -> Result<(), CinmaError> {
+        Ok(self.inner.set_player_preferences(&prefs.into())?)
+    }
+
+    pub fn video_offsets(&self, video_id: String) -> Result<VideoOffsetsFfi, CinmaError> {
+        let o = self.inner.video_offsets(&video_id)?;
+        Ok(VideoOffsetsFfi {
+            sub_delay: o.sub_delay,
+            audio_delay: o.audio_delay,
+        })
+    }
+
+    pub fn set_video_offsets(
+        &self,
+        video_id: String,
+        offsets: VideoOffsetsFfi,
+    ) -> Result<(), CinmaError> {
+        Ok(self.inner.set_video_offsets(
+            &video_id,
+            &cinma_core::VideoOffsets {
+                sub_delay: offsets.sub_delay,
+                audio_delay: offsets.audio_delay,
+            },
+        )?)
+    }
+
+    pub fn has_opensubtitles_key(&self) -> Result<bool, CinmaError> {
+        Ok(self.inner.has_opensubtitles_key()?)
+    }
+
+    pub fn set_opensubtitles_credentials(
+        &self,
+        api_key: Option<String>,
+        token: Option<String>,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .set_opensubtitles_credentials(api_key.as_deref(), token.as_deref())?)
+    }
+
+    pub async fn fetch_subtitles(
+        &self,
+        input: SubtitleSearchInput,
+    ) -> Result<Vec<SubtitleCandidateInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .fetch_subtitles(cinma_core::SubtitleSearchRequest {
+                media_type: input.media_type,
+                video_id: input.video_id,
+                imdb_id: input.imdb_id,
+                season: input.season,
+                episode: input.episode,
+                video_hash: input.video_hash,
+                video_size: input.video_size,
+                filename: input.filename,
+            })
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn download_and_prepare_subtitle(
+        &self,
+        candidate: SubtitleCandidateInfo,
+    ) -> Result<PreparedSubtitleInfo, CinmaError> {
+        let res = self
+            .inner
+            .download_and_prepare_subtitle(candidate.into())
+            .await?;
+        Ok(PreparedSubtitleInfo {
+            local_path: res.local_path.to_string_lossy().into_owned(),
+            format: res.format,
+            detected_encoding: res.detected_encoding,
+            restyled_ass: res.restyled_ass,
+        })
+    }
+
+    pub fn prepare_local_subtitle(&self, path: String) -> Result<PreparedSubtitleInfo, CinmaError> {
+        let res = self.inner.prepare_local_subtitle(&PathBuf::from(path))?;
+        Ok(PreparedSubtitleInfo {
+            local_path: res.local_path.to_string_lossy().into_owned(),
+            format: res.format,
+            detected_encoding: res.detected_encoding,
+            restyled_ass: res.restyled_ass,
+        })
+    }
+
+    pub fn resolve_shader_paths(&self, preset: String) -> Result<Vec<String>, CinmaError> {
+        Ok(self.inner.resolve_shader_paths(&preset)?)
     }
 }
 
 #[derive(uniffi::Object)]
 pub struct PlaybackSession {
-    inner: cinma_core::Playback,
+    inner: Arc<cinma_core::Playback>,
 }
 
 #[uniffi::export]
@@ -1335,11 +1720,7 @@ impl PlaybackSession {
 
     /// Plays a local file or URL directly (debug / render tests).
     pub fn play_url(&self, url: String) -> Result<(), CinmaError> {
-        Ok(self
-            .inner
-            .player()
-            .load_url(&url)
-            .map_err(CoreError::from)?)
+        Ok(self.inner.play_url(&url)?)
     }
 
     pub fn toggle_pause(&self) -> Result<(), CinmaError> {
@@ -1358,12 +1739,243 @@ impl PlaybackSession {
             .map_err(CoreError::from)?)
     }
 
+    pub fn seek_absolute_exact(&self, seconds: f64) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .seek_absolute_exact(seconds)
+            .map_err(CoreError::from)?)
+    }
+
     pub fn seek_relative(&self, seconds: f64) -> Result<(), CinmaError> {
         Ok(self
             .inner
             .player()
             .seek_relative(seconds)
             .map_err(CoreError::from)?)
+    }
+
+    pub fn seek_relative_mode(&self, seconds: f64, exact: bool) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .seek_relative_mode(seconds, exact)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn tracks(&self) -> Result<Vec<MediaTrackInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .tracks()
+            .map_err(CoreError::from)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn chapters(&self) -> Result<Vec<ChapterInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .chapters()
+            .map_err(CoreError::from)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn stats(&self) -> PlayerStatsInfo {
+        self.inner.player().stats().into()
+    }
+
+    pub fn set_audio_track(&self, id: Option<i64>) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_audio_track(id)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_subtitle_track(&self, id: Option<i64>) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_subtitle_track(id)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_secondary_subtitle_track(&self, id: Option<i64>) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_secondary_subtitle_track(id)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn add_subtitle(
+        &self,
+        path: String,
+        title: Option<String>,
+        lang: Option<String>,
+        select: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .add_subtitle(&path, title.as_deref(), lang.as_deref(), select)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_subtitle_delay(&self, seconds: f64) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_subtitle_delay(seconds)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_audio_delay(&self, seconds: f64) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_audio_delay(seconds)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_subtitle_style(
+        &self,
+        font: Option<String>,
+        font_size: Option<u32>,
+        color_hex: Option<String>,
+        pos: Option<u32>,
+        ass_override: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_subtitle_style(
+                font.as_deref(),
+                font_size,
+                color_hex.as_deref(),
+                pos,
+                ass_override,
+            )
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_speed(&self, speed: f64) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_speed(speed)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_volume(&self, volume: f64) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_volume(volume)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_muted(&self, muted: bool) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_muted(muted)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_ab_loop_a(&self, seconds: Option<f64>) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_ab_loop_a(seconds)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_ab_loop_b(&self, seconds: Option<f64>) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_ab_loop_b(seconds)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_hdr_target_peak(&self, nits: Option<u32>) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_hdr_target_peak(nits)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_glsl_shaders(&self, paths: Vec<String>) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_glsl_shaders(&paths)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn screenshot_to_file(&self, path: String) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .screenshot_to_file(&PathBuf::from(path))
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn video_identity(&self) -> Option<VideoFileIdentityInfo> {
+        self.inner.video_identity().map(|id| VideoFileIdentityInfo {
+            hash: id.hash,
+            size: id.size,
+            filename: id.filename,
+        })
+    }
+
+    pub fn thumbnail_at(&self, seconds: f64) -> Option<ThumbnailImageInfo> {
+        self.inner
+            .thumbnail_at(seconds)
+            .map(|t| ThumbnailImageInfo {
+                width: t.width,
+                height: t.height,
+                rgba: t.rgba,
+            })
+    }
+
+    pub fn start_next_episode_prefetch(
+        &self,
+        meta_id: String,
+        current_season: u32,
+        current_episode: u32,
+        binge_group: Option<String>,
+    ) {
+        self.inner.start_next_episode_prefetch(
+            meta_id,
+            current_season,
+            current_episode,
+            binge_group,
+        );
+    }
+
+    pub fn prefetched_next_episode(&self) -> Option<NextEpisodePrefetchInfo> {
+        self.inner
+            .prefetched_next_episode()
+            .map(|p| NextEpisodePrefetchInfo {
+                video_id: p.video_id,
+                season: p.season,
+                episode: p.episode,
+                title: p.title,
+                still: p.still,
+                best_stream: p.best_stream.map(Into::into),
+            })
+    }
+
+    pub fn cancel_prefetch(&self) {
+        self.inner.cancel_prefetch();
     }
 
     /// Creates the OpenGL render context. Call with the video layer's CGL
@@ -1377,12 +1989,30 @@ impl PlaybackSession {
             .map_err(CoreError::from)?)
     }
 
+    pub fn render_should_draw(&self) -> bool {
+        self.inner.player().render_should_draw()
+    }
+
     /// Draws the current frame into `fbo`. CGL context must be current.
     pub fn render(&self, fbo: i32, width: i32, height: i32) -> Result<(), CinmaError> {
         Ok(self
             .inner
             .player()
             .render(fbo, width, height)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn render_frame(
+        &self,
+        fbo: i32,
+        width: i32,
+        height: i32,
+        block_for_target_time: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .render_frame(fbo, width, height, block_for_target_time)
             .map_err(CoreError::from)?)
     }
 

@@ -35,7 +35,7 @@ impl CatalogQuery {
     }
 }
 
-fn percent_encode_value(input: &str) -> String {
+pub(crate) fn percent_encode_value(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for byte in input.as_bytes() {
         if matches!(

@@ -8,14 +8,18 @@ mod client;
 mod manifest;
 mod meta;
 mod stream;
+mod subtitle;
 
 use serde::{Deserialize, Deserializer};
 
 pub use catalog::{CatalogQuery, CatalogResponse, MetaPreview, parse_catalog};
-pub use client::{AddonClient, catalog_url, meta_url, normalize_manifest_url, stream_url};
+pub use client::{
+    AddonClient, catalog_url, meta_url, normalize_manifest_url, stream_url, subtitles_url,
+};
 pub use manifest::{CatalogDescriptor, CatalogExtra, Manifest, ManifestBehaviorHints, Resource};
 pub use meta::{Meta, MetaBehaviorHints, MetaLink, MetaTrailer, MetaVideo, parse_meta};
 pub use stream::{BehaviorHints, Stream, parse_streams};
+pub use subtitle::{AddonSubtitle, SubtitleQuery, SubtitlesResponse, parse_subtitles};
 
 #[derive(Debug, thiserror::Error)]
 pub enum AddonError {

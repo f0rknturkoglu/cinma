@@ -1,4 +1,6 @@
 import AppKit
+import SwiftUI
+import UniformTypeIdentifiers
 
 /// Forwards Rust playback events (background thread) to a handler.
 final class PlaybackEventSink: PlaybackObserver {
@@ -13,33 +15,118 @@ final class PlaybackEventSink: PlaybackObserver {
     }
 }
 
-/// Root view that takes keyboard focus for player shortcuts.
 private final class PlayerRootView: NSView {
     var onKey: ((NSEvent) -> Bool)?
+    var onMouseActivity: (() -> Void)?
+    private var tracking: NSTrackingArea?
+
     override var acceptsFirstResponder: Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onMouseActivity?()
+        super.mouseMoved(with: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onMouseActivity?()
+        super.mouseDown(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
         if onKey?(event) != true { super.keyDown(with: event) }
     }
 }
 
-/// Cinema player view matching mockup M2: floating Liquid Glass top title &
-/// stream pills + bottom glass scrub bar + throttled watch-progress saving.
+/// Complete cinema player (`CLAUDE.md` §5.2, §5.8, §5.9): dedicated CA GL thread,
+/// SDR 8-bit optimization, hover thumbnails, dual/encoded subtitles, chapters,
+/// next-episode prefetch/countdown, stream switcher & auto-recovery, stats/AB/sleep/shaders,
+/// media keys & power assertion.
 @MainActor
-final class PlayerViewController: NSViewController {
+final class PlayerViewController: NSViewController, NSPopoverDelegate {
     private let core: CinmaCore
-    private let request: PlayRequest
+    private var request: PlayRequest
     private let onClose: () -> Void
 
     private let videoView = NSView()
     private let videoLayer = VideoLayer()
+    private let titlePill = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 22)
+    private let topRightPill = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 19)
+    private let infoLabel = NSTextField(labelWithString: "")
+    private let titleField = NSTextField(labelWithString: "")
+    private let subField = NSTextField(labelWithString: "")
+    private let bar = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 22)
     private let statusLabel = NSTextField(labelWithString: "")
+    private let scrubBar = ScrubBarView()
     private let playButton = NSButton()
-    private let slider = NSSlider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil)
+    private let speedButton = NSButton()
+    private let volumeButton = NSButton()
     private let timeLabel = NSTextField(labelWithString: "--:-- / --:--")
 
+    // Hover thumbnail preview
+    private let thumbCard = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 12)
+    private let thumbImageView = NSImageView()
+    private let thumbTimeLabel = NSTextField(labelWithString: "00:00")
+    private var thumbCenterXConstraint: NSLayoutConstraint?
+
+    // Stats overlay & Skip intro / Next episode cards
+    private let statsCard = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 14)
+    private let statsText = NSTextField(wrappingLabelWithString: "")
+    private lazy var skipButton = CinemaTheme.makePillButton(title: "", symbol: "forward.end.fill", primary: true, target: self, action: #selector(skipCurrentSegment))
+    private let nextCard = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 16)
+    private let nextTitleLabel = NSTextField(labelWithString: "")
+    private let nextSubtitleLabel = NSTextField(labelWithString: "")
+    private let nextCountdownLabel = NSTextField(labelWithString: "")
+
     private var session: PlaybackSession?
+    private var thumbCache: ThumbnailPreviewCache?
+    private let nowPlaying = NowPlayingBridge()
+
     private var duration: Double = 0
     private var position: Double = 0
+    private var paused = false
+    private var muted = false
+    private var volume: Double = 100
+    private var speed: Double = 1.0
+    private var subDelay: Double = 0
+    private var audioDelay: Double = 0
+    private var subtitlesEnabled = true
+    private var lastSelectedSid: Int64?
+    private var secondarySid: Int64?
+    private var abLoopA: Double?
+    private var abLoopB: Double?
+    private var tracks: [MediaTrackInfo] = []
+    private var chapters: [ChapterInfo] = []
+    private var appliedAutoTracks = false
+    private var onlineSubtitles: [SubtitleCandidateInfo] = []
+    private var searchingSubtitles = false
+    private var subtitleSearchStatus = ""
+    private var prefetchedTriggered = false
+    private var nextPlan: NextEpisodePrefetchInfo?
+    private var nextCountdownTask: Task<Void, Never>?
+    private var nextDismissed = false
+    private var statsVisible = false
+    private var statsTask: Task<Void, Never>?
+    private var hudHideTask: Task<Void, Never>?
+    private var activePopover: NSPopover?
+    private var sleepTimerTask: Task<Void, Never>?
+    private var stallRecoveryTask: Task<Void, Never>?
+    private var failedRetries = 0
+    private var currentStreamIndex = 0
+    private var pendingSwitchPosition: Double?
+
     private var closing = false
     private var appliedResume = false
     private var lastSavedAt: ContinuousClock.Instant?
@@ -52,10 +139,20 @@ final class PlayerViewController: NSViewController {
         return nil
     }
 
+    private var activeStreamRaw: String? {
+        if case .stream(let s, _) = request { return s.raw }
+        return nil
+    }
+
     init(core: CinmaCore, request: PlayRequest, onClose: @escaping () -> Void) {
         self.core = core
         self.request = request
         self.onClose = onClose
+        if case .file(let url) = request {
+            self.thumbCache = ThumbnailPreviewCache(localURL: url)
+        } else {
+            self.thumbCache = ThumbnailPreviewCache(localURL: nil)
+        }
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -67,16 +164,72 @@ final class PlayerViewController: NSViewController {
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor.black.cgColor
         root.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+        root.onMouseActivity = { [weak self] in self?.showHudAndResetTimer() }
 
-        videoView.layer = videoLayer   // layer-hosting view
+        videoView.layer = videoLayer
         videoView.wantsLayer = true
         videoView.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(videoView)
 
-        // Top-left floating glass title pill (mockup M2)
-        let titlePill = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 22)
-        titlePill.translatesAutoresizingMaskIntoConstraints = false
+        buildTopBars()
+        buildBottomBar()
+        buildThumbPreview()
+        buildStatsCard()
+        buildSkipAndNextCards()
 
+        statusLabel.textColor = CinemaTheme.textPrimary
+        statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        statusLabel.lineBreakMode = .byTruncatingTail
+
+        for sub in [titlePill, topRightPill, bar, thumbCard, statsCard, skipButton, nextCard, statusLabel] {
+            root.addSubview(sub)
+        }
+
+        let thumbAnchor = thumbCard.centerXAnchor.constraint(equalTo: bar.leadingAnchor, constant: 100)
+        thumbAnchor.priority = .defaultHigh
+        thumbCenterXConstraint = thumbAnchor
+
+        NSLayoutConstraint.activate([
+            videoView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            videoView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            videoView.topAnchor.constraint(equalTo: root.topAnchor),
+            videoView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+
+            titlePill.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
+            titlePill.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 88),
+
+            topRightPill.centerYAnchor.constraint(equalTo: titlePill.centerYAnchor),
+            topRightPill.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
+
+            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
+            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
+            bar.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
+
+            thumbAnchor,
+            thumbCard.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: 24),
+            thumbCard.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -24),
+            thumbCard.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -10),
+
+            statsCard.topAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: 12),
+            statsCard.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor),
+
+            skipButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+            skipButton.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -16),
+            skipButton.heightAnchor.constraint(equalToConstant: 36),
+
+            nextCard.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+            nextCard.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -16),
+            nextCard.widthAnchor.constraint(equalToConstant: 320),
+
+            statusLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            statusLabel.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -14),
+        ])
+        view = root
+    }
+
+    private func buildTopBars() {
+        titlePill.translatesAutoresizingMaskIntoConstraints = false
         let backBtn = NSButton(
             image: NSImage(systemSymbolName: "chevron.left", accessibilityDescription: String(localized: "Close")) ?? NSImage(),
             target: self,
@@ -91,151 +244,248 @@ final class PlayerViewController: NSViewController {
         backBtn.widthAnchor.constraint(equalToConstant: 32).isActive = true
         backBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
-        let (titleText, subText, summaryText) = displayTitles()
-        let titleField = NSTextField(labelWithString: titleText)
+        refreshTitles()
         titleField.font = .systemFont(ofSize: 13.5, weight: .bold)
         titleField.textColor = CinemaTheme.textPrimary
-        let subField = NSTextField(labelWithString: subText ?? "")
         subField.font = .systemFont(ofSize: 11.5, weight: .regular)
         subField.textColor = CinemaTheme.textSecondary
-        subField.isHidden = subText == nil
 
         let titleCol = NSStackView(views: [titleField, subField])
         titleCol.orientation = .vertical
         titleCol.alignment = .leading
         titleCol.spacing = 1
 
-        let topLeftStack = NSStackView(views: [backBtn, titleCol])
-        topLeftStack.orientation = .horizontal
-        topLeftStack.alignment = .centerY
-        topLeftStack.spacing = 10
-        topLeftStack.translatesAutoresizingMaskIntoConstraints = false
-        titlePill.addSubview(topLeftStack)
+        let leftStack = NSStackView(views: [backBtn, titleCol])
+        leftStack.orientation = .horizontal
+        leftStack.alignment = .centerY
+        leftStack.spacing = 10
+        leftStack.translatesAutoresizingMaskIntoConstraints = false
+        titlePill.addSubview(leftStack)
+        NSLayoutConstraint.activate([
+            leftStack.topAnchor.constraint(equalTo: titlePill.topAnchor, constant: 6),
+            leftStack.bottomAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: -6),
+            leftStack.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor, constant: 6),
+            leftStack.trailingAnchor.constraint(equalTo: titlePill.trailingAnchor, constant: -16),
+        ])
 
-        // Top-right stream info pill
-        let infoPill = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 17)
-        infoPill.translatesAutoresizingMaskIntoConstraints = false
-        infoPill.isHidden = summaryText == nil
-        let dot = NSView()
-        dot.wantsLayer = true
-        dot.layer?.cornerRadius = 4
-        dot.layer?.backgroundColor = CinemaTheme.green.cgColor
-        dot.translatesAutoresizingMaskIntoConstraints = false
-        dot.widthAnchor.constraint(equalToConstant: 8).isActive = true
-        dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
+        topRightPill.translatesAutoresizingMaskIntoConstraints = false
+        infoLabel.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+        infoLabel.textColor = CinemaTheme.textPrimary
 
-        let infoField = NSTextField(labelWithString: summaryText ?? "")
-        infoField.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        infoField.textColor = CinemaTheme.textPrimary
-        let infoStack = NSStackView(views: [dot, infoField])
-        infoStack.orientation = .horizontal
-        infoStack.alignment = .centerY
-        infoStack.spacing = 8
-        infoStack.translatesAutoresizingMaskIntoConstraints = false
-        infoPill.addSubview(infoStack)
+        let streamsBtn = makeIconButton("rectangle.stack", tooltip: String(localized: "Switch Stream"), action: #selector(showStreamSwitcher(_:)))
+        let statsBtn = makeIconButton("info.circle", tooltip: String(localized: "Playback Stats (I)"), action: #selector(toggleStats))
+        let shotBtn = makeIconButton("camera", tooltip: String(localized: "Screenshot (S)"), action: #selector(takeScreenshot))
+        let moreBtn = makeIconButton("ellipsis.circle", tooltip: String(localized: "Video, A/B Loop & Sleep Timer"), action: #selector(showMoreMenu(_:)))
 
-        // Bottom floating glass control bar
-        let bar = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 22)
+        let rightStack = NSStackView(views: [infoLabel, streamsBtn, statsBtn, shotBtn, moreBtn])
+        rightStack.orientation = .horizontal
+        rightStack.alignment = .centerY
+        rightStack.spacing = 8
+        rightStack.translatesAutoresizingMaskIntoConstraints = false
+        topRightPill.addSubview(rightStack)
+        NSLayoutConstraint.activate([
+            rightStack.topAnchor.constraint(equalTo: topRightPill.topAnchor, constant: 6),
+            rightStack.bottomAnchor.constraint(equalTo: topRightPill.bottomAnchor, constant: -6),
+            rightStack.leadingAnchor.constraint(equalTo: topRightPill.leadingAnchor, constant: 12),
+            rightStack.trailingAnchor.constraint(equalTo: topRightPill.trailingAnchor, constant: -10),
+        ])
+    }
+
+    private func buildBottomBar() {
         bar.translatesAutoresizingMaskIntoConstraints = false
 
-        let back10 = NSButton(
-            image: NSImage(systemSymbolName: "gobackward.10", accessibilityDescription: String(localized: "Seek back 10s")) ?? NSImage(),
-            target: self,
-            action: #selector(seekBack10)
-        )
-        let fwd10 = NSButton(
-            image: NSImage(systemSymbolName: "goforward.10", accessibilityDescription: String(localized: "Seek forward 10s")) ?? NSImage(),
-            target: self,
-            action: #selector(seekForward10)
-        )
-        for btn in [back10, playButton, fwd10] {
-            btn.isBordered = false
-            btn.contentTintColor = CinemaTheme.textPrimary
+        scrubBar.translatesAutoresizingMaskIntoConstraints = false
+        scrubBar.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        scrubBar.onSeek = { [weak self] secs in self?.seekAbsolute(secs) }
+        scrubBar.onHover = { [weak self] secs, localX in
+            self?.handleScrubHover(seconds: secs, localX: localX)
         }
 
+        let back10 = makeIconButton("gobackward.10", tooltip: String(localized: "Seek back 10s"), action: #selector(seekBack10))
+        let fwd10 = makeIconButton("goforward.10", tooltip: String(localized: "Seek forward 10s"), action: #selector(seekForward10))
+        playButton.isBordered = false
+        playButton.contentTintColor = CinemaTheme.textPrimary
         playButton.image = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: String(localized: "Pause"))
         playButton.target = self
         playButton.action = #selector(togglePause)
 
-        slider.isContinuous = false
-        slider.trackFillColor = CinemaTheme.accent
-        slider.target = self
-        slider.action = #selector(seek)
-
         timeLabel.font = .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold)
         timeLabel.textColor = CinemaTheme.textPrimary
 
-        let transportRow = NSStackView(views: [back10, playButton, fwd10, timeLabel, NSView()])
+        speedButton.title = "1.0×"
+        speedButton.isBordered = false
+        speedButton.font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        speedButton.contentTintColor = CinemaTheme.textPrimary
+        speedButton.target = self
+        speedButton.action = #selector(showSpeedMenu(_:))
+
+        volumeButton.isBordered = false
+        volumeButton.image = NSImage(systemSymbolName: "speaker.wave.2.fill", accessibilityDescription: String(localized: "Mute"))
+        volumeButton.contentTintColor = CinemaTheme.textPrimary
+        volumeButton.target = self
+        volumeButton.action = #selector(toggleMute)
+
+        let chapBtn = makeIconButton("list.bullet.rectangle", tooltip: String(localized: "Chapters"), action: #selector(showChaptersMenu(_:)))
+        let audioBtn = makeIconButton("waveform", tooltip: String(localized: "Audio Track & Delay"), action: #selector(showAudioMenu(_:)))
+        let subBtn = makeIconButton("captions.bubble", tooltip: String(localized: "Subtitles"), action: #selector(showSubtitlesPopover(_:)))
+        let fsBtn = makeIconButton("arrow.up.left.and.arrow.down.right", tooltip: String(localized: "Fullscreen (F)"), action: #selector(toggleFullscreen))
+
+        let transportRow = NSStackView(views: [
+            back10, playButton, fwd10, timeLabel,
+            NSView(),
+            speedButton, volumeButton, chapBtn, audioBtn, subBtn, fsBtn,
+        ])
         transportRow.orientation = .horizontal
         transportRow.alignment = .centerY
         transportRow.spacing = 12
 
-        let barStack = NSStackView(views: [slider, transportRow])
+        let barStack = NSStackView(views: [scrubBar, transportRow])
         barStack.orientation = .vertical
         barStack.alignment = .leading
-        barStack.spacing = 10
+        barStack.spacing = 8
         barStack.translatesAutoresizingMaskIntoConstraints = false
         bar.addSubview(barStack)
-
-        statusLabel.textColor = CinemaTheme.textPrimary
-        statusLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.lineBreakMode = .byTruncatingTail
-
-        root.addSubview(titlePill)
-        root.addSubview(infoPill)
-        root.addSubview(bar)
-        root.addSubview(statusLabel)
-
         NSLayoutConstraint.activate([
-            videoView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            videoView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            videoView.topAnchor.constraint(equalTo: root.topAnchor),
-            videoView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-
-            topLeftStack.topAnchor.constraint(equalTo: titlePill.topAnchor, constant: 6),
-            topLeftStack.bottomAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: -6),
-            topLeftStack.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor, constant: 6),
-            topLeftStack.trailingAnchor.constraint(equalTo: titlePill.trailingAnchor, constant: -16),
-            titlePill.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
-            titlePill.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 88),
-
-            infoStack.topAnchor.constraint(equalTo: infoPill.topAnchor, constant: 8),
-            infoStack.bottomAnchor.constraint(equalTo: infoPill.bottomAnchor, constant: -8),
-            infoStack.leadingAnchor.constraint(equalTo: infoPill.leadingAnchor, constant: 14),
-            infoStack.trailingAnchor.constraint(equalTo: infoPill.trailingAnchor, constant: -14),
-            infoPill.centerYAnchor.constraint(equalTo: titlePill.centerYAnchor),
-            infoPill.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
-
-            barStack.topAnchor.constraint(equalTo: bar.topAnchor, constant: 14),
-            barStack.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -14),
-            barStack.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 20),
-            barStack.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -20),
-            slider.widthAnchor.constraint(equalTo: barStack.widthAnchor),
+            barStack.topAnchor.constraint(equalTo: bar.topAnchor, constant: 12),
+            barStack.bottomAnchor.constraint(equalTo: bar.bottomAnchor, constant: -12),
+            barStack.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 18),
+            barStack.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -18),
+            scrubBar.widthAnchor.constraint(equalTo: barStack.widthAnchor),
             transportRow.widthAnchor.constraint(equalTo: barStack.widthAnchor),
-
-            bar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
-            bar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
-            bar.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -24),
-
-            statusLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            statusLabel.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -14),
         ])
-        view = root
     }
 
-    private func displayTitles() -> (String, String?, String?) {
+    private func buildThumbPreview() {
+        thumbCard.translatesAutoresizingMaskIntoConstraints = false
+        thumbCard.isHidden = true
+
+        thumbImageView.imageScaling = .scaleProportionallyUpOrDown
+        thumbImageView.wantsLayer = true
+        thumbImageView.layer?.cornerRadius = 8
+        thumbImageView.layer?.masksToBounds = true
+        thumbImageView.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor
+        thumbImageView.translatesAutoresizingMaskIntoConstraints = false
+        thumbImageView.widthAnchor.constraint(equalToConstant: 160).isActive = true
+        thumbImageView.heightAnchor.constraint(equalToConstant: 90).isActive = true
+
+        thumbTimeLabel.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .semibold)
+        thumbTimeLabel.textColor = CinemaTheme.textPrimary
+
+        let col = NSStackView(views: [thumbImageView, thumbTimeLabel])
+        col.orientation = .vertical
+        col.alignment = .centerX
+        col.spacing = 4
+        col.translatesAutoresizingMaskIntoConstraints = false
+        thumbCard.addSubview(col)
+        NSLayoutConstraint.activate([
+            col.topAnchor.constraint(equalTo: thumbCard.topAnchor, constant: 6),
+            col.bottomAnchor.constraint(equalTo: thumbCard.bottomAnchor, constant: -6),
+            col.leadingAnchor.constraint(equalTo: thumbCard.leadingAnchor, constant: 6),
+            col.trailingAnchor.constraint(equalTo: thumbCard.trailingAnchor, constant: -6),
+        ])
+    }
+
+    private func buildStatsCard() {
+        statsCard.translatesAutoresizingMaskIntoConstraints = false
+        statsCard.isHidden = true
+        statsText.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        statsText.textColor = CinemaTheme.textPrimary
+        statsText.translatesAutoresizingMaskIntoConstraints = false
+        statsCard.addSubview(statsText)
+        NSLayoutConstraint.activate([
+            statsText.topAnchor.constraint(equalTo: statsCard.topAnchor, constant: 10),
+            statsText.bottomAnchor.constraint(equalTo: statsCard.bottomAnchor, constant: -10),
+            statsText.leadingAnchor.constraint(equalTo: statsCard.leadingAnchor, constant: 12),
+            statsText.trailingAnchor.constraint(equalTo: statsCard.trailingAnchor, constant: -12),
+            statsText.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
+        ])
+    }
+
+    private func buildSkipAndNextCards() {
+        skipButton.translatesAutoresizingMaskIntoConstraints = false
+        skipButton.target = self
+        skipButton.action = #selector(skipCurrentSegment)
+        skipButton.isHidden = true
+
+        nextCard.translatesAutoresizingMaskIntoConstraints = false
+        nextCard.isHidden = true
+
+        let header = NSTextField(labelWithString: String(localized: "UP NEXT"))
+        header.font = .systemFont(ofSize: 10.5, weight: .bold)
+        header.textColor = CinemaTheme.accent
+
+        nextTitleLabel.font = .systemFont(ofSize: 14, weight: .bold)
+        nextTitleLabel.textColor = CinemaTheme.textPrimary
+        nextTitleLabel.lineBreakMode = .byTruncatingTail
+
+        nextSubtitleLabel.font = .systemFont(ofSize: 12, weight: .regular)
+        nextSubtitleLabel.textColor = CinemaTheme.textSecondary
+        nextSubtitleLabel.lineBreakMode = .byTruncatingTail
+
+        nextCountdownLabel.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .medium)
+        nextCountdownLabel.textColor = CinemaTheme.textMuted
+
+        let playNextBtn = CinemaTheme.makePillButton(
+            title: String(localized: "Play Next"),
+            symbol: "play.fill",
+            primary: true,
+            target: self,
+            action: #selector(playNextEpisodeNow)
+        )
+        let cancelNextBtn = CinemaTheme.makePillButton(
+            title: String(localized: "Cancel"),
+            primary: false,
+            target: self,
+            action: #selector(cancelNextEpisode)
+        )
+        let btns = NSStackView(views: [playNextBtn, cancelNextBtn])
+        btns.orientation = .horizontal
+        btns.spacing = 8
+
+        let col = NSStackView(views: [header, nextTitleLabel, nextSubtitleLabel, nextCountdownLabel, btns])
+        col.orientation = .vertical
+        col.alignment = .leading
+        col.spacing = 5
+        col.translatesAutoresizingMaskIntoConstraints = false
+        nextCard.addSubview(col)
+        NSLayoutConstraint.activate([
+            col.topAnchor.constraint(equalTo: nextCard.topAnchor, constant: 12),
+            col.bottomAnchor.constraint(equalTo: nextCard.bottomAnchor, constant: -12),
+            col.leadingAnchor.constraint(equalTo: nextCard.leadingAnchor, constant: 14),
+            col.trailingAnchor.constraint(equalTo: nextCard.trailingAnchor, constant: -14),
+            btns.heightAnchor.constraint(equalToConstant: 30),
+        ])
+    }
+
+    private func makeIconButton(_ symbol: String, tooltip: String, action: Selector) -> NSButton {
+        let btn = NSButton(
+            image: NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip) ?? NSImage(),
+            target: self,
+            action: action
+        )
+        btn.isBordered = false
+        btn.toolTip = tooltip
+        btn.contentTintColor = CinemaTheme.textPrimary
+        return btn
+    }
+
+    private func refreshTitles() {
         switch request {
         case .stream(let s, let meta):
-            return (
-                meta?.title ?? s.addonName,
-                meta?.subtitle,
-                meta?.streamSummary ?? s.name
-            )
+            titleField.stringValue = meta?.title ?? s.addonName
+            subField.stringValue = meta?.subtitle ?? ""
+            subField.isHidden = (meta?.subtitle ?? "").isEmpty
+            infoLabel.stringValue = meta?.streamSummary ?? s.name ?? s.addonName
         case .file(let url):
-            return (url.lastPathComponent, nil, String(localized: "Local File"))
+            titleField.stringValue = url.lastPathComponent
+            subField.stringValue = ""
+            subField.isHidden = true
+            infoLabel.stringValue = String(localized: "Local File")
         case .trailer(_, let title):
-            return (title, nil, String(localized: "Trailer"))
+            titleField.stringValue = title
+            subField.stringValue = ""
+            subField.isHidden = true
+            infoLabel.stringValue = String(localized: "Trailer")
         }
     }
 
@@ -244,7 +494,9 @@ final class PlayerViewController: NSViewController {
         guard session == nil, !closing else { return }
         videoLayer.contentsScale = view.window?.backingScaleFactor ?? 2
         view.window?.makeFirstResponder(view)
+        installMediaKeys()
         start()
+        showHudAndResetTimer()
         if let delay = DevAutomation.autoCloseAfter {
             Task {
                 try? await Task.sleep(for: .seconds(delay))
@@ -252,6 +504,15 @@ final class PlayerViewController: NSViewController {
                 close()
             }
         }
+    }
+
+    private func installMediaKeys() {
+        nowPlaying.onTogglePause = { [weak self] in self?.togglePause() }
+        nowPlaying.onPlay = { [weak self] in try? self?.session?.togglePause() }
+        nowPlaying.onPause = { [weak self] in try? self?.session?.togglePause() }
+        nowPlaying.onNextEpisode = { [weak self] in self?.playNextEpisodeNow() }
+        nowPlaying.onSeekAbsolute = { [weak self] secs in self?.seekAbsolute(secs) }
+        nowPlaying.installCommands()
     }
 
     private func start() {
@@ -262,14 +523,24 @@ final class PlayerViewController: NSViewController {
         let core = core
         let request = request
         Task.detached(priority: .userInitiated) {
+            let prefs = (try? core.playerPreferences()) ?? PlayerPreferencesFfi(
+                exactSeek: true,
+                hdrTargetPeak: nil,
+                shaderPreset: "none",
+                autoplayNext: true,
+                autoplayCountdownS: 10,
+                forceHdrSurface: false
+            )
+            let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface)
             do {
-                let session = try core.createPlayback(observer: sink)
-                // mpv's video output needs the render context before loadfile.
+                await MainActor.run {
+                    self.videoLayer.configureSurface(hdr: isHdr)
+                }
+                let session = try core.createPlaybackForSurface(observer: sink, hdrSurface: isHdr)
                 await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
                     Task { @MainActor in
                         self.session = session
-                        self.videoLayer.onRenderReady = { ready.resume() }
-                        self.videoLayer.attach(session)
+                        self.videoLayer.attach(session) { ready.resume() }
                     }
                 }
                 let proceed = await MainActor.run { () -> Bool in
@@ -280,9 +551,19 @@ final class PlayerViewController: NSViewController {
                 }
                 guard proceed else { return }
                 switch request {
-                case .stream(let stream, _): try await session.play(stream: stream)
-                case .file(let url): try session.playUrl(url: url.path)
-                case .trailer(let url, _): try session.playUrl(url: url)
+                case .stream(let stream, let meta):
+                    if let meta {
+                        await MainActor.run {
+                            if let idx = meta.rankedStreams.firstIndex(where: { $0.stream.raw == stream.raw }) {
+                                self.currentStreamIndex = idx
+                            }
+                        }
+                    }
+                    try await session.play(stream: stream)
+                case .file(let url):
+                    try session.playUrl(url: url.path)
+                case .trailer(let url, _):
+                    try session.playUrl(url: url)
                 }
             } catch {
                 await MainActor.run {
@@ -296,28 +577,66 @@ final class PlayerViewController: NSViewController {
         switch event {
         case .fileLoaded:
             statusLabel.stringValue = ""
-            if !appliedResume, let resume = metadata?.resumePosition, resume > 10 {
+            failedRetries = 0
+            cancelStallWatchdog()
+            appliedAutoTracks = false
+            applySavedStyleAndOffsets()
+            refreshTracksAndChapters()
+            scheduleOnlineSubtitleLookup()
+            if let switchPos = pendingSwitchPosition {
+                pendingSwitchPosition = nil
+                try? session?.seekAbsoluteExact(seconds: switchPos)
+            } else if !appliedResume, let resume = metadata?.resumePosition, resume > 10 {
                 appliedResume = true
-                try? session?.seekAbsolute(seconds: resume)
+                try? session?.seekAbsoluteExact(seconds: resume)
             }
+            pushNowPlaying()
+
         case .playbackRestart:
+            cancelStallWatchdog()
             if statusLabel.stringValue == String(localized: "Buffering…") { statusLabel.stringValue = "" }
+
+        case .tracksChanged:
+            refreshTracksAndChapters()
+
+        case .chaptersChanged:
+            refreshTracksAndChapters()
+
         case .position(let seconds):
             position = seconds
-            if NSEvent.pressedMouseButtons == 0 { slider.doubleValue = seconds }
+            scrubBar.position = seconds
             updateTime()
+            updateSkipSegmentVisibility()
+            checkNextEpisodeTrigger()
             saveProgressIfNeeded(force: false)
+
         case .duration(let seconds):
             duration = seconds
-            slider.maxValue = max(seconds, 1)
+            scrubBar.duration = seconds
             updateTime()
-        case .paused(let paused):
-            let name = paused ? "play.fill" : "pause.fill"
-            let label = paused ? String(localized: "Play") : String(localized: "Pause")
+            pushNowPlaying()
+
+        case .paused(let isPaused):
+            paused = isPaused
+            let name = isPaused ? "play.fill" : "pause.fill"
+            let label = isPaused ? String(localized: "Play") : String(localized: "Pause")
             playButton.image = NSImage(systemSymbolName: name, accessibilityDescription: label)
-            if paused { saveProgressIfNeeded(force: true) }
-        case .buffering(let buffering):
-            statusLabel.stringValue = buffering ? String(localized: "Buffering…") : ""
+            if isPaused {
+                saveProgressIfNeeded(force: true)
+                showHudAndCancelTimer()
+            } else {
+                showHudAndResetTimer()
+            }
+            pushNowPlaying()
+
+        case .buffering(let isBuffering):
+            statusLabel.stringValue = isBuffering ? String(localized: "Buffering…") : ""
+            if isBuffering {
+                armStallWatchdog()
+            } else {
+                cancelStallWatchdog()
+            }
+
         case .videoGamma(let gamma):
             let hdr = gamma == "pq" || gamma == "hlg"
             if LaunchMetrics.isEnabled {
@@ -329,14 +648,25 @@ final class PlayerViewController: NSViewController {
                     }
                 }
             }
+
         case .metric(let name, let millis):
             NSLog("cinma metric %@ = %.0f ms", name, millis)
             continueAutomation()
+
         case .endFile(let reason, let error):
-            if case .error = reason {
+            switch reason {
+            case .error:
                 let msg = error ?? "unknown"
                 statusLabel.stringValue = String(localized: "Playback error: \(msg)")
+                attemptStreamRecovery()
+            case .eof:
+                if nextPlan != nil && !nextDismissed {
+                    playNextEpisodeNow()
+                }
+            case .stopped:
+                break
             }
+
         case .shutdown:
             if let start = closeRequestedAt {
                 DevAutomation.log("shutdown \(start.duration(to: .now)) after close")
@@ -344,6 +674,866 @@ final class PlayerViewController: NSViewController {
             shutdownWaiter?.resume()
             shutdownWaiter = nil
         }
+    }
+
+    // MARK: - Track / Subtitle / Offset Automation
+
+    private func applySavedStyleAndOffsets() {
+        guard let session else { return }
+        if let settings = try? core.subtitleSettings() {
+            try? session.setSubtitleStyle(
+                font: settings.srtFont,
+                fontSize: settings.srtFontSize,
+                colorHex: settings.srtColor,
+                pos: settings.srtPos,
+                assOverride: settings.assOverride
+            )
+        }
+        if let videoId = metadata?.videoId, let offsets = try? core.videoOffsets(videoId: videoId) {
+            subDelay = offsets.subDelay
+            audioDelay = offsets.audioDelay
+            if abs(subDelay) > 0.001 { try? session.setSubtitleDelay(seconds: subDelay) }
+            if abs(audioDelay) > 0.001 { try? session.setAudioDelay(seconds: audioDelay) }
+        }
+    }
+
+    private func refreshTracksAndChapters() {
+        guard let session else { return }
+        tracks = (try? session.tracks()) ?? []
+        chapters = (try? session.chapters()) ?? []
+        scrubBar.chapters = chapters
+
+        guard !appliedAutoTracks, !tracks.isEmpty else { return }
+        appliedAutoTracks = true
+        autoSelectPreferredTracks()
+    }
+
+    private func autoSelectPreferredTracks() {
+        guard let session, let prefs = try? core.subtitleSettings() else { return }
+        let audioTracks = tracks.filter { $0.trackType == "audio" }
+        for lang in prefs.audioLangs {
+            if let match = audioTracks.first(where: { trackMatchesLang($0, lang) }) {
+                if !match.selected { try? session.setAudioTrack(id: match.id) }
+                break
+            }
+        }
+        let subTracks = tracks.filter { $0.trackType == "sub" }
+        var primaryId: Int64?
+        for lang in prefs.preferredLangs {
+            if let match = subTracks.first(where: { trackMatchesLang($0, lang) && !$0.forced })
+                ?? subTracks.first(where: { trackMatchesLang($0, lang) })
+            {
+                primaryId = match.id
+                lastSelectedSid = match.id
+                try? session.setSubtitleTrack(id: match.id)
+                break
+            }
+        }
+        if let dualLang = prefs.dualSecondaryLang, !dualLang.isEmpty,
+           let dualMatch = subTracks.first(where: { trackMatchesLang($0, dualLang) && $0.id != primaryId })
+        {
+            secondarySid = dualMatch.id
+            try? session.setSecondarySubtitleTrack(id: dualMatch.id)
+        }
+    }
+
+    private func trackMatchesLang(_ track: MediaTrackInfo, _ pref: String) -> Bool {
+        let p = pref.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let l = track.lang?.lowercased() else { return false }
+        if l == p || l.hasPrefix(p) || p.hasPrefix(l) { return true }
+        let aliases: [String: Set<String>] = [
+            "tur": ["tr", "tur", "trk", "tr-tr"],
+            "eng": ["en", "eng", "en-us", "en-gb"],
+            "jpn": ["ja", "jpn"],
+        ]
+        for group in aliases.values where group.contains(p) && group.contains(l) {
+            return true
+        }
+        return false
+    }
+
+    private func scheduleOnlineSubtitleLookup() {
+        guard let meta = metadata else { return }
+        let core = core
+        Task { [weak self] in
+            // Allow torrent head+tail warmup a moment to compute the OpenSubtitles hash.
+            var identity = self?.session?.videoIdentity()
+            if identity?.hash == nil {
+                try? await Task.sleep(for: .seconds(1.5))
+                identity = self?.session?.videoIdentity()
+            }
+            guard let self, !self.closing else { return }
+            let input = SubtitleSearchInput(
+                mediaType: meta.mediaType,
+                videoId: meta.videoId,
+                imdbId: meta.metaId.hasPrefix("tt") ? meta.metaId : nil,
+                season: meta.season.map { UInt32($0) },
+                episode: meta.episode.map { UInt32($0) },
+                videoHash: identity?.hash,
+                videoSize: identity?.size,
+                filename: identity?.filename
+            )
+            self.searchingSubtitles = true
+            let results = (try? await core.fetchSubtitles(input: input)) ?? []
+            guard !self.closing else { return }
+            self.searchingSubtitles = false
+            self.onlineSubtitles = results
+            self.subtitleSearchStatus = identity?.hash != nil
+                ? String(localized: "Matched with OpenSubtitles hash")
+                : ""
+        }
+    }
+
+    // MARK: - Next Episode Prefetch & Autoplay (§5.9)
+
+    private func checkNextEpisodeTrigger() {
+        guard let meta = metadata, meta.mediaType == "series",
+              let season = meta.season, let ep = meta.episode,
+              duration > 30
+        else { return }
+
+        let progress = position / duration
+        let inOutro = chapters.last(where: { $0.startS <= position }).map { isOutroChapter($0.title) } ?? false
+        if !prefetchedTriggered && (progress >= 0.88 || inOutro) {
+            prefetchedTriggered = true
+            session?.startNextEpisodePrefetch(
+                metaId: meta.metaId,
+                currentSeason: UInt32(max(1, season)),
+                currentEpisode: UInt32(max(0, ep)),
+                bingeGroup: meta.bingeGroup
+            )
+        }
+
+        if prefetchedTriggered && nextPlan == nil, let plan = session?.prefetchedNextEpisode() {
+            nextPlan = plan
+        }
+
+        if !nextDismissed && (progress >= 0.92 || inOutro), let plan = nextPlan {
+            showNextEpisodeCard(plan)
+        }
+    }
+
+    private func showNextEpisodeCard(_ plan: NextEpisodePrefetchInfo) {
+        guard nextCard.isHidden else { return }
+        nextTitleLabel.stringValue = "S\(plan.season) · B\(plan.episode) — \(plan.title)"
+        nextSubtitleLabel.stringValue = plan.bestStream != nil
+            ? String(localized: "Prefetched & ready")
+            : String(localized: "Ready to load")
+        nextCard.isHidden = false
+        showHudAndCancelTimer()
+
+        let prefs = try? core.playerPreferences()
+        guard prefs?.autoplayNext != false else {
+            nextCountdownLabel.stringValue = ""
+            return
+        }
+        let total = Int(prefs?.autoplayCountdownS ?? 10)
+        nextCountdownTask?.cancel()
+        nextCountdownTask = Task { [weak self] in
+            for remaining in stride(from: total, through: 1, by: -1) {
+                guard let self, !Task.isCancelled, !self.nextDismissed, !self.closing else { return }
+                self.nextCountdownLabel.stringValue = String(localized: "Auto-playing in \(remaining)s…")
+                try? await Task.sleep(for: .seconds(1))
+            }
+            guard let self, !Task.isCancelled, !self.nextDismissed, !self.closing else { return }
+            self.playNextEpisodeNow()
+        }
+    }
+
+    @objc private func playNextEpisodeNow() {
+        guard let plan = nextPlan ?? session?.prefetchedNextEpisode(),
+              let stream = plan.bestStream
+        else { return }
+        nextCountdownTask?.cancel()
+        nextCard.isHidden = true
+        nextPlan = nil
+        prefetchedTriggered = false
+        nextDismissed = false
+        pendingSwitchPosition = nil
+
+        if let prev = metadata {
+            let newMeta = PlaybackMetadata(
+                videoId: plan.videoId,
+                metaId: prev.metaId,
+                mediaType: prev.mediaType,
+                title: prev.title,
+                subtitle: "S\(plan.season) · B\(plan.episode) — \(plan.title)",
+                artwork: plan.still ?? prev.artwork,
+                season: Int64(plan.season),
+                episode: Int64(plan.episode),
+                resumePosition: nil,
+                streamSummary: prev.streamSummary,
+                isHdr: prev.isHdr,
+                bingeGroup: prev.bingeGroup,
+                rankedStreams: []
+            )
+            request = .stream(stream, metadata: newMeta)
+            refreshTitles()
+        }
+        statusLabel.stringValue = String(localized: "Loading next episode…")
+        let session = session
+        Task {
+            try? await session?.play(stream: stream)
+        }
+    }
+
+    @objc private func cancelNextEpisode() {
+        nextDismissed = true
+        nextCountdownTask?.cancel()
+        nextCard.isHidden = true
+        session?.cancelPlaybackPrefetchIfNeeded()
+    }
+
+    // MARK: - Skip Intro / Outro Chapters
+
+    private func isIntroChapter(_ title: String) -> Bool {
+        let lower = title.lowercased()
+        return lower.contains("intro") || lower.contains("opening") || lower == "op" || lower.contains("recap") || lower.contains("önceki")
+    }
+
+    private func isOutroChapter(_ title: String) -> Bool {
+        let lower = title.lowercased()
+        return lower.contains("outro") || lower.contains("credits") || lower.contains("ending") || lower == "ed"
+    }
+
+    private func updateSkipSegmentVisibility() {
+        guard let idx = chapters.lastIndex(where: { $0.startS <= position }),
+              isIntroChapter(chapters[idx].title),
+              idx + 1 < chapters.count
+        else {
+            skipButton.isHidden = true
+            return
+        }
+        skipButton.title = String(localized: "Skip Intro")
+        skipButton.isHidden = false
+    }
+
+    @objc private func skipCurrentSegment() {
+        guard let idx = chapters.lastIndex(where: { $0.startS <= position }),
+              idx + 1 < chapters.count
+        else { return }
+        seekAbsolute(chapters[idx + 1].startS)
+        skipButton.isHidden = true
+    }
+
+    // MARK: - Stream Switching & Auto-Recovery (§5.2)
+
+    private func armStallWatchdog() {
+        cancelStallWatchdog()
+        stallRecoveryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard let self, !Task.isCancelled, !self.closing else { return }
+            self.attemptStreamRecovery()
+        }
+    }
+
+    private func cancelStallWatchdog() {
+        stallRecoveryTask?.cancel()
+        stallRecoveryTask = nil
+    }
+
+    private func attemptStreamRecovery() {
+        guard !closing else { return }
+        if failedRetries == 0, case .stream(let current, _) = request {
+            failedRetries = 1
+            pendingSwitchPosition = position > 5 ? position : nil
+            statusLabel.stringValue = String(localized: "Stream stalled, retrying…")
+            let session = session
+            Task { try? await session?.play(stream: current) }
+            return
+        }
+        guard let meta = metadata, !meta.rankedStreams.isEmpty else { return }
+        let nextIndex = currentStreamIndex + 1
+        guard nextIndex < meta.rankedStreams.count else { return }
+        currentStreamIndex = nextIndex
+        failedRetries = 0
+        let fallback = meta.rankedStreams[nextIndex].stream
+        statusLabel.stringValue = String(localized: "Switching to fallback stream…")
+        switchToStream(fallback)
+    }
+
+    private func switchToStream(_ stream: StreamInfo) {
+        pendingSwitchPosition = position > 5 ? position : nil
+        if case .stream(_, let meta) = request {
+            request = .stream(stream, metadata: meta)
+            refreshTitles()
+        }
+        let session = session
+        Task {
+            try? await session?.play(stream: stream)
+        }
+    }
+
+    // MARK: - Hover Thumbnail Preview
+
+    private func handleScrubHover(seconds: Double?, localX: CGFloat) {
+        guard let seconds, duration > 0 else {
+            thumbCard.isHidden = true
+            return
+        }
+        thumbCard.isHidden = false
+        thumbCenterXConstraint?.constant = localX
+        let chName = chapters.last(where: { $0.startS <= seconds })?.title
+        if let chName, !chName.isEmpty {
+            thumbTimeLabel.stringValue = "\(Self.format(seconds)) · \(chName)"
+        } else {
+            thumbTimeLabel.stringValue = Self.format(seconds)
+        }
+        if let cached = thumbCache?.cachedImage(at: seconds) {
+            thumbImageView.image = cached
+            return
+        }
+        thumbCache?.requestThumbnail(at: seconds, session: session) { [weak self] img in
+            self?.thumbImageView.image = img
+        }
+    }
+
+    // MARK: - Popovers & Menus
+
+    @objc private func showStreamSwitcher(_ sender: NSButton) {
+        showHudAndCancelTimer()
+        let streams = metadata?.rankedStreams ?? []
+        let view = StreamSwitcherPopoverView(
+            streams: streams,
+            activeRaw: activeStreamRaw
+        ) { [weak self] selected in
+            self?.activePopover?.performClose(nil)
+            self?.switchToStream(selected)
+        }
+        presentPopover(view, relativeTo: sender)
+    }
+
+    @objc private func showSubtitlesPopover(_ sender: NSButton) {
+        showHudAndCancelTimer()
+        let settings = (try? core.subtitleSettings()) ?? SubtitleSettingsFfi(
+            preferredLangs: ["tur", "eng"],
+            audioLangs: ["eng"],
+            dualSecondaryLang: nil,
+            srtFont: nil,
+            srtFontSize: 46,
+            srtColor: nil,
+            srtPos: 95,
+            assOverride: false
+        )
+        let root = SubtitleManagerPopoverView(
+            candidates: onlineSubtitles,
+            loading: searchingSubtitles,
+            statusMessage: subtitleSearchStatus,
+            tracks: tracks,
+            secondaryId: secondarySid,
+            subDelay: subDelay,
+            settings: settings,
+            onSearchOnline: { [weak self] in
+                self?.activePopover?.performClose(nil)
+                self?.scheduleOnlineSubtitleLookup()
+            },
+            onSelectOnline: { [weak self] cand in
+                self?.activePopover?.performClose(nil)
+                self?.loadOnlineSubtitle(cand)
+            },
+            onLoadLocal: { [weak self] in
+                self?.activePopover?.performClose(nil)
+                self?.openLocalSubtitleFile()
+            },
+            onSelectPrimary: { [weak self] id in
+                self?.lastSelectedSid = id
+                self?.subtitlesEnabled = id != nil
+                try? self?.session?.setSubtitleTrack(id: id)
+                self?.tracks = (try? self?.session?.tracks()) ?? []
+                self?.activePopover?.performClose(nil)
+            },
+            onSelectSecondary: { [weak self] id in
+                self?.secondarySid = id
+                try? self?.session?.setSecondarySubtitleTrack(id: id)
+                self?.activePopover?.performClose(nil)
+            },
+            onAdjustDelay: { [weak self] delta in
+                self?.adjustSubDelay(delta)
+            },
+            onResetDelay: { [weak self] in
+                self?.setSubDelay(0)
+            },
+            onUpdateStyle: { [weak self] updated in
+                guard let self else { return }
+                try? self.core.setSubtitleSettings(settings: updated)
+                try? self.session?.setSubtitleStyle(
+                    font: updated.srtFont,
+                    fontSize: updated.srtFontSize,
+                    colorHex: updated.srtColor,
+                    pos: updated.srtPos,
+                    assOverride: updated.assOverride
+                )
+            }
+        )
+        presentPopover(root, relativeTo: sender)
+    }
+
+    private func presentPopover<V: View>(_ rootView: V, relativeTo anchor: NSView) {
+        activePopover?.performClose(nil)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(rootView: rootView)
+        popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .maxY)
+        activePopover = popover
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        activePopover = nil
+        showHudAndResetTimer()
+    }
+
+    private func loadOnlineSubtitle(_ candidate: SubtitleCandidateInfo) {
+        statusLabel.stringValue = String(localized: "Loading subtitle…")
+        let core = core
+        let session = session
+        Task { [weak self] in
+            do {
+                let prepared = try await core.downloadAndPrepareSubtitle(candidate: candidate)
+                try session?.addSubtitle(
+                    path: prepared.localPath,
+                    title: candidate.title ?? candidate.provider,
+                    lang: candidate.lang,
+                    select: true
+                )
+                await MainActor.run {
+                    self?.statusLabel.stringValue = String(localized: "Loaded \(candidate.lang.uppercased()) subtitle (\(prepared.detectedEncoding))")
+                    self?.tracks = (try? session?.tracks()) ?? []
+                }
+            } catch {
+                await MainActor.run {
+                    self?.statusLabel.stringValue = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func openLocalSubtitleFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [
+            UTType(filenameExtension: "srt"),
+            UTType(filenameExtension: "ass"),
+            UTType(filenameExtension: "ssa"),
+            UTType(filenameExtension: "vtt"),
+        ].compactMap { $0 }
+        panel.allowsOtherFileTypes = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if let prepared = try? core.prepareLocalSubtitle(path: url.path) {
+            try? session?.addSubtitle(path: prepared.localPath, title: url.lastPathComponent, lang: nil, select: true)
+            tracks = (try? session?.tracks()) ?? []
+            statusLabel.stringValue = String(localized: "Loaded \(url.lastPathComponent) (\(prepared.detectedEncoding))")
+        }
+    }
+
+    private func adjustSubDelay(_ delta: Double) {
+        setSubDelay(subDelay + delta)
+    }
+
+    private func setSubDelay(_ val: Double) {
+        subDelay = val
+        try? session?.setSubtitleDelay(seconds: val)
+        persistOffsets()
+        statusLabel.stringValue = String(format: "%@ %+.1fs", String(localized: "Subtitle delay:"), val)
+    }
+
+    private func adjustAudioDelay(_ delta: Double) {
+        audioDelay += delta
+        try? session?.setAudioDelay(seconds: audioDelay)
+        persistOffsets()
+        statusLabel.stringValue = String(format: "%@ %+.1fs", String(localized: "Audio delay:"), audioDelay)
+    }
+
+    private func persistOffsets() {
+        guard let videoId = metadata?.videoId else { return }
+        try? core.setVideoOffsets(
+            videoId: videoId,
+            offsets: VideoOffsetsFfi(subDelay: subDelay, audioDelay: audioDelay)
+        )
+    }
+
+    @objc private func showAudioMenu(_ sender: NSButton) {
+        showHudAndCancelTimer()
+        let menu = NSMenu()
+        let audioTracks = tracks.filter { $0.trackType == "audio" }
+        if audioTracks.isEmpty {
+            menu.addItem(withTitle: String(localized: "No audio tracks"), action: nil, keyEquivalent: "")
+        } else {
+            for t in audioTracks {
+                let label = [t.lang?.uppercased(), t.title, t.codec].compactMap { $0 }.joined(separator: " · ")
+                let item = NSMenuItem(
+                    title: label.isEmpty ? "Track \(t.id)" : label,
+                    action: #selector(selectAudioTrackItem(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.tag = Int(t.id)
+                item.state = t.selected ? .on : .off
+                menu.addItem(item)
+            }
+        }
+        menu.addItem(.separator())
+        for (title, delta) in [(String(localized: "Audio Delay -0.1s"), -0.1), (String(localized: "Audio Delay +0.1s"), 0.1)] {
+            let item = NSMenuItem(title: title, action: #selector(adjustAudioDelayItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = delta
+            menu.addItem(item)
+        }
+        let reset = NSMenuItem(title: String(localized: "Reset Audio Delay"), action: #selector(resetAudioDelayItem), keyEquivalent: "")
+        reset.target = self
+        menu.addItem(reset)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc private func selectAudioTrackItem(_ sender: NSMenuItem) {
+        try? session?.setAudioTrack(id: Int64(sender.tag))
+        tracks = (try? session?.tracks()) ?? []
+    }
+
+    @objc private func adjustAudioDelayItem(_ sender: NSMenuItem) {
+        if let d = sender.representedObject as? Double { adjustAudioDelay(d) }
+    }
+
+    @objc private func resetAudioDelayItem() {
+        audioDelay = 0
+        try? session?.setAudioDelay(seconds: 0)
+        persistOffsets()
+    }
+
+    @objc private func showChaptersMenu(_ sender: NSButton) {
+        showHudAndCancelTimer()
+        let menu = NSMenu()
+        if chapters.isEmpty {
+            menu.addItem(withTitle: String(localized: "No chapters"), action: nil, keyEquivalent: "")
+        } else {
+            for ch in chapters {
+                let item = NSMenuItem(
+                    title: "\(Self.format(ch.startS))  \(ch.title)",
+                    action: #selector(jumpToChapter(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = ch.startS
+                menu.addItem(item)
+            }
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc private func jumpToChapter(_ sender: NSMenuItem) {
+        if let t = sender.representedObject as? Double { seekAbsolute(t) }
+    }
+
+    @objc private func showSpeedMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for val in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] {
+            let item = NSMenuItem(
+                title: String(format: "%.2g×", val),
+                action: #selector(selectSpeedItem(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = val
+            item.state = abs(speed - val) < 0.01 ? .on : .off
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc private func selectSpeedItem(_ sender: NSMenuItem) {
+        if let val = sender.representedObject as? Double { setSpeed(val) }
+    }
+
+    @objc private func showMoreMenu(_ sender: NSButton) {
+        showHudAndCancelTimer()
+        let menu = NSMenu()
+
+        // A/B Loop
+        let abTitle: String
+        if abLoopA == nil {
+            abTitle = String(localized: "A/B Loop: Set Point A")
+        } else if abLoopB == nil {
+            abTitle = String(localized: "A/B Loop: Set Point B")
+        } else {
+            abTitle = String(localized: "A/B Loop: Clear")
+        }
+        let abItem = NSMenuItem(title: abTitle, action: #selector(cycleAbLoop), keyEquivalent: "")
+        abItem.target = self
+        menu.addItem(abItem)
+
+        // Shaders submenu
+        let shaderMenu = NSMenu()
+        for (label, preset) in [(String(localized: "Off"), "none"), (String(localized: "Adaptive Sharpen (CAS)"), "sharpen")] {
+            let item = NSMenuItem(title: label, action: #selector(selectShaderPreset(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset
+            shaderMenu.addItem(item)
+        }
+        let shaderHolder = NSMenuItem(title: String(localized: "Upscaling / Shader"), action: nil, keyEquivalent: "")
+        shaderHolder.submenu = shaderMenu
+        menu.addItem(shaderHolder)
+
+        // HDR Target Peak submenu
+        let peakMenu = NSMenu()
+        for nits: UInt32? in [nil, 400, 600, 1000, 1600] {
+            let title = nits.map { "\($0) nits" } ?? String(localized: "Auto")
+            let item = NSMenuItem(title: title, action: #selector(selectHdrPeak(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = nits.map { NSNumber(value: $0) }
+            peakMenu.addItem(item)
+        }
+        let peakHolder = NSMenuItem(title: String(localized: "HDR Target Peak"), action: nil, keyEquivalent: "")
+        peakHolder.submenu = peakMenu
+        menu.addItem(peakHolder)
+
+        // Sleep timer submenu
+        let sleepMenu = NSMenu()
+        for (label, mins) in [(String(localized: "Off"), 0), ("15m", 15), ("30m", 30), ("60m", 60)] {
+            let item = NSMenuItem(title: label, action: #selector(setSleepTimerMinutes(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = mins
+            sleepMenu.addItem(item)
+        }
+        let sleepHolder = NSMenuItem(title: String(localized: "Sleep Timer"), action: nil, keyEquivalent: "")
+        sleepHolder.submenu = sleepMenu
+        menu.addItem(sleepHolder)
+
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc private func selectShaderPreset(_ sender: NSMenuItem) {
+        guard let preset = sender.representedObject as? String else { return }
+        if var prefs = try? core.playerPreferences() {
+            prefs.shaderPreset = preset
+            try? core.setPlayerPreferences(prefs: prefs)
+        }
+        let paths = (try? core.resolveShaderPaths(preset: preset)) ?? []
+        try? session?.setGlslShaders(paths: paths)
+        statusLabel.stringValue = String(localized: "Shader: \(preset)")
+    }
+
+    @objc private func selectHdrPeak(_ sender: NSMenuItem) {
+        let nits = (sender.representedObject as? NSNumber)?.uint32Value
+        if var prefs = try? core.playerPreferences() {
+            prefs.hdrTargetPeak = nits
+            try? core.setPlayerPreferences(prefs: prefs)
+        }
+        try? session?.setHdrTargetPeak(nits: nits)
+        statusLabel.stringValue = nits.map { "HDR peak: \($0) nits" } ?? "HDR peak: Auto"
+    }
+
+    @objc private func setSleepTimerMinutes(_ sender: NSMenuItem) {
+        sleepTimerTask?.cancel()
+        sleepTimerTask = nil
+        let mins = sender.tag
+        guard mins > 0 else {
+            statusLabel.stringValue = String(localized: "Sleep timer off")
+            return
+        }
+        statusLabel.stringValue = String(localized: "Sleep timer set for \(mins) min")
+        sleepTimerTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(mins * 60))
+            guard let self, !Task.isCancelled, !self.closing else { return }
+            self.close()
+        }
+    }
+
+    // MARK: - Actions & Keyboard Shortcuts
+
+    @objc private func toggleStats() {
+        statsVisible.toggle()
+        statsCard.isHidden = !statsVisible
+        statsTask?.cancel()
+        guard statsVisible else { return }
+        statsTask = Task { [weak self] in
+            while let self, self.statsVisible, !Task.isCancelled {
+                if let s = self.session?.stats() {
+                    let ab = (s.abLoopA, s.abLoopB)
+                    let abStr = (ab.0 != nil || ab.1 != nil)
+                        ? "A: \(ab.0.map(Self.format) ?? "—")  B: \(ab.1.map(Self.format) ?? "—")"
+                        : String(localized: "Off")
+                    self.statsText.stringValue = """
+                    Video: \(s.videoCodec) (\(s.width)×\(s.height)) · hwdec: \(s.hwdec)
+                    FPS: \(String(format: "%.2f", s.fps)) (est \(String(format: "%.2f", s.estimatedFps))) · Gamma: \(s.gamma)
+                    Audio: \(s.audioCodec) (\(s.audioChannels)ch)
+                    Cache: \(String(format: "%.1fs", s.cacheSeconds)) · Drops: \(s.droppedFrames)
+                    Speed: \(String(format: "%.2gx", s.speed)) · A/B: \(abStr)
+                    Delays: Sub \(String(format: "%+.2fs", s.subDelay)) · Audio \(String(format: "%+.2fs", s.audioDelay))
+                    """
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    @objc private func takeScreenshot() {
+        guard let session else { return }
+        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        let formatter = ISO8601DateFormatter()
+        let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let out = desktop.appendingPathComponent("Cinma-\(stamp).png")
+        try? session.screenshotToFile(path: out.path)
+        statusLabel.stringValue = String(localized: "Saved screenshot: \(out.lastPathComponent)")
+    }
+
+    @objc private func cycleAbLoop() {
+        if abLoopA == nil {
+            abLoopA = position
+            try? session?.setAbLoopA(seconds: position)
+            statusLabel.stringValue = "A/B Loop A = \(Self.format(position))"
+        } else if abLoopB == nil {
+            abLoopB = position
+            try? session?.setAbLoopB(seconds: position)
+            statusLabel.stringValue = "A/B Loop A=\(Self.format(abLoopA ?? 0)) B=\(Self.format(position))"
+        } else {
+            abLoopA = nil
+            abLoopB = nil
+            try? session?.setAbLoopA(seconds: nil)
+            try? session?.setAbLoopB(seconds: nil)
+            statusLabel.stringValue = String(localized: "A/B Loop cleared")
+        }
+        scrubBar.abLoopA = abLoopA
+        scrubBar.abLoopB = abLoopB
+    }
+
+    @objc private func toggleFullscreen() {
+        view.window?.toggleFullScreen(nil)
+    }
+
+    private func setSpeed(_ val: Double) {
+        speed = min(max(val, 0.25), 4.0)
+        speedButton.title = String(format: "%.2g×", speed)
+        try? session?.setSpeed(speed: speed)
+        pushNowPlaying()
+    }
+
+    @objc private func toggleMute() {
+        muted.toggle()
+        try? session?.setMuted(muted: muted)
+        volumeButton.image = NSImage(
+            systemSymbolName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+            accessibilityDescription: nil
+        )
+    }
+
+    private func toggleSubtitlesVisibility() {
+        subtitlesEnabled.toggle()
+        if subtitlesEnabled {
+            let target = lastSelectedSid ?? tracks.first(where: { $0.trackType == "sub" })?.id
+            try? session?.setSubtitleTrack(id: target)
+        } else {
+            lastSelectedSid = tracks.first(where: { $0.trackType == "sub" && $0.selected })?.id ?? lastSelectedSid
+            try? session?.setSubtitleTrack(id: nil)
+        }
+        statusLabel.stringValue = subtitlesEnabled ? String(localized: "Subtitles on") : String(localized: "Subtitles off")
+    }
+
+    private func cycleTrack(type: String, isSub: Bool) {
+        let group = tracks.filter { $0.trackType == type }
+        guard !group.isEmpty else { return }
+        let idx = group.firstIndex(where: { $0.selected }) ?? -1
+        let next = group[(idx + 1) % group.count]
+        if isSub {
+            lastSelectedSid = next.id
+            try? session?.setSubtitleTrack(id: next.id)
+        } else {
+            try? session?.setAudioTrack(id: next.id)
+        }
+        tracks = (try? session?.tracks()) ?? []
+        statusLabel.stringValue = "\(type.uppercased()): \(next.lang ?? next.title ?? "Track \(next.id)")"
+    }
+
+    private func handleKey(_ event: NSEvent) -> Bool {
+        showHudAndResetTimer()
+        guard let combo = KeyCombo.from(event),
+              let command = try? core.resolveKey(context: "player", combo: combo)
+        else { return false }
+        switch command {
+        case "player.toggle_pause": togglePause()
+        case "player.seek_back": seekBack10()
+        case "player.seek_forward": seekForward10()
+        case "player.close": close()
+        case "player.fullscreen": toggleFullscreen()
+        case "player.toggle_subtitles": toggleSubtitlesVisibility()
+        case "player.cycle_subtitle": cycleTrack(type: "sub", isSub: true)
+        case "player.cycle_audio": cycleTrack(type: "audio", isSub: false)
+        case "player.screenshot": takeScreenshot()
+        case "player.stats": toggleStats()
+        case "player.ab_loop": cycleAbLoop()
+        case "player.speed_up": setSpeed(speed + 0.25)
+        case "player.speed_down": setSpeed(speed - 0.25)
+        case "player.volume_up":
+            volume = min(150, volume + 10)
+            try? session?.setVolume(volume: volume)
+        case "player.volume_down":
+            volume = max(0, volume - 10)
+            try? session?.setVolume(volume: volume)
+        case "player.mute": toggleMute()
+        case "player.next_episode": playNextEpisodeNow()
+        default: return false
+        }
+        return true
+    }
+
+    @objc private func togglePause() { try? session?.togglePause() }
+
+    @objc private func seekBack10() {
+        let exact = (try? core.playerPreferences())?.exactSeek ?? true
+        try? session?.seekRelativeMode(seconds: -10, exact: exact)
+        saveProgressIfNeeded(force: true)
+    }
+
+    @objc private func seekForward10() {
+        let exact = (try? core.playerPreferences())?.exactSeek ?? true
+        try? session?.seekRelativeMode(seconds: 10, exact: exact)
+        saveProgressIfNeeded(force: true)
+    }
+
+    private func seekAbsolute(_ seconds: Double) {
+        position = seconds
+        scrubBar.position = seconds
+        try? session?.seekAbsolute(seconds: seconds)
+        saveProgressIfNeeded(force: true)
+        pushNowPlaying()
+    }
+
+    // MARK: - HUD Auto-Hide & Persistence
+
+    private func showHudAndResetTimer() {
+        setHudAlpha(1.0)
+        hudHideTask?.cancel()
+        guard !paused, activePopover == nil else { return }
+        hudHideTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.8))
+            guard let self, !Task.isCancelled, !self.paused, self.activePopover == nil, !self.closing else { return }
+            self.setHudAlpha(0.0)
+        }
+    }
+
+    private func showHudAndCancelTimer() {
+        hudHideTask?.cancel()
+        setHudAlpha(1.0)
+    }
+
+    private func setHudAlpha(_ alpha: CGFloat) {
+        let duration: TimeInterval = CinemaTheme.reduceMotion ? 0 : 0.18
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = duration
+            titlePill.animator().alphaValue = alpha
+            topRightPill.animator().alphaValue = alpha
+            bar.animator().alphaValue = alpha
+        }
+    }
+
+    private func pushNowPlaying() {
+        nowPlaying.update(
+            title: titleField.stringValue,
+            subtitle: subField.isHidden ? nil : subField.stringValue,
+            duration: duration,
+            position: position,
+            paused: paused,
+            speed: speed
+        )
     }
 
     private func saveProgressIfNeeded(force: Bool) {
@@ -378,6 +1568,8 @@ final class PlayerViewController: NSViewController {
                     return
                 }
                 closing = true
+                nowPlaying.teardown()
+                thumbCache?.clear()
                 videoLayer.detach()
                 try? await session?.stop()
                 try? await Task.sleep(for: .milliseconds(500))
@@ -401,45 +1593,19 @@ final class PlayerViewController: NSViewController {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 
-    /// Keys resolve through the command registry, so they can be remapped.
-    private func handleKey(_ event: NSEvent) -> Bool {
-        guard let combo = KeyCombo.from(event),
-              let command = try? core.resolveKey(context: "player", combo: combo)
-        else { return false }
-        switch command {
-        case "player.toggle_pause": togglePause()
-        case "player.seek_back": seekBack10()
-        case "player.seek_forward": seekForward10()
-        case "player.close": close()
-        default: return false   // global commands go through the menu
-        }
-        return true
-    }
-
-    @objc private func togglePause() {
-        try? session?.togglePause()
-    }
-
-    @objc private func seekBack10() {
-        try? session?.seekRelative(seconds: -10)
-        saveProgressIfNeeded(force: true)
-    }
-
-    @objc private func seekForward10() {
-        try? session?.seekRelative(seconds: 10)
-        saveProgressIfNeeded(force: true)
-    }
-
-    @objc private func seek() {
-        position = slider.doubleValue
-        try? session?.seekAbsolute(seconds: slider.doubleValue)
-        saveProgressIfNeeded(force: true)
-    }
-
     @objc private func close() {
         guard !closing else { return }
         closing = true
         closeRequestedAt = .now
+        hudHideTask?.cancel()
+        statsTask?.cancel()
+        sleepTimerTask?.cancel()
+        nextCountdownTask?.cancel()
+        cancelStallWatchdog()
+        activePopover?.performClose(nil)
+        nowPlaying.teardown()
+        thumbCache?.clear()
+        thumbCache = nil
         saveProgressIfNeeded(force: true)
         statusLabel.stringValue = ""
         guard let session else {
@@ -452,7 +1618,6 @@ final class PlayerViewController: NSViewController {
                 shutdownWaiter = continuation
                 Task {
                     try? await session.stop()
-                    // Fallback if Shutdown never arrives.
                     try? await Task.sleep(for: .seconds(3))
                     if shutdownWaiter != nil { DevAutomation.log("shutdown timed out (fallback)") }
                     shutdownWaiter?.resume()
@@ -462,5 +1627,11 @@ final class PlayerViewController: NSViewController {
             self.session = nil
             onClose()
         }
+    }
+}
+
+private extension PlaybackSession {
+    func cancelPlaybackPrefetchIfNeeded() {
+        cancelPrefetch()
     }
 }

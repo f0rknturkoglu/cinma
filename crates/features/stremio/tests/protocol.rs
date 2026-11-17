@@ -1,8 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use cinma_stremio::{
-    CatalogQuery, Manifest, catalog_url, meta_url, normalize_manifest_url, parse_catalog,
-    parse_meta, parse_streams, stream_url,
+    CatalogQuery, Manifest, SubtitleQuery, catalog_url, meta_url, normalize_manifest_url,
+    parse_catalog, parse_meta, parse_streams, parse_subtitles, stream_url, subtitles_url,
 };
 
 const TORRENTIO_STREAMS: &str = include_str!("fixtures/streams_torrent.json");
@@ -184,4 +184,39 @@ fn builds_stream_meta_and_catalog_urls() {
         .as_str(),
         "http://127.0.0.1:7000/catalog/movie/top/genre=Sci-Fi.json"
     );
+    assert_eq!(
+        subtitles_url(
+            &root,
+            "movie",
+            "tt1254207",
+            &SubtitleQuery {
+                video_hash: Some("8e245d9679d31e12".into()),
+                video_size: Some(1_048_576),
+                filename: Some("Movie 2024.mkv".into()),
+            },
+        )
+        .unwrap()
+        .as_str(),
+        "http://127.0.0.1:7000/subtitles/movie/tt1254207/videoHash=8e245d9679d31e12&videoSize=1048576&filename=Movie%202024.mkv.json"
+    );
+}
+
+#[test]
+fn parses_subtitles_response() {
+    let raw = br#"{
+        "subtitles": [
+            {
+                "id": "sub1",
+                "url": "https://subs.example/tur.srt",
+                "lang": "tur",
+                "SubEncoding": "windows-1254",
+                "hearing_impaired": true
+            }
+        ]
+    }"#;
+    let subs = parse_subtitles(raw).unwrap();
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0].lang, "tur");
+    assert_eq!(subs[0].sub_encoding.as_deref(), Some("windows-1254"));
+    assert_eq!(subs[0].hearing_impaired, Some(true));
 }

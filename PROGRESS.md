@@ -1,8 +1,39 @@
 # PROGRESS
 
-## Status: Phases 0–2 done and accepted. Phase 3 complete (awaiting owner acceptance & real-swarm re-measurement before Phase 4).
+## Status: Phases 0–3 done and accepted. Phase 4 complete (awaiting owner acceptance & PiP decision before Phase 5).
 
-## Phase 3 — Browsing & stream selection (awaiting acceptance)
+## Phase 4 — Player complete (awaiting acceptance)
+
+### Done in Phase 4
+- **ADR 0011** ([0011-phase4-player-thumbnails-and-subtitles.md](docs/adr/0011-phase4-player-thumbnails-and-subtitles.md)): seek-bar thumbnails via runtime `dlopen` of Homebrew FFmpeg (`libavformat.63`, `libavcodec.63`, `libswscale.10`, `libavutil.61` with major-version verification + AVFoundation fallback), OpenSubtitles hash + Turkish encoding strategy, dedicated CA GL thread, SDR 8-bit surface path, and PiP feasibility spike.
+- **Dedicated GL render thread & SDR 8-bit optimization (`cinma-player`, `VideoLayer.swift`, `PlayerHelpers.swift`)**:
+  - `VideoLayer` switched to `isAsynchronous = true` with `MPV_RENDER_PARAM_ADVANCED_CONTROL = 1`, `vd-lavc-dr=yes`, `mpv_render_context_update()` in `canDraw`, `MPV_RENDER_PARAM_BLOCK_FOR_TARGET_TIME = 0`, and `CGLLockContext` synchronization — eliminating the `@unchecked Sendable` compiler warning too.
+  - Known SDR playback uses an 8-bit `ITUR_709` surface (`rgba8` / `bt.1886`), keeping 16-bit float PQ/BT.2020 EDR for HDR/DV streams; demuxer defaults trimmed to `16MiB` / `4MiB`.
+- **Seek-bar keyframe thumbnails (`cinma-player::thumbnails`, `PlayerHelpers.swift`)**:
+  - Added non-blocking `ByteSource::try_read_at` & `available_ranges` across `cinma-blobstore` (`BlobSource`, `MemorySource`) and `cinma-torrent` (`TorrentSource` reads tracked ranges from disk without touching `FileStream::seek`), ensuring hovering never triggers network/peer requests.
+  - ~160 px RGBA keyframe decoder with bounded LRU cache + Swift `NSCache` hover preview + chapter markers in `ScrubBarView`.
+- **Full subtitles pipeline (`cinma-stremio`, `cinma-subtitles`, `cinma-core`, `cinma-ffi`, `PlayerMenus.swift`)**:
+  - Stremio `subtitles` resource support (`videoHash`, `videoSize`, `filename`); 64 KiB head+tail OpenSubtitles hash computed once available in `ByteSource` or local files; optional direct OpenSubtitles REST API v1 client (credentials in Keychain `app.cinma.mac`).
+  - Gzip unpack (`flate2`) + encoding detection (`encoding_rs`) converting Turkish `windows-1254` / `ISO-8859-9` & UTF-16 subtitles into cached UTF-8 files while leaving ASS/SSA script styling untouched unless overridden.
+  - Language-priority auto-select, dual subtitles (`secondary-sid`), persisted per-video `sub_delay`/`audio_delay`, external subtitle loading, and SRT style controls.
+- **Complete playback controls, Next Episode, Recovery, Settings & macOS Integration**:
+  - Audio/subtitle/chapter menus, Skip Intro button, Next Episode prefetch at ~88–92% (matching `bingeGroup` + head/tail warm-up on cancellation token) with auto-play countdown card, live Stream Switcher + stall/error auto-recovery fallback, A/B loop, playback speed, volume/mute, sleep timer, screenshot export, live stats overlay, adaptive CAS GLSL shader preset, HDR `target-peak` control, exact relative seeks toggle, `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter` media keys, display-sleep power assertion, all 17 player shortcuts via `CommandRegistry`, visual `KeyCaptureButton` recorder in Settings, and `en` + `tr` translations (`Localizable.xcstrings`, 205 keys).
+- **PiP feasibility spike (report only, per ROADMAP)**:
+  - `AVPictureInPictureController` on macOS requires `AVPlayerLayer` or `AVSampleBufferDisplayLayer`; attaching it over our `CAOpenGLLayer` render path (`ADR 0004`) would require per-frame `CVPixelBuffer` → `CMSampleBuffer` copying, adding copy overhead and losing direct HDR/EDR/libass parity. An AppKit floating borderless `NSPanel` mini-player would reuse `VideoLayer` with zero copy. Awaiting owner preference before implementing.
+
+### Verification & Measurements (Phase 4)
+- **`cargo clippy --all-targets -- -D warnings`:** passed (0 warnings).
+- **`cargo test`:** **88 Rust tests pass**, 0 failed, 0 ignored (`blobstore` 21, `core` 14, `db` 16, `metadata` 1, `player` 5 incl. real MKV FFmpeg thumbnail test, `queue` 7, `ranker` 6, `stremio` 10, `subtitles` 4, `torrent` 4).
+- **Release `xcodebuild`:** passed with **0 errors and 0 warnings**.
+- **Launch & Idle (`tools/measure.sh`, Release, 5 runs):**
+  - Median first frame: **170.5 ms** (< 250 ms target ✅)
+  - Median idle `phys_footprint`: **28.0 MB** (≤ 40 MB target ✅), RSS **97.4 MB**
+  - Median idle CPU: **0.00 %** (~0% target ✅)
+- **Playback measurements (`Cinma` Release):**
+  - 4K HEVC HDR10 (`hdr10_hevc_4k.mp4`): **7.3 % CPU** (< 10% target ✅, down from ~19%), TTFF **143.1 ms**, `phys_footprint` **543 MB** (peak 572 MB), `gamma=pq hdr=true`, clean exit 0.
+  - 1080p SDR H.264 (`sdr_h264_1080p.mkv`): **7.1 % CPU** (down from ~21%), TTFF **383.9 ms** / seek **79.6 ms & 189.7 ms**, `phys_footprint` **378 MB**, `gamma=bt.1886 hdr=false`, clean exit 0.
+
+## Phase 3 — Browsing & stream selection ✅ (accepted 2026-11-17)
 
 ### Done in Phase 3
 - **Deep-link confirmation** (`AppDelegate.handleLink`): `stremio://` links inspect the manifest via `Core::inspect_addon` (without persisting) and ask confirmation in an `NSAlert` showing addon name, description, and URL (`en` + `tr`).

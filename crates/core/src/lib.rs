@@ -11,6 +11,7 @@ mod library;
 mod metadata;
 mod playback;
 mod settings;
+mod subtitles;
 mod trailers;
 
 use std::future::Future;
@@ -28,20 +29,25 @@ pub use addons::{
 };
 pub use cinma_db::{LibraryItemRow, ProfileRow, WatchProgressRow};
 pub use cinma_metadata::UpcomingEpisode;
-pub use cinma_player::{EndReason, PlayerEvent, PlayerEvents, UpdateCallback};
+pub use cinma_player::{
+    Chapter, EndReason, MediaTrack, PlayerConfig, PlayerEvent, PlayerEvents, PlayerStats,
+    ThumbnailImage, UpdateCallback,
+};
 pub use cinma_ranker::{
     FilterReason, FilteredOutStream, MachineCapabilities, ParsedStream, RankResult, RankedStream,
     RankerPreferences, Resolution, SafetyLevel, ScoreReason, StreamTier,
 };
 pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo};
+pub use cinma_subtitles::{PreparedSubtitle, SubtitleCandidate, normalize_lang_code};
 pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
 };
 pub use events::{CoreEvent, CoreEventListener};
 pub use library::WatchProgressInput;
 pub use metadata::RichMetaResult;
-pub use playback::Playback;
+pub use playback::{NextEpisodePrefetch, Playback, VideoFileIdentity};
 pub use settings::Feature;
+pub use subtitles::{PlayerPreferences, SubtitleSearchRequest, SubtitleSettings, VideoOffsets};
 pub use trailers::YtdlpStatus;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

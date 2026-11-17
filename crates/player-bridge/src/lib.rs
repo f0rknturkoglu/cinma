@@ -5,8 +5,10 @@
 mod render;
 mod stream;
 mod sys;
+pub mod thumbnails;
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -16,6 +18,7 @@ use cinma_blobstore::ByteSource;
 
 pub use render::UpdateCallback;
 pub use stream::PROTOCOL;
+pub use thumbnails::{ThumbnailExtractor, ThumbnailImage};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlayerError {
@@ -52,11 +55,77 @@ pub enum PlayerEvent {
         name: &'static str,
         millis: f64,
     },
+    TracksChanged,
+    ChaptersChanged,
     EndFile {
         reason: EndReason,
         error: Option<String>,
     },
     Shutdown,
+}
+
+#[derive(Debug, Clone)]
+pub struct PlayerConfig {
+    /// True = PQ/BT.2020 + 16-bit float framebuffer for HDR/EDR displays;
+    /// False = 8-bit SDR BT.709/BT.1886 surface (avoids float FBO overhead).
+    pub hdr_surface: bool,
+    pub hdr_target_peak: Option<u32>,
+    pub exact_seek: bool,
+    pub gl_advanced_control: bool,
+    pub shader_paths: Vec<String>,
+}
+
+impl Default for PlayerConfig {
+    fn default() -> Self {
+        Self {
+            hdr_surface: true,
+            hdr_target_peak: None,
+            exact_seek: true,
+            gl_advanced_control: true,
+            shader_paths: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MediaTrack {
+    pub id: i64,
+    pub track_type: String,
+    pub title: Option<String>,
+    pub lang: Option<String>,
+    pub codec: Option<String>,
+    pub selected: bool,
+    pub external: bool,
+    pub forced: bool,
+    pub hearing_impaired: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Chapter {
+    pub title: String,
+    pub start_s: f64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PlayerStats {
+    pub video_codec: String,
+    pub width: i64,
+    pub height: i64,
+    pub fps: f64,
+    pub estimated_fps: f64,
+    pub hwdec: String,
+    pub gamma: String,
+    pub audio_codec: String,
+    pub audio_channels: i64,
+    pub cache_seconds: f64,
+    pub dropped_frames: i64,
+    pub ab_loop_a: Option<f64>,
+    pub ab_loop_b: Option<f64>,
+    pub speed: f64,
+    pub volume: f64,
+    pub muted: bool,
+    pub sub_delay: f64,
+    pub audio_delay: f64,
 }
 
 pub trait PlayerEvents: Send + Sync {
@@ -72,6 +141,8 @@ const PROP_DURATION: u64 = 2;
 const PROP_PAUSE: u64 = 3;
 const PROP_PAUSED_FOR_CACHE: u64 = 4;
 const PROP_VIDEO_GAMMA: u64 = 5;
+const PROP_TRACK_LIST: u64 = 6;
+const PROP_CHAPTER_LIST: u64 = 7;
 
 #[derive(Clone, Copy)]
 struct Handle(*mut sys::mpv_handle);
@@ -88,6 +159,7 @@ struct Timing {
 pub struct Player {
     api: &'static sys::Api,
     handle: Handle,
+    config: PlayerConfig,
     registry: Arc<stream::Registry>,
     timing: Arc<Mutex<Timing>>,
     shut_down: AtomicBool,
@@ -99,6 +171,13 @@ impl Player {
     /// Creates mpv (no video output yet — see [`Player::render_init`]).
     /// Blocking (loads libmpv on first use) — never call on the main thread.
     pub fn new(events: Arc<dyn PlayerEvents>) -> Result<Self, PlayerError> {
+        Self::new_with_config(events, PlayerConfig::default())
+    }
+
+    pub fn new_with_config(
+        events: Arc<dyn PlayerEvents>,
+        config: PlayerConfig,
+    ) -> Result<Self, PlayerError> {
         let api = sys::api().map_err(PlayerError::LibraryUnavailable)?;
         // SAFETY: plain constructor; null on OOM.
         let raw = unsafe { (api.create)() };
@@ -109,6 +188,7 @@ impl Player {
         let player = Self {
             api,
             handle,
+            config,
             registry: Arc::new(stream::Registry::default()),
             timing: Arc::new(Mutex::new(Timing::default())),
             shut_down: AtomicBool::new(false),
@@ -135,30 +215,46 @@ impl Player {
     }
 
     fn configure(&self) -> Result<(), PlayerError> {
-        let options: &[(&str, &str)] = &[
+        let (trc, prim, fbo_fmt) = if self.config.hdr_surface {
+            ("pq", "bt.2020", "rgba16f")
+        } else {
+            ("bt.1886", "bt.709", "rgba8")
+        };
+        let mut options: Vec<(&str, String)> = vec![
             // Never read user config, run scripts or spawn yt-dlp.
-            ("config", "no"),
-            ("load-scripts", "no"),
-            ("ytdl", "no"),
-            ("osc", "no"),
-            ("terminal", "no"),
-            ("input-default-bindings", "no"),
-            ("input-vo-keyboard", "no"),
-            // Rendering through the render API (ADR 0004).
-            ("vo", "libmpv"),
-            ("hwdec", "videotoolbox"),
-            // The host layer is a fixed PQ/BT.2020 EDR surface; SDR is mapped in.
-            ("target-trc", "pq"),
-            ("target-prim", "bt.2020"),
-            // Behaviour.
-            ("idle", "yes"),
-            ("keep-open", "yes"),
-            ("cache", "yes"),
-            ("demuxer-max-bytes", "24MiB"),
-            ("demuxer-max-back-bytes", "8MiB"),
+            ("config", "no".into()),
+            ("load-scripts", "no".into()),
+            ("ytdl", "no".into()),
+            ("osc", "no".into()),
+            ("terminal", "no".into()),
+            ("input-default-bindings", "no".into()),
+            ("input-vo-keyboard", "no".into()),
+            // Rendering through the render API (ADR 0004 / ADR 0011).
+            ("vo", "libmpv".into()),
+            ("hwdec", "videotoolbox".into()),
+            ("target-trc", trc.into()),
+            ("target-prim", prim.into()),
+            ("fbo-format", fbo_fmt.into()),
+            // Behaviour & trimmed playback memory footprint.
+            ("idle", "yes".into()),
+            ("keep-open", "yes".into()),
+            ("cache", "yes".into()),
+            ("demuxer-max-bytes", "16MiB".into()),
+            ("demuxer-max-back-bytes", "4MiB".into()),
+            // Respect ASS/SSA script styling by default (§5.8).
+            ("sub-ass-override", "no".into()),
         ];
+        if self.config.gl_advanced_control {
+            options.push(("vd-lavc-dr", "yes".into()));
+        }
+        if let Some(peak) = self.config.hdr_target_peak {
+            options.push(("target-peak", peak.to_string()));
+        }
+        if !self.config.shader_paths.is_empty() {
+            options.push(("glsl-shaders", self.config.shader_paths.join(":")));
+        }
         for (name, value) in options {
-            self.set_option(name, value)?;
+            self.set_option(name, &value)?;
         }
         // SAFETY: handle is valid and not yet initialized.
         self.check(unsafe { (self.api.initialize)(self.handle.0) })?;
@@ -183,6 +279,8 @@ impl Player {
             (PROP_PAUSE, c"pause", sys::FORMAT_FLAG),
             (PROP_PAUSED_FOR_CACHE, c"paused-for-cache", sys::FORMAT_FLAG),
             (PROP_VIDEO_GAMMA, c"video-params/gamma", sys::FORMAT_STRING),
+            (PROP_TRACK_LIST, c"track-list", sys::FORMAT_NONE),
+            (PROP_CHAPTER_LIST, c"chapter-list", sys::FORMAT_NONE),
         ] {
             // SAFETY: valid handle, static C string.
             self.check(unsafe {
@@ -269,8 +367,314 @@ impl Player {
     }
 
     pub fn seek_relative(&self, seconds: f64) -> Result<(), PlayerError> {
+        self.seek_relative_mode(seconds, self.config.exact_seek)
+    }
+
+    pub fn seek_relative_mode(&self, seconds: f64, exact: bool) -> Result<(), PlayerError> {
         self.mark_seek();
-        self.command(&["seek", &format!("{seconds:.3}"), "relative"])
+        let mode = if exact { "relative+exact" } else { "relative" };
+        self.command(&["seek", &format!("{seconds:.3}"), mode])
+    }
+
+    pub fn seek_absolute_exact(&self, seconds: f64) -> Result<(), PlayerError> {
+        self.mark_seek();
+        self.command(&["seek", &format!("{seconds:.3}"), "absolute+exact"])
+    }
+
+    pub fn set_property_str(&self, name: &str, value: &str) -> Result<(), PlayerError> {
+        if self.shut_down.load(Ordering::SeqCst) {
+            return Err(PlayerError::Mpv("player is shut down".into()));
+        }
+        let (n, v) = (cstring(name)?, cstring(value)?);
+        // SAFETY: valid handle and NUL-terminated strings.
+        self.check(unsafe { (self.api.set_property_string)(self.handle.0, n.as_ptr(), v.as_ptr()) })
+    }
+
+    fn get_property_string_opt(&self, name: &str) -> Option<String> {
+        if self.shut_down.load(Ordering::SeqCst) {
+            return None;
+        }
+        let n = cstring(name).ok()?;
+        // SAFETY: valid handle and property name; result freed with `mpv_free`.
+        let ptr = unsafe { (self.api.get_property_string)(self.handle.0, n.as_ptr()) };
+        if ptr.is_null() {
+            return None;
+        }
+        let s = unsafe { CStr::from_ptr(ptr) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { (self.api.free)(ptr.cast()) };
+        Some(s)
+    }
+
+    fn get_property_double_opt(&self, name: &str) -> Option<f64> {
+        if self.shut_down.load(Ordering::SeqCst) {
+            return None;
+        }
+        let n = cstring(name).ok()?;
+        let mut out: f64 = 0.0;
+        let rc = unsafe {
+            (self.api.get_property)(
+                self.handle.0,
+                n.as_ptr(),
+                sys::FORMAT_DOUBLE,
+                (&raw mut out).cast(),
+            )
+        };
+        (rc >= 0).then_some(out)
+    }
+
+    fn get_property_i64_opt(&self, name: &str) -> Option<i64> {
+        if self.shut_down.load(Ordering::SeqCst) {
+            return None;
+        }
+        let n = cstring(name).ok()?;
+        let mut out: i64 = 0;
+        let rc = unsafe {
+            (self.api.get_property)(
+                self.handle.0,
+                n.as_ptr(),
+                sys::FORMAT_INT64,
+                (&raw mut out).cast(),
+            )
+        };
+        (rc >= 0).then_some(out)
+    }
+
+    fn get_property_flag_opt(&self, name: &str) -> Option<bool> {
+        if self.shut_down.load(Ordering::SeqCst) {
+            return None;
+        }
+        let n = cstring(name).ok()?;
+        let mut out: c_int = 0;
+        let rc = unsafe {
+            (self.api.get_property)(
+                self.handle.0,
+                n.as_ptr(),
+                sys::FORMAT_FLAG,
+                (&raw mut out).cast(),
+            )
+        };
+        (rc >= 0).then_some(out != 0)
+    }
+
+    fn get_property_node(&self, name: &str) -> Result<MpvNode, PlayerError> {
+        if self.shut_down.load(Ordering::SeqCst) {
+            return Err(PlayerError::Mpv("player is shut down".into()));
+        }
+        let n = cstring(name)?;
+        let mut raw = sys::mpv_node {
+            u: sys::mpv_node_union { int64: 0 },
+            format: sys::FORMAT_NONE,
+        };
+        // SAFETY: valid handle; `raw` freed unconditionally below.
+        let rc = unsafe {
+            (self.api.get_property)(
+                self.handle.0,
+                n.as_ptr(),
+                sys::FORMAT_NODE,
+                (&raw mut raw).cast(),
+            )
+        };
+        if rc < 0 {
+            self.check(rc)?;
+        }
+        let owned = unsafe { MpvNode::from_raw(&raw) };
+        unsafe { (self.api.free_node_contents)(&raw mut raw) };
+        Ok(owned)
+    }
+
+    pub fn tracks(&self) -> Result<Vec<MediaTrack>, PlayerError> {
+        let node = self.get_property_node("track-list")?;
+        let MpvNode::Array(items) = node else {
+            return Ok(Vec::new());
+        };
+        Ok(items
+            .into_iter()
+            .filter_map(|item| {
+                let MpvNode::Map(fields) = item else {
+                    return None;
+                };
+                let id = map_i64(&fields, "id")?;
+                let track_type = map_str(&fields, "type")?.to_owned();
+                Some(MediaTrack {
+                    id,
+                    track_type,
+                    title: map_str(&fields, "title").map(str::to_owned),
+                    lang: map_str(&fields, "lang").map(str::to_owned),
+                    codec: map_str(&fields, "codec").map(str::to_owned),
+                    selected: map_bool(&fields, "selected").unwrap_or(false),
+                    external: map_bool(&fields, "external").unwrap_or(false),
+                    forced: map_bool(&fields, "forced").unwrap_or(false),
+                    hearing_impaired: map_bool(&fields, "hearing-impaired").unwrap_or(false),
+                })
+            })
+            .collect())
+    }
+
+    pub fn chapters(&self) -> Result<Vec<Chapter>, PlayerError> {
+        let node = self.get_property_node("chapter-list")?;
+        let MpvNode::Array(items) = node else {
+            return Ok(Vec::new());
+        };
+        Ok(items
+            .into_iter()
+            .filter_map(|item| {
+                let MpvNode::Map(fields) = item else {
+                    return None;
+                };
+                let start_s = map_f64(&fields, "time")?;
+                let title = map_str(&fields, "title").unwrap_or("Chapter").to_owned();
+                Some(Chapter { title, start_s })
+            })
+            .collect())
+    }
+
+    pub fn stats(&self) -> PlayerStats {
+        let ab_a = self
+            .get_property_string_opt("ab-loop-a")
+            .and_then(|s| s.parse::<f64>().ok());
+        let ab_b = self
+            .get_property_string_opt("ab-loop-b")
+            .and_then(|s| s.parse::<f64>().ok());
+        PlayerStats {
+            video_codec: self
+                .get_property_string_opt("video-codec")
+                .unwrap_or_default(),
+            width: self.get_property_i64_opt("video-params/w").unwrap_or(0),
+            height: self.get_property_i64_opt("video-params/h").unwrap_or(0),
+            fps: self.get_property_double_opt("container-fps").unwrap_or(0.0),
+            estimated_fps: self
+                .get_property_double_opt("estimated-vf-fps")
+                .unwrap_or(0.0),
+            hwdec: self
+                .get_property_string_opt("hwdec-current")
+                .unwrap_or_default(),
+            gamma: self
+                .get_property_string_opt("video-params/gamma")
+                .unwrap_or_default(),
+            audio_codec: self
+                .get_property_string_opt("audio-codec-name")
+                .unwrap_or_default(),
+            audio_channels: self
+                .get_property_i64_opt("audio-params/channel-count")
+                .unwrap_or(0),
+            cache_seconds: self
+                .get_property_double_opt("demuxer-cache-duration")
+                .unwrap_or(0.0),
+            dropped_frames: self.get_property_i64_opt("frame-drop-count").unwrap_or(0),
+            ab_loop_a: ab_a,
+            ab_loop_b: ab_b,
+            speed: self.get_property_double_opt("speed").unwrap_or(1.0),
+            volume: self.get_property_double_opt("volume").unwrap_or(100.0),
+            muted: self.get_property_flag_opt("mute").unwrap_or(false),
+            sub_delay: self.get_property_double_opt("sub-delay").unwrap_or(0.0),
+            audio_delay: self.get_property_double_opt("audio-delay").unwrap_or(0.0),
+        }
+    }
+
+    pub fn set_audio_track(&self, id: Option<i64>) -> Result<(), PlayerError> {
+        let val = id.map_or_else(|| "no".to_owned(), |i| i.to_string());
+        self.set_property_str("aid", &val)
+    }
+
+    pub fn set_subtitle_track(&self, id: Option<i64>) -> Result<(), PlayerError> {
+        let val = id.map_or_else(|| "no".to_owned(), |i| i.to_string());
+        self.set_property_str("sid", &val)
+    }
+
+    pub fn set_secondary_subtitle_track(&self, id: Option<i64>) -> Result<(), PlayerError> {
+        let val = id.map_or_else(|| "no".to_owned(), |i| i.to_string());
+        self.set_property_str("secondary-sid", &val)
+    }
+
+    pub fn add_subtitle(
+        &self,
+        path: &str,
+        title: Option<&str>,
+        lang: Option<&str>,
+        select: bool,
+    ) -> Result<(), PlayerError> {
+        let flag = if select { "select" } else { "auto" };
+        let title = title.unwrap_or("");
+        let lang = lang.unwrap_or("");
+        self.command(&["sub-add", path, flag, title, lang])
+    }
+
+    pub fn set_subtitle_delay(&self, seconds: f64) -> Result<(), PlayerError> {
+        self.set_property_str("sub-delay", &format!("{seconds:.3}"))
+    }
+
+    pub fn set_audio_delay(&self, seconds: f64) -> Result<(), PlayerError> {
+        self.set_property_str("audio-delay", &format!("{seconds:.3}"))
+    }
+
+    pub fn set_subtitle_style(
+        &self,
+        font: Option<&str>,
+        font_size: Option<u32>,
+        color_hex: Option<&str>,
+        pos: Option<u32>,
+        ass_override: bool,
+    ) -> Result<(), PlayerError> {
+        if let Some(font) = font.filter(|s| !s.trim().is_empty()) {
+            self.set_property_str("sub-font", font)?;
+        }
+        if let Some(size) = font_size {
+            self.set_property_str("sub-font-size", &size.clamp(14, 96).to_string())?;
+        }
+        if let Some(color) = color_hex.filter(|s| !s.trim().is_empty()) {
+            self.set_property_str("sub-color", color)?;
+        }
+        if let Some(pos) = pos {
+            self.set_property_str("sub-pos", &pos.clamp(5, 100).to_string())?;
+        }
+        self.set_property_str(
+            "sub-ass-override",
+            if ass_override { "force" } else { "no" },
+        )
+    }
+
+    pub fn set_speed(&self, speed: f64) -> Result<(), PlayerError> {
+        self.set_property_str("speed", &format!("{:.2}", speed.clamp(0.25, 4.0)))
+    }
+
+    pub fn set_volume(&self, volume: f64) -> Result<(), PlayerError> {
+        self.set_property_str("volume", &format!("{:.1}", volume.clamp(0.0, 150.0)))
+    }
+
+    pub fn set_muted(&self, muted: bool) -> Result<(), PlayerError> {
+        self.set_property_str("mute", if muted { "yes" } else { "no" })
+    }
+
+    pub fn set_ab_loop_a(&self, seconds: Option<f64>) -> Result<(), PlayerError> {
+        let val = seconds.map_or_else(|| "no".to_owned(), |s| format!("{s:.3}"));
+        self.set_property_str("ab-loop-a", &val)
+    }
+
+    pub fn set_ab_loop_b(&self, seconds: Option<f64>) -> Result<(), PlayerError> {
+        let val = seconds.map_or_else(|| "no".to_owned(), |s| format!("{s:.3}"));
+        self.set_property_str("ab-loop-b", &val)
+    }
+
+    pub fn set_hdr_target_peak(&self, nits: Option<u32>) -> Result<(), PlayerError> {
+        let val = nits.map_or_else(|| "auto".to_owned(), |n| n.clamp(100, 10_000).to_string());
+        self.set_property_str("target-peak", &val)
+    }
+
+    pub fn set_glsl_shaders(&self, paths: &[String]) -> Result<(), PlayerError> {
+        if paths.is_empty() {
+            self.command(&["change-list", "glsl-shaders", "clr", ""])
+        } else {
+            self.set_property_str("glsl-shaders", &paths.join(":"))
+        }
+    }
+
+    pub fn screenshot_to_file(&self, path: &Path) -> Result<(), PlayerError> {
+        let s = path
+            .to_str()
+            .ok_or_else(|| PlayerError::Mpv("non-UTF-8 screenshot path".into()))?;
+        self.command(&["screenshot-to-file", s, "subtitles"])
     }
 
     fn mark_seek(&self) {
@@ -283,6 +687,14 @@ impl Player {
     /// be current on the calling thread. `on_update` fires (on an mpv thread)
     /// whenever a new frame should be drawn.
     pub fn render_init(&self, on_update: UpdateCallback) -> Result<(), PlayerError> {
+        self.render_init_with_options(on_update, self.config.gl_advanced_control)
+    }
+
+    pub fn render_init_with_options(
+        &self,
+        on_update: UpdateCallback,
+        advanced_control: bool,
+    ) -> Result<(), PlayerError> {
         let mut guard = self.renderer.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_some() {
             return Ok(());
@@ -295,6 +707,7 @@ impl Player {
             get_proc_address_ctx: std::ptr::null_mut(),
         };
         let api_type = c"opengl";
+        let mut adv: c_int = if advanced_control { 1 } else { 0 };
         let mut params = [
             sys::mpv_render_param {
                 kind: sys::RENDER_PARAM_API_TYPE,
@@ -303,6 +716,10 @@ impl Player {
             sys::mpv_render_param {
                 kind: sys::RENDER_PARAM_OPENGL_INIT_PARAMS,
                 data: (&raw mut init).cast(),
+            },
+            sys::mpv_render_param {
+                kind: sys::RENDER_PARAM_ADVANCED_CONTROL,
+                data: (&raw mut adv).cast(),
             },
             sys::mpv_render_param {
                 kind: sys::RENDER_PARAM_INVALID,
@@ -327,9 +744,33 @@ impl Player {
         Ok(())
     }
 
+    /// Queries libmpv whether a new video frame is ready to render (`MPV_RENDER_UPDATE_FRAME`).
+    /// Safe to invoke inside `CAOpenGLLayer.canDraw(inCGLContext:)` on the CA display link thread.
+    pub fn render_should_draw(&self) -> bool {
+        let Ok(guard) = self.renderer.try_lock() else {
+            return false;
+        };
+        let Some(renderer) = guard.as_ref() else {
+            return false;
+        };
+        // SAFETY: renderer.ctx is live under mutex; render_context_update is lock-free/safe.
+        let flags = unsafe { (self.api.render_context_update)(renderer.ctx) };
+        (flags & sys::RENDER_UPDATE_FRAME) != 0
+    }
+
     /// Renders the current frame into `fbo` (`width`×`height` pixels).
     /// Call from the layer's draw method with its CGL context current.
     pub fn render(&self, fbo: i32, width: i32, height: i32) -> Result<(), PlayerError> {
+        self.render_frame(fbo, width, height, false)
+    }
+
+    pub fn render_frame(
+        &self,
+        fbo: i32,
+        width: i32,
+        height: i32,
+        block_for_target_time: bool,
+    ) -> Result<(), PlayerError> {
         let guard = self.renderer.lock().unwrap_or_else(|e| e.into_inner());
         let Some(renderer) = guard.as_ref() else {
             return Ok(());
@@ -341,6 +782,7 @@ impl Player {
             internal_format: 0,
         };
         let mut flip: c_int = 1;
+        let mut block: c_int = if block_for_target_time { 1 } else { 0 };
         let mut params = [
             sys::mpv_render_param {
                 kind: sys::RENDER_PARAM_OPENGL_FBO,
@@ -349,6 +791,10 @@ impl Player {
             sys::mpv_render_param {
                 kind: sys::RENDER_PARAM_FLIP_Y,
                 data: (&raw mut flip).cast(),
+            },
+            sys::mpv_render_param {
+                kind: sys::RENDER_PARAM_BLOCK_FOR_TARGET_TIME,
+                data: (&raw mut block).cast(),
             },
             sys::mpv_render_param {
                 kind: sys::RENDER_PARAM_INVALID,
@@ -463,6 +909,17 @@ fn event_loop(
             sys::EVENT_PROPERTY_CHANGE => {
                 // SAFETY: PROPERTY_CHANGE events carry mpv_event_property.
                 let prop = unsafe { &*(event.data as *const sys::mpv_event_property) };
+                match event.reply_userdata {
+                    PROP_TRACK_LIST => {
+                        events.on_event(PlayerEvent::TracksChanged);
+                        continue;
+                    }
+                    PROP_CHAPTER_LIST => {
+                        events.on_event(PlayerEvent::ChaptersChanged);
+                        continue;
+                    }
+                    _ => {}
+                }
                 if prop.format == sys::FORMAT_NONE || prop.data.is_null() {
                     continue;
                 }
@@ -518,4 +975,109 @@ fn event_loop(
     unsafe { (api.terminate_destroy)(handle.0) };
     registry.clear();
     events.on_event(PlayerEvent::Shutdown);
+}
+
+enum MpvNode {
+    None,
+    Str(String),
+    Bool(bool),
+    Int(i64),
+    Double(f64),
+    Array(Vec<MpvNode>),
+    Map(Vec<(String, MpvNode)>),
+}
+
+impl MpvNode {
+    unsafe fn from_raw(node: &sys::mpv_node) -> Self {
+        unsafe {
+            match node.format {
+                sys::FORMAT_STRING => {
+                    if node.u.string.is_null() {
+                        Self::None
+                    } else {
+                        Self::Str(CStr::from_ptr(node.u.string).to_string_lossy().into_owned())
+                    }
+                }
+                sys::FORMAT_FLAG => Self::Bool(node.u.flag != 0),
+                sys::FORMAT_INT64 => Self::Int(node.u.int64),
+                sys::FORMAT_DOUBLE => Self::Double(node.u.double_),
+                sys::FORMAT_NODE_ARRAY => {
+                    if node.u.list.is_null() {
+                        Self::Array(Vec::new())
+                    } else {
+                        let list = &*node.u.list;
+                        let n = list.num.max(0) as usize;
+                        let slice = if list.values.is_null() || n == 0 {
+                            &[]
+                        } else {
+                            std::slice::from_raw_parts(list.values, n)
+                        };
+                        Self::Array(slice.iter().map(|c| Self::from_raw(c)).collect())
+                    }
+                }
+                sys::FORMAT_NODE_MAP => {
+                    if node.u.list.is_null() {
+                        Self::Map(Vec::new())
+                    } else {
+                        let list = &*node.u.list;
+                        let n = list.num.max(0) as usize;
+                        if list.values.is_null() || list.keys.is_null() || n == 0 {
+                            Self::Map(Vec::new())
+                        } else {
+                            let keys = std::slice::from_raw_parts(list.keys, n);
+                            let vals = std::slice::from_raw_parts(list.values, n);
+                            let out = keys
+                                .iter()
+                                .zip(vals.iter())
+                                .filter(|(k, _)| !k.is_null())
+                                .map(|(&k, v)| {
+                                    (
+                                        CStr::from_ptr(k).to_string_lossy().into_owned(),
+                                        Self::from_raw(v),
+                                    )
+                                })
+                                .collect();
+                            Self::Map(out)
+                        }
+                    }
+                }
+                _ => Self::None,
+            }
+        }
+    }
+}
+
+fn map_find<'a>(fields: &'a [(String, MpvNode)], key: &str) -> Option<&'a MpvNode> {
+    fields.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+}
+
+fn map_str<'a>(fields: &'a [(String, MpvNode)], key: &str) -> Option<&'a str> {
+    match map_find(fields, key)? {
+        MpvNode::Str(s) if !s.is_empty() => Some(s),
+        _ => None,
+    }
+}
+
+fn map_bool(fields: &[(String, MpvNode)], key: &str) -> Option<bool> {
+    match map_find(fields, key)? {
+        MpvNode::Bool(b) => Some(*b),
+        MpvNode::Int(i) => Some(*i != 0),
+        _ => None,
+    }
+}
+
+fn map_i64(fields: &[(String, MpvNode)], key: &str) -> Option<i64> {
+    match map_find(fields, key)? {
+        MpvNode::Int(i) => Some(*i),
+        MpvNode::Double(d) => Some(*d as i64),
+        _ => None,
+    }
+}
+
+fn map_f64(fields: &[(String, MpvNode)], key: &str) -> Option<f64> {
+    match map_find(fields, key)? {
+        MpvNode::Double(d) => Some(*d),
+        MpvNode::Int(i) => Some(*i as f64),
+        _ => None,
+    }
 }

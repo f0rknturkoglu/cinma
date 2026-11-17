@@ -113,6 +113,70 @@
         }
       }
     },
+    "A/B Loop cleared": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B Loop cleared"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B Döngü temizlendi"
+          }
+        }
+      }
+    },
+    "A/B Loop: Clear": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B Loop: Clear"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B Döngü: Temizle"
+          }
+        }
+      }
+    },
+    "A/B Loop: Set Point A": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B Loop: Set Point A"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B Döngü: A Noktasını Seç"
+          }
+        }
+      }
+    },
+    "A/B Loop: Set Point B": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B Loop: Set Point B"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A/B Döngü: B Noktasını Seç"
+          }
+        }
+      }
+    },
     "About Cinma": {
       "localizations": {
         "en": {
@@ -141,6 +205,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Etkin"
+          }
+        }
+      }
+    },
+    "Adaptive Sharpen (CAS)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adaptive Sharpen (CAS)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uyarlanabilir Keskinleştirme (CAS)"
           }
         }
       }
@@ -305,6 +385,166 @@
         }
       }
     },
+    "Audio Delay +0.1s": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio Delay +0.1s"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses Gecikmesi +0.1 sn"
+          }
+        }
+      }
+    },
+    "Audio Delay -0.1s": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio Delay -0.1s"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses Gecikmesi -0.1 sn"
+          }
+        }
+      }
+    },
+    "Audio Priority": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio Priority"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses Dil Önceliği"
+          }
+        }
+      }
+    },
+    "Audio Track & Delay": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio Track & Delay"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses İzi ve Gecikme"
+          }
+        }
+      }
+    },
+    "Audio delay:": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio delay:"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses gecikmesi:"
+          }
+        }
+      }
+    },
+    "Auto": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otomatik"
+          }
+        }
+      }
+    },
+    "Auto-Play Countdown": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-Play Countdown"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otomatik Oynatma Geri Sayımı"
+          }
+        }
+      }
+    },
+    "Auto-Play Next Episode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-Play Next Episode"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sonraki Bölümü Otomatik Oynat"
+          }
+        }
+      }
+    },
+    "Auto-playing in %lld s…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-playing in %lld s…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sn içinde otomatik oynatılacak…"
+          }
+        }
+      }
+    },
+    "Auto-playing in %llds…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-playing in %llds…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sn içinde otomatik oynatılacak…"
+          }
+        }
+      }
+    },
     "BALANCED": {
       "localizations": {
         "en": {
@@ -417,6 +657,22 @@
         }
       }
     },
+    "Chapters": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chapters"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bölümler"
+          }
+        }
+      }
+    },
     "Checking addon…": {
       "localizations": {
         "en": {
@@ -493,6 +749,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Temizle"
+          }
+        }
+      }
+    },
+    "Clear Dual": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear Dual"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İkinciyi Kaldır"
           }
         }
       }
@@ -689,6 +961,22 @@
         }
       }
     },
+    "Dual Subtitle Language": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dual Subtitle Language"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İkinci Altyazı Dili"
+          }
+        }
+      }
+    },
     "Edit": {
       "localizations": {
         "en": {
@@ -701,6 +989,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Düzenle"
+          }
+        }
+      }
+    },
+    "Exact Relative Seeks (vs Keyframe)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact Relative Seeks (vs Keyframe)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hassas İleri/Geri Sarma (Ana Kare Yerine)"
+          }
+        }
+      }
+    },
+    "External": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Harici"
           }
         }
       }
@@ -817,6 +1137,38 @@
         }
       }
     },
+    "Force 16-bit HDR Surface on SDR": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Force 16-bit HDR Surface on SDR"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SDR’da 16-bit HDR Yüzeyini Zorla"
+          }
+        }
+      }
+    },
+    "Fullscreen (F)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fullscreen (F)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tam Ekran (F)"
+          }
+        }
+      }
+    },
     "Group: %@": {
       "localizations": {
         "en": {
@@ -829,6 +1181,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Grup: %@"
+          }
+        }
+      }
+    },
+    "HDR Target Peak": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HDR Target Peak"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HDR Hedef Tepe Parlaklığı"
           }
         }
       }
@@ -1089,6 +1457,22 @@
         }
       }
     },
+    "Load File…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load File…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dosya Yükle…"
+          }
+        }
+      }
+    },
     "Load More": {
       "localizations": {
         "en": {
@@ -1101,6 +1485,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "Daha Fazla Yükle"
+          }
+        }
+      }
+    },
+    "Loaded %@ (%@)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loaded %@ (%@)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ yüklendi (%@)"
+          }
+        }
+      }
+    },
+    "Loaded %@ subtitle (%@)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loaded %@ subtitle (%@)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ altyazısı yüklendi (%@)"
+          }
+        }
+      }
+    },
+    "Loaded Tracks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loaded Tracks"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yüklü İzler"
+          }
+        }
+      }
+    },
+    "Loading next episode…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading next episode…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sonraki bölüm yükleniyor…"
+          }
+        }
+      }
+    },
+    "Loading subtitle…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading subtitle…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazı yükleniyor…"
           }
         }
       }
@@ -1133,6 +1597,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yerel Dosya"
+          }
+        }
+      }
+    },
+    "Matched with OpenSubtitles hash": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matched with OpenSubtitles hash"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles özetiyle eşleşti"
           }
         }
       }
@@ -1201,6 +1681,22 @@
         }
       }
     },
+    "Mute": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mute"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sessize Al"
+          }
+        }
+      }
+    },
     "New profile name": {
       "localizations": {
         "en": {
@@ -1229,6 +1725,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kurulu eklenti yok. Cinma içerik kaynağı olmadan gelir; URL ile bir eklenti ekleyin."
+          }
+        }
+      }
+    },
+    "No alternative streams available for this playback.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No alternative streams available for this playback."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu oynatma için başka yayın bulunamadı."
+          }
+        }
+      }
+    },
+    "No audio tracks": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No audio tracks"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses izi yok"
           }
         }
       }
@@ -1265,6 +1793,22 @@
         }
       }
     },
+    "No chapters": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No chapters"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bölüm işareti yok"
+          }
+        }
+      }
+    },
     "No upcoming episodes scheduled for shows in your library.": {
       "localizations": {
         "en": {
@@ -1297,6 +1841,38 @@
         }
       }
     },
+    "Off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kapalı"
+          }
+        }
+      }
+    },
+    "Online Results": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Online Results"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Çevrimiçi Sonuçlar"
+          }
+        }
+      }
+    },
     "Open File…": {
       "localizations": {
         "en": {
@@ -1309,6 +1885,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dosya Aç…"
+          }
+        }
+      }
+    },
+    "OpenSubtitles key removed from Keychain": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles key removed from Keychain"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles anahtarı Keychain’den kaldırıldı"
+          }
+        }
+      }
+    },
+    "OpenSubtitles key saved in Keychain": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles key saved in Keychain"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles anahtarı Keychain’de kayıtlı"
+          }
+        }
+      }
+    },
+    "OpenSubtitles key saved to Keychain": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles key saved to Keychain"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles anahtarı Keychain’e kaydedildi"
+          }
+        }
+      }
+    },
+    "Override ASS": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Override ASS"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ASS Stilini Ez"
+          }
+        }
+      }
+    },
+    "Override ASS/SSA Script Styling": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Override ASS/SSA Script Styling"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ASS/SSA Stilini Ez"
           }
         }
       }
@@ -1361,6 +2017,54 @@
         }
       }
     },
+    "Play Next": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play Next"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sonrakini Oynat"
+          }
+        }
+      }
+    },
+    "Playback & Video": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback & Video"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oynatma ve Video"
+          }
+        }
+      }
+    },
+    "Playback Stats (I)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Stats (I)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oynatma İstatistikleri (I)"
+          }
+        }
+      }
+    },
     "Playback error: %@": {
       "localizations": {
         "en": {
@@ -1389,6 +2093,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Oynatma başarısız: %@"
+          }
+        }
+      }
+    },
+    "Playing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playing"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oynatılıyor"
+          }
+        }
+      }
+    },
+    "Prefetched & ready": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefetched & ready"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Önbelleğe alındı ve hazır"
+          }
+        }
+      }
+    },
+    "Press shortcut… (Esc cancels)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press shortcut… (Esc cancels)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tuşa basın… (Esc iptal)"
           }
         }
       }
@@ -1457,6 +2209,38 @@
         }
       }
     },
+    "Ready to load": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready to load"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yüklenmeye hazır"
+          }
+        }
+      }
+    },
+    "Record": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Record"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kaydet"
+          }
+        }
+      }
+    },
     "Redo": {
       "localizations": {
         "en": {
@@ -1489,6 +2273,86 @@
         }
       }
     },
+    "Reset Audio Delay": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset Audio Delay"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses Gecikmesini Sıfırla"
+          }
+        }
+      }
+    },
+    "SRT Custom Font": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SRT Custom Font"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Özel SRT Yazı Tipi"
+          }
+        }
+      }
+    },
+    "SRT Font Size": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SRT Font Size"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SRT Boyutu"
+          }
+        }
+      }
+    },
+    "SRT Position": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SRT Position"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SRT Konumu"
+          }
+        }
+      }
+    },
+    "SRT Size": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SRT Size"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SRT Boyutu"
+          }
+        }
+      }
+    },
     "Save": {
       "localizations": {
         "en": {
@@ -1505,6 +2369,38 @@
         }
       }
     },
+    "Saved screenshot: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved screenshot: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ekran görüntüsü kaydedildi: %@"
+          }
+        }
+      }
+    },
+    "Screenshot (S)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshot (S)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ekran Görüntüsü (S)"
+          }
+        }
+      }
+    },
     "Search": {
       "localizations": {
         "en": {
@@ -1517,6 +2413,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ara"
+          }
+        }
+      }
+    },
+    "Search Online": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search Online"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Çevrimiçi Ara"
           }
         }
       }
@@ -1665,6 +2577,22 @@
         }
       }
     },
+    "Shader: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shader: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gölgelendirici: %@"
+          }
+        }
+      }
+    },
     "Show All": {
       "localizations": {
         "en": {
@@ -1693,6 +2621,70 @@
           "stringUnit": {
             "state": "translated",
             "value": "Atla"
+          }
+        }
+      }
+    },
+    "Skip Intro": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip Intro"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İntroyu Atla"
+          }
+        }
+      }
+    },
+    "Sleep Timer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sleep Timer"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uyku Zamanlayıcısı"
+          }
+        }
+      }
+    },
+    "Sleep timer off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sleep timer off"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uyku zamanlayıcısı kapatıldı"
+          }
+        }
+      }
+    },
+    "Sleep timer set for %lld min": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sleep timer set for %lld min"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uyku zamanlayıcısı %lld dk ayarlandı"
           }
         }
       }
@@ -1729,6 +2721,22 @@
         }
       }
     },
+    "Stream stalled, retrying…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream stalled, retrying…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yayın takıldı, yeniden deneniyor…"
+          }
+        }
+      }
+    },
     "Stremio Addon URL (optional)": {
       "localizations": {
         "en": {
@@ -1761,6 +2769,102 @@
         }
       }
     },
+    "Subtitle Priority": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtitle Priority"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazı Dil Önceliği"
+          }
+        }
+      }
+    },
+    "Subtitle delay:": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtitle delay:"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazı gecikmesi:"
+          }
+        }
+      }
+    },
+    "Subtitles": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtitles"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazılar"
+          }
+        }
+      }
+    },
+    "Subtitles & Audio (OpenSubtitles + Style)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtitles & Audio (OpenSubtitles + Style)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazı ve Ses (OpenSubtitles + Stil)"
+          }
+        }
+      }
+    },
+    "Subtitles off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtitles off"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazı kapalı"
+          }
+        }
+      }
+    },
+    "Subtitles on": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtitles on"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazı açık"
+          }
+        }
+      }
+    },
     "Switch": {
       "localizations": {
         "en": {
@@ -1773,6 +2877,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Geçiş Yap"
+          }
+        }
+      }
+    },
+    "Switch Stream": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch Stream"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yayın Değiştir"
+          }
+        }
+      }
+    },
+    "Switching to fallback stream…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switching to fallback stream…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yedek yayına geçiliyor…"
           }
         }
       }
@@ -1837,6 +2973,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "TMDB anahtarı doğrulandı ve Keychain'e kaydedildi"
+          }
+        }
+      }
+    },
+    "Timing Offset": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timing Offset"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zamanlama Kayması"
           }
         }
       }
@@ -1921,6 +3073,22 @@
         }
       }
     },
+    "UP NEXT": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "UP NEXT"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SIRADAKİ BÖLÜM"
+          }
+        }
+      }
+    },
     "Undo": {
       "localizations": {
         "en": {
@@ -1953,6 +3121,38 @@
         }
       }
     },
+    "Upscaling / Shader": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upscaling / Shader"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ölçekleme / Gölgelendirici"
+          }
+        }
+      }
+    },
+    "Use": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kullan"
+          }
+        }
+      }
+    },
     "Verifying TMDB key…": {
       "localizations": {
         "en": {
@@ -1965,6 +3165,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "TMDB anahtarı doğrulanıyor…"
+          }
+        }
+      }
+    },
+    "Video, A/B Loop & Sleep Timer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video, A/B Loop & Sleep Timer"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video, A/B Döngü ve Uyku Zamanlayıcısı"
           }
         }
       }

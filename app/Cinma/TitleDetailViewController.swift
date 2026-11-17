@@ -755,15 +755,29 @@ final class TitleDetailViewController: NSViewController {
             ? existingProgress?.positionS
             : nil
 
+        let rankedList = (try? core.rankStreams(streams: accumulatedStreams, preferences: nil))?.ranked ?? []
+        let matched = rankedList.first(where: { $0.stream.raw == raw })
         let summary: String
-        if let parsed = (try? core.rankStreams(streams: [stream], preferences: nil))?.ranked.first?.parsed {
+        let isHdr: Bool
+        if let parsed = matched?.parsed {
             let kind = parsed.isTorrent ? "Torrent" : "Direct"
             let parts = [kind, parsed.resolution, parsed.hdrBadges.joined(separator: " "), parsed.codec]
                 .filter { !$0.isEmpty && $0 != "Unknown" }
             summary = parts.joined(separator: " · ")
+            isHdr = !parsed.hdrBadges.isEmpty
         } else {
             summary = stream.addonName
+            let lower = "\(stream.name ?? "") \(stream.title ?? "")".lowercased()
+            isHdr = lower.contains("hdr") || lower.contains("dolby") || lower.contains("hlg")
         }
+
+        let bingeGroup: String? = {
+            guard let data = stream.raw.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let hints = obj["behaviorHints"] as? [String: Any]
+            else { return nil }
+            return hints["bingeGroup"] as? String
+        }()
 
         let ctx = PlaybackMetadata(
             videoId: videoId,
@@ -775,7 +789,10 @@ final class TitleDetailViewController: NSViewController {
             season: ep?.season.map { Int64($0) },
             episode: (ep?.episode ?? ep?.number).map { Int64($0) },
             resumePosition: resume,
-            streamSummary: summary
+            streamSummary: summary,
+            isHdr: isHdr,
+            bingeGroup: bingeGroup,
+            rankedStreams: rankedList
         )
         onPlay(.stream(stream, metadata: ctx))
     }

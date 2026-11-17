@@ -11,6 +11,7 @@ members = [
     "crates/features/torrent",
     "crates/features/ranker",
     "crates/features/metadata",
+    "crates/features/subtitles",
     "tools/uniffi-bindgen",
 ]
 default-members = [
@@ -24,6 +25,7 @@ default-members = [
     "crates/features/torrent",
     "crates/features/ranker",
     "crates/features/metadata",
+    "crates/features/subtitles",
 ]
 
 [workspace.package]
@@ -42,6 +44,9 @@ cinma-stremio = { path = "crates/features/stremio" }
 cinma-torrent = { path = "crates/features/torrent" }
 cinma-ranker = { path = "crates/features/ranker" }
 cinma-metadata = { path = "crates/features/metadata" }
+cinma-subtitles = { path = "crates/features/subtitles" }
+encoding_rs = "0.8"
+flate2 = "1.1"
 security-framework = "3"
 uniffi = "0.32.2"
 rusqlite = "0.43.0"

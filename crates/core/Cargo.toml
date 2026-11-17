@@ -13,6 +13,7 @@ cinma-stremio.workspace = true
 cinma-torrent.workspace = true
 cinma-ranker.workspace = true
 cinma-metadata.workspace = true
+cinma-subtitles.workspace = true
 reqwest.workspace = true
 security-framework.workspace = true
 serde.workspace = true
@@ -21,6 +22,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "process"] }
 
 [dev-dependencies]
+encoding_rs.workspace = true
 tempfile.workspace = true
 
 [lints]

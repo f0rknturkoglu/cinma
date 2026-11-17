@@ -201,6 +201,26 @@ impl ByteSource for BlobSource {
     fn describe(&self) -> String {
         format!("blob {}", self.0.id.as_str())
     }
+
+    fn available_ranges(&self) -> Option<RangeSet> {
+        Some(self.0.available())
+    }
+
+    fn try_read_at(&self, offset: u64, buf: &mut [u8]) -> Option<usize> {
+        if offset >= self.0.size {
+            return Some(0);
+        }
+        if buf.is_empty() {
+            return Some(0);
+        }
+        let run_end = self.0.ranges.lock().ok()?.run_end(offset)?;
+        let n = (run_end - offset).min(buf.len() as u64) as usize;
+        if n == 0 {
+            return Some(0);
+        }
+        self.0.file.read_exact_at(&mut buf[..n], offset).ok()?;
+        Some(n)
+    }
 }
 
 struct BlobReader {

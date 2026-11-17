@@ -14,12 +14,16 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use cinma_blobstore::{ByteSource, CancellationToken, SourceReader, cancelled_error};
+use cinma_blobstore::{
+    ByteSource, CancellationToken, OPENSUBTITLES_CHUNK_SIZE, RangeSet, SourceReader,
+    cancelled_error,
+};
 use librqbit::dht::DhtPersistenceConfig;
 use librqbit::{
     AddTorrent, AddTorrentOptions, AddTorrentResponse, ConnectionOptions, DhtSessionConfig,
     ManagedTorrent, PeerConnectionOptions, Session, SessionOptions,
 };
+use std::os::unix::fs::FileExt;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -257,17 +261,29 @@ impl RqbitEngine {
             index: file_idx,
             count,
         })?;
+        let name = name.unwrap_or_default();
+        let disk_path = (!name.is_empty()).then(|| handle.output_folder().join(&name));
+        let filename = std::path::Path::new(&name)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_owned();
+        let available = Arc::new(std::sync::Mutex::new(RangeSet::new()));
         let warmup = Arc::new(std::sync::Mutex::new(Some(spawn_head_tail_warmup(
             &self.runtime,
             Arc::clone(&handle),
             file_idx,
             len,
+            Arc::clone(&available),
         ))));
         Ok(Arc::new(TorrentSource {
             handle,
             file_idx,
             len,
-            name: name.unwrap_or_default(),
+            name,
+            filename,
+            disk_path,
+            available,
             runtime: self.runtime.clone(),
             warmup,
         }))
@@ -369,6 +385,9 @@ struct TorrentSource {
     file_idx: usize,
     len: u64,
     name: String,
+    filename: String,
+    disk_path: Option<PathBuf>,
+    available: Arc<std::sync::Mutex<RangeSet>>,
     runtime: Handle,
     warmup: Arc<std::sync::Mutex<Option<AbortHandle>>>,
 }
@@ -388,26 +407,56 @@ fn spawn_head_tail_warmup(
     handle: Arc<ManagedTorrent>,
     file_idx: usize,
     len: u64,
+    available: Arc<std::sync::Mutex<RangeSet>>,
 ) -> AbortHandle {
     runtime
         .spawn(async move {
             if len == 0 {
                 return;
             }
-            let head = async {
-                if let Ok(mut s) = handle.clone().stream(file_idx).await {
-                    let mut byte = [0u8; 1];
-                    let _ = s.read(&mut byte).await;
+            let head_len = (len as usize).min(OPENSUBTITLES_CHUNK_SIZE);
+            let avail_head = Arc::clone(&available);
+            let h = Arc::clone(&handle);
+            let head = async move {
+                if let Ok(mut s) = h.stream(file_idx).await {
+                    let mut buf = vec![0u8; head_len];
+                    let mut read_total = 0usize;
+                    while read_total < head_len {
+                        match s.read(&mut buf[read_total..]).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                if let Ok(mut guard) = avail_head.lock() {
+                                    guard.insert(read_total as u64..(read_total + n) as u64);
+                                }
+                                read_total += n;
+                            }
+                        }
+                    }
                 }
             };
-            let tail = async {
-                let tail_offset = len.saturating_sub(WARMUP_TAIL_WINDOW);
+            let tail_window = len.min(WARMUP_TAIL_WINDOW.max(OPENSUBTITLES_CHUNK_SIZE as u64));
+            let tail_offset = len.saturating_sub(tail_window);
+            let avail_tail = Arc::clone(&available);
+            let tail = async move {
                 if tail_offset > 0
-                    && let Ok(mut s) = handle.clone().stream(file_idx).await
+                    && let Ok(mut s) = handle.stream(file_idx).await
                     && s.seek(SeekFrom::Start(tail_offset)).await.is_ok()
                 {
-                    let mut byte = [0u8; 1];
-                    let _ = s.read(&mut byte).await;
+                    let want = (len - tail_offset) as usize;
+                    let mut buf = vec![0u8; want];
+                    let mut read_total = 0usize;
+                    while read_total < want {
+                        match s.read(&mut buf[read_total..]).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                let abs = tail_offset + read_total as u64;
+                                if let Ok(mut guard) = avail_tail.lock() {
+                                    guard.insert(abs..abs + n as u64);
+                                }
+                                read_total += n;
+                            }
+                        }
+                    }
                 }
             };
             let _ = tokio::time::timeout(WARMUP_TIMEOUT, async {
@@ -435,6 +484,7 @@ impl ByteSource for TorrentSource {
             len: self.len,
             runtime: self.runtime.clone(),
             warmup: Arc::clone(&self.warmup),
+            available: Arc::clone(&self.available),
         }))
     }
 
@@ -446,6 +496,32 @@ impl ByteSource for TorrentSource {
             self.name
         )
     }
+
+    fn filename(&self) -> Option<&str> {
+        (!self.filename.is_empty()).then_some(&self.filename)
+    }
+
+    fn available_ranges(&self) -> Option<RangeSet> {
+        self.available.lock().ok().map(|r| r.clone())
+    }
+
+    fn try_read_at(&self, offset: u64, buf: &mut [u8]) -> Option<usize> {
+        if offset >= self.len {
+            return Some(0);
+        }
+        if buf.is_empty() {
+            return Some(0);
+        }
+        let run_end = self.available.lock().ok()?.run_end(offset)?;
+        let n = (run_end - offset).min(buf.len() as u64) as usize;
+        if n == 0 {
+            return Some(0);
+        }
+        let path = self.disk_path.as_ref()?;
+        let file = std::fs::File::open(path).ok()?;
+        file.read_exact_at(&mut buf[..n], offset).ok()?;
+        Some(n)
+    }
 }
 
 struct TorrentReader {
@@ -455,6 +531,7 @@ struct TorrentReader {
     len: u64,
     runtime: Handle,
     warmup: Arc<std::sync::Mutex<Option<AbortHandle>>>,
+    available: Arc<std::sync::Mutex<RangeSet>>,
 }
 
 impl SourceReader for TorrentReader {
@@ -496,8 +573,16 @@ impl SourceReader for TorrentReader {
                 } => r,
             }
         });
-        if result.is_err() {
-            self.position = u64::MAX;
+        match &result {
+            Ok(n) if *n > 0 => {
+                if let Ok(mut guard) = self.available.lock() {
+                    guard.insert(offset..offset + *n as u64);
+                }
+            }
+            Err(_) => {
+                self.position = u64::MAX;
+            }
+            _ => {}
         }
         result
     }

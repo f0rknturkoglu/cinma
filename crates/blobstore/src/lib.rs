@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 mod blob;
+mod hash;
 mod plan;
 mod ranges;
 mod wait;
@@ -23,6 +24,10 @@ use tokio::sync::Notify;
 pub use tokio_util::sync::CancellationToken;
 
 pub use blob::{Blob, BlobId, BlobStore, DEFAULT_READAHEAD, PriorityListener, ReadHint};
+pub use hash::{
+    OPENSUBTITLES_CHUNK_SIZE, compute_opensubtitles_hash_file,
+    compute_opensubtitles_hash_nonblocking, opensubtitles_hash_from_chunks,
+};
 pub use plan::{HEAD_BYTES, TAIL_BYTES, fetch_order};
 pub use ranges::RangeSet;
 use wait::wait_until;
@@ -34,6 +39,20 @@ pub trait ByteSource: Send + Sync + 'static {
     fn open_reader(&self) -> io::Result<Box<dyn SourceReader>>;
     /// Short human-readable label for logs.
     fn describe(&self) -> String;
+    /// Original file name, when known (used for subtitle queries & matching).
+    fn filename(&self) -> Option<&str> {
+        None
+    }
+    /// Snapshot of byte ranges currently available without network I/O.
+    fn available_ranges(&self) -> Option<RangeSet> {
+        None
+    }
+    /// Non-blocking read of already-available bytes only. Must NEVER block
+    /// waiting for peers/network or send priority hints (safe for thumbnails
+    /// and OpenSubtitles hashing). Returns `None` if `offset` is unavailable.
+    fn try_read_at(&self, _offset: u64, _buf: &mut [u8]) -> Option<usize> {
+        None
+    }
 }
 
 pub trait SourceReader: Send {
@@ -91,6 +110,34 @@ impl ByteSource for MemorySource {
 
     fn describe(&self) -> String {
         format!("memory({} bytes)", self.data.len())
+    }
+
+    fn available_ranges(&self) -> Option<RangeSet> {
+        let avail = self.available.0.lock().ok().map(|a| *a).unwrap_or(0);
+        let mut set = RangeSet::new();
+        if avail > 0 {
+            set.insert(0..avail.min(self.data.len() as u64));
+        }
+        Some(set)
+    }
+
+    fn try_read_at(&self, offset: u64, buf: &mut [u8]) -> Option<usize> {
+        let size = self.data.len() as u64;
+        if offset >= size {
+            return Some(0);
+        }
+        if buf.is_empty() {
+            return Some(0);
+        }
+        let avail = self.available.0.lock().ok().map(|a| *a)?;
+        if avail <= offset {
+            return None;
+        }
+        let end = avail.min(size).min(offset + buf.len() as u64);
+        let n = (end - offset) as usize;
+        let start = offset as usize;
+        buf[..n].copy_from_slice(&self.data[start..start + n]);
+        Some(n)
     }
 }
 

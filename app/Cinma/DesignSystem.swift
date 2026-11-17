@@ -11,6 +11,9 @@ struct PlaybackMetadata: Sendable {
     let episode: Int64?
     let resumePosition: Double?
     let streamSummary: String?
+    let isHdr: Bool
+    let bingeGroup: String?
+    let rankedStreams: [RankedStreamInfo]
 }
 
 enum PlayRequest: Sendable {

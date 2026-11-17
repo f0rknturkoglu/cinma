@@ -476,7 +476,9 @@ dependencies = [
  "cinma-player",
  "cinma-ranker",
  "cinma-stremio",
+ "cinma-subtitles",
  "cinma-torrent",
+ "encoding_rs",
  "reqwest",
  "security-framework",
  "serde",
@@ -557,6 +559,22 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "url",
+]
+
+[[package]]
+name = "cinma-subtitles"
+version = "0.1.0"
+dependencies = [
+ "cinma-stremio",
+ "encoding_rs",
+ "flate2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
  "url",
 ]
 
