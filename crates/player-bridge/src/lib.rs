@@ -141,8 +141,8 @@ impl Player {
             ("idle", "yes"),
             ("keep-open", "yes"),
             ("cache", "yes"),
-            ("demuxer-max-bytes", "64MiB"),
-            ("demuxer-max-back-bytes", "16MiB"),
+            ("demuxer-max-bytes", "24MiB"),
+            ("demuxer-max-back-bytes", "8MiB"),
         ];
         for (name, value) in options {
             self.set_option(name, value)?;

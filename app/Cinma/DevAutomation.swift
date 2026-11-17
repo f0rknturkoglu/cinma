@@ -37,8 +37,9 @@ enum DevAutomation {
                 let parts = target.split(separator: ":", maxSplits: 1).map(String.init)
                 guard parts.count == 2 else { return }
                 let streams = try await core.streams(mediaType: parts[0], id: parts[1])
-                if let first = streams.first {
-                    play(.stream(first))
+                let best = (try? core.rankStreams(streams: streams, preferences: nil))?.ranked.first?.stream ?? streams.first
+                if let best {
+                    play(.stream(best))
                 } else {
                     log("no streams for \(target)")
                 }

@@ -17,17 +17,27 @@ use std::time::Duration;
 use cinma_blobstore::{ByteSource, CancellationToken, SourceReader, cancelled_error};
 use librqbit::dht::DhtPersistenceConfig;
 use librqbit::{
-    AddTorrent, AddTorrentOptions, AddTorrentResponse, DhtSessionConfig, ManagedTorrent, Session,
-    SessionOptions,
+    AddTorrent, AddTorrentOptions, AddTorrentResponse, ConnectionOptions, DhtSessionConfig,
+    ManagedTorrent, PeerConnectionOptions, Session, SessionOptions,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
+use tokio::task::AbortHandle;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 const METADATA_TIMEOUT: Duration = Duration::from_secs(90);
+const WARMUP_TAIL_WINDOW: u64 = 64 * 1024;
+const WARMUP_TIMEOUT: Duration = Duration::from_secs(8);
 const VIDEO_EXTENSIONS: &[&str] = &["mkv", "mp4", "m4v", "avi", "mov", "webm", "ts", "m2ts", "wmv"];
+const FALLBACK_TRACKERS: &[&str] = &[
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://exodus.desync.com:6969/announce",
+    "http://tracker.opentrackr.org:1337/announce",
+];
 
 #[derive(Debug, thiserror::Error)]
 pub enum TorrentError {
@@ -112,6 +122,18 @@ impl RqbitEngine {
             persistence: None,
             dht: (!self.config.local_only).then(|| dht_config(self.config.root.join("dht.json"))),
             disable_local_service_discovery: self.config.local_only,
+            peer_limit: Some(80),
+            connect: Some(ConnectionOptions {
+                enable_tcp: true,
+                proxy_url: None,
+                peer_opts: Some(PeerConnectionOptions {
+                    connect_timeout: Some(Duration::from_secs(4)),
+                    read_write_timeout: Some(Duration::from_secs(8)),
+                    keep_alive_interval: None,
+                    // Smaller request window lets peers pivot quickly after a seek.
+                    max_request_window: Some(16),
+                }),
+            }),
             ..Default::default()
         };
         let session = Session::new_with_opts(downloads, options).await?;
@@ -122,9 +144,18 @@ impl RqbitEngine {
     async fn open(&self, request: TorrentFileRequest) -> Result<Arc<dyn ByteSource>, TorrentError> {
         let info_hash = normalize_info_hash(&request.info_hash)?;
         let session = self.session().await?;
-        let magnet = magnet_uri(&info_hash, &request.trackers);
-        let initial_peers =
+        let mut trackers = request.trackers.clone();
+        if !self.config.local_only {
+            for tr in FALLBACK_TRACKERS {
+                if !trackers.iter().any(|existing| existing == tr) {
+                    trackers.push((*tr).to_owned());
+                }
+            }
+        }
+        let magnet = magnet_uri(&info_hash, &trackers);
+        let mut initial_peers =
             (!self.config.extra_peers.is_empty()).then(|| self.config.extra_peers.clone());
+        let mut torrent_bytes = None;
 
         let file_idx = match request.file_idx {
             Some(idx) => idx,
@@ -149,6 +180,11 @@ impl RqbitEngine {
                             .iter_file_details()
                             .map(|f| (f.filename.to_string(), f.len))
                             .collect();
+                        if !list.seen_peers.is_empty() {
+                            let merged = initial_peers.get_or_insert_with(Vec::new);
+                            merged.extend(list.seen_peers);
+                        }
+                        torrent_bytes = Some(list.torrent_bytes);
                         pick_video_file(&files).ok_or(TorrentError::NoFiles)?
                     }
                     AddTorrentResponse::AlreadyManaged(_, handle)
@@ -165,14 +201,19 @@ impl RqbitEngine {
             }
         };
 
+        let add_source = match torrent_bytes {
+            Some(bytes) => AddTorrent::from_bytes(bytes),
+            None => AddTorrent::from_url(magnet),
+        };
         let response = tokio::time::timeout(
             METADATA_TIMEOUT,
             session.add_torrent(
-                AddTorrent::from_url(magnet),
+                add_source,
                 Some(AddTorrentOptions {
                     only_files: Some(vec![file_idx]),
                     overwrite: true,
                     initial_peers,
+                    trackers: Some(trackers),
                     ..Default::default()
                 }),
             ),
@@ -205,12 +246,16 @@ impl RqbitEngine {
             )
         })?;
         let len = len.ok_or(TorrentError::FileIndex { index: file_idx, count })?;
+        let warmup = Arc::new(std::sync::Mutex::new(Some(
+            spawn_head_tail_warmup(&self.runtime, Arc::clone(&handle), file_idx, len),
+        )));
         Ok(Arc::new(TorrentSource {
             handle,
             file_idx,
             len,
             name: name.unwrap_or_default(),
             runtime: self.runtime.clone(),
+            warmup,
         }))
     }
 
@@ -308,6 +353,52 @@ struct TorrentSource {
     len: u64,
     name: String,
     runtime: Handle,
+    warmup: Arc<std::sync::Mutex<Option<AbortHandle>>>,
+}
+
+impl Drop for TorrentSource {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.warmup.lock()
+            && let Some(handle) = guard.take()
+        {
+            handle.abort();
+        }
+    }
+}
+
+fn spawn_head_tail_warmup(
+    runtime: &Handle,
+    handle: Arc<ManagedTorrent>,
+    file_idx: usize,
+    len: u64,
+) -> AbortHandle {
+    runtime
+        .spawn(async move {
+            if len == 0 {
+                return;
+            }
+            let head = async {
+                if let Ok(mut s) = handle.clone().stream(file_idx).await {
+                    let mut byte = [0u8; 1];
+                    let _ = s.read(&mut byte).await;
+                }
+            };
+            let tail = async {
+                let tail_offset = len.saturating_sub(WARMUP_TAIL_WINDOW);
+                if tail_offset > 0
+                    && let Ok(mut s) = handle.clone().stream(file_idx).await
+                    && s.seek(SeekFrom::Start(tail_offset)).await.is_ok()
+                {
+                    let mut byte = [0u8; 1];
+                    let _ = s.read(&mut byte).await;
+                }
+            };
+            let _ = tokio::time::timeout(WARMUP_TIMEOUT, async {
+                tokio::join!(head, tail);
+            })
+            .await;
+        })
+        .abort_handle()
 }
 
 impl ByteSource for TorrentSource {
@@ -324,7 +415,9 @@ impl ByteSource for TorrentSource {
         Ok(Box::new(TorrentReader {
             stream: Box::new(stream),
             position: 0,
+            len: self.len,
             runtime: self.runtime.clone(),
+            warmup: Arc::clone(&self.warmup),
         }))
     }
 
@@ -337,7 +430,9 @@ struct TorrentReader {
     stream: Box<dyn AsyncReadSeek>,
     /// Current stream position; `u64::MAX` when unknown (after a cancel).
     position: u64,
+    len: u64,
     runtime: Handle,
+    warmup: Arc<std::sync::Mutex<Option<AbortHandle>>>,
 }
 
 impl SourceReader for TorrentReader {
@@ -347,7 +442,16 @@ impl SourceReader for TorrentReader {
         buf: &mut [u8],
         cancel: &CancellationToken,
     ) -> io::Result<usize> {
-        let Self { stream, position, runtime } = self;
+        // Once the player seeks into the middle of the file, cancel the head/tail
+        // warmup streams so they don't compete with the active seek cursor.
+        const HEAD_TAIL_GUARD: u64 = 4 * 1024 * 1024;
+        if offset > HEAD_TAIL_GUARD && offset < self.len.saturating_sub(HEAD_TAIL_GUARD)
+            && let Ok(mut guard) = self.warmup.lock()
+            && let Some(handle) = guard.take()
+        {
+            handle.abort();
+        }
+        let Self { stream, position, runtime, .. } = self;
         let result = runtime.block_on(async {
             tokio::select! {
                 biased;

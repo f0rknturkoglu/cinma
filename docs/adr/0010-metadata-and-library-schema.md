@@ -1,6 +1,6 @@
 # ADR 0010 — Metadata cache, ID map, library schema, Keychain, and yt-dlp source
 
-**Status:** proposed (Phase 3 — awaiting owner confirmation before writing Migrations 0003/0004)
+**Status:** accepted (owner, 2026-11-17)
 
 Following ADR 0008 conventions (`STRICT` tables, unix-second timestamps, `profile_id` foreign keys on all user-data tables, raw JSON payloads where appropriate), Phase 3 steps 3, 4, and 11 introduce two schema migrations and two integration choices.
 
