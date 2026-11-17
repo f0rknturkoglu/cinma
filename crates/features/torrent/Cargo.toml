@@ -8,10 +8,12 @@ publish.workspace = true
 [dependencies]
 cinma-blobstore.workspace = true
 librqbit.workspace = true
+anyhow.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "io-util", "time"] }
 thiserror.workspace = true
 
 [dev-dependencies]
+librqbit.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tempfile.workspace = true
 
