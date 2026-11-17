@@ -265,12 +265,6 @@ impl PlaybackSession {
         self.inner.player().render_free();
     }
 
-    /// `true` → PQ/BT.2020 output for an EDR layer; `false` → SDR defaults.
-    pub fn set_hdr_output(&self, hdr: bool) -> Result<(), CinmaError> {
-        let target = hdr.then_some(("pq", "bt.2020"));
-        Ok(self.inner.player().set_output_colorspace(target).map_err(CoreError::from)?)
-    }
-
     /// Destroys mpv and stops torrent traffic. Call `render_free` first.
     pub async fn stop(&self) -> Result<(), CinmaError> {
         Ok(self.inner.stop().await?)

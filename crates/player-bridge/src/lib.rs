@@ -134,6 +134,9 @@ impl Player {
             // Rendering through the render API (ADR 0004).
             ("vo", "libmpv"),
             ("hwdec", "videotoolbox"),
+            // The host layer is a fixed PQ/BT.2020 EDR surface; SDR is mapped in.
+            ("target-trc", "pq"),
+            ("target-prim", "bt.2020"),
             // Behaviour.
             ("idle", "yes"),
             ("keep-open", "yes"),
@@ -146,7 +149,8 @@ impl Player {
         }
         // SAFETY: handle is valid and not yet initialized.
         self.check(unsafe { (self.api.initialize)(self.handle.0) })?;
-        let level = c"warn";
+        // CINMA_MPV_LOG=v|debug for diagnostics; warnings otherwise.
+        let level = cstring(&std::env::var("CINMA_MPV_LOG").unwrap_or_else(|_| "warn".into()))?;
         // SAFETY: valid handle and NUL-terminated string.
         unsafe { (self.api.request_log_messages)(self.handle.0, level.as_ptr()) };
         let protocol = CString::new(PROTOCOL).map_err(|e| PlayerError::Mpv(e.to_string()))?;
@@ -316,14 +320,6 @@ impl Player {
                 drop(Box::from_raw(renderer.callback));
             }
         }
-    }
-
-    /// Output transfer/primaries for EDR: `Some(("pq", "bt.2020"))` for HDR,
-    /// `None` to let mpv pick (SDR).
-    pub fn set_output_colorspace(&self, target: Option<(&str, &str)>) -> Result<(), PlayerError> {
-        let (trc, prim) = target.unwrap_or(("auto", "auto"));
-        self.command(&["set", "target-trc", trc])?;
-        self.command(&["set", "target-prim", prim])
     }
 
     /// Stops playback and destroys mpv (asynchronously, on the event thread).

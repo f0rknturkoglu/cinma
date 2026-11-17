@@ -9,7 +9,7 @@ publish.workspace = true
 cinma-blobstore.workspace = true
 librqbit.workspace = true
 anyhow.workspace = true
-tokio = { workspace = true, features = ["rt", "sync", "io-util", "time"] }
+tokio = { workspace = true, features = ["rt", "sync", "io-util", "time", "fs"] }
 thiserror.workspace = true
 
 [dev-dependencies]

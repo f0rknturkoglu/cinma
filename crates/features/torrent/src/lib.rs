@@ -214,10 +214,19 @@ impl RqbitEngine {
         }))
     }
 
+    /// Stops the session and deletes streamed data. Phase 1 has no disk
+    /// policy yet (§5.12, Phase 5), so nothing is kept between plays.
     async fn release(&self) {
         let session = self.session.lock().await.take();
         if let Some(session) = session {
             session.stop().await;
+            drop(session);
+            let downloads = self.config.root.join("downloads");
+            if let Err(e) = tokio::fs::remove_dir_all(&downloads).await
+                && e.kind() != io::ErrorKind::NotFound
+            {
+                eprintln!("[cinma] torrent: could not clear {}: {e}", downloads.display());
+            }
         }
     }
 }

@@ -43,6 +43,7 @@ final class PlayerViewController: NSViewController {
     private var closing = false
     private var shutdownWaiter: CheckedContinuation<Void, Never>?
     private var pendingSeeks = DevAutomation.autoSeeks
+    private var closeRequestedAt: ContinuousClock.Instant?
 
     init(core: CinmaCore, request: PlayRequest, onClose: @escaping () -> Void) {
         self.core = core
@@ -127,6 +128,13 @@ final class PlayerViewController: NSViewController {
         videoLayer.contentsScale = view.window?.backingScaleFactor ?? 2
         view.window?.makeFirstResponder(view)
         start()
+        if let delay = DevAutomation.autoCloseAfter {
+            Task {
+                try? await Task.sleep(for: .seconds(delay))
+                DevAutomation.log("auto-close")
+                close()
+            }
+        }
     }
 
     private func start() {
@@ -139,9 +147,15 @@ final class PlayerViewController: NSViewController {
         Task.detached(priority: .userInitiated) {
             do {
                 let session = try core.createPlayback(observer: sink)
+                // mpv's video output needs the render context before loadfile.
+                await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+                    Task { @MainActor in
+                        self.session = session
+                        self.videoLayer.onRenderReady = { ready.resume() }
+                        self.videoLayer.attach(session)
+                    }
+                }
                 let proceed = await MainActor.run { () -> Bool in
-                    self.session = session
-                    self.videoLayer.attach(session)
                     if case .stream(let s) = request, s.infoHash != nil {
                         self.statusLabel.stringValue = String(localized: "Connecting to peers…")
                     }
@@ -182,13 +196,13 @@ final class PlayerViewController: NSViewController {
             statusLabel.stringValue = buffering ? String(localized: "Buffering…") : ""
         case .videoGamma(let gamma):
             let hdr = gamma == "pq" || gamma == "hlg"
-            videoLayer.setHDR(hdr)
-            try? session?.setHdrOutput(hdr: hdr)
             if LaunchMetrics.isEnabled {
                 Task {
-                    try? await Task.sleep(for: .seconds(4))
-                    let screen = view.window?.screen
-                    DevAutomation.log("gamma=\(gamma) hdr=\(hdr) edr_current=\(screen?.maximumExtendedDynamicRangeColorComponentValue ?? 0) edr_potential=\(screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 0)")
+                    for delay in [2, 4, 8] {
+                        try? await Task.sleep(for: .seconds(delay == 2 ? 2 : delay / 2))
+                        let screen = view.window?.screen
+                        DevAutomation.log("t+\(delay)s gamma=\(gamma) hdr=\(hdr) edr_current=\(screen?.maximumExtendedDynamicRangeColorComponentValue ?? 0) edr_potential=\(screen?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 0)")
+                    }
                 }
             }
         case .metric(let name, let millis):
@@ -199,6 +213,9 @@ final class PlayerViewController: NSViewController {
                 statusLabel.stringValue = String(localized: "Playback error: \(error ?? "unknown")")
             }
         case .shutdown:
+            if let start = closeRequestedAt {
+                DevAutomation.log("shutdown \(start.duration(to: .now)) after close")
+            }
             shutdownWaiter?.resume()
             shutdownWaiter = nil
         }
@@ -261,6 +278,7 @@ final class PlayerViewController: NSViewController {
     @objc private func close() {
         guard !closing else { return }
         closing = true
+        closeRequestedAt = .now
         statusLabel.stringValue = ""
         guard let session else {
             onClose()
@@ -274,6 +292,7 @@ final class PlayerViewController: NSViewController {
                     try? await session.stop()
                     // Fallback if Shutdown never arrives.
                     try? await Task.sleep(for: .seconds(3))
+                    if shutdownWaiter != nil { DevAutomation.log("shutdown timed out (fallback)") }
                     shutdownWaiter?.resume()
                     shutdownWaiter = nil
                 }

@@ -144,4 +144,5 @@ fn streams_head_tail_and_middle_from_local_seeder() {
         engine.release_all().await;
         seeder.stop().await;
     });
+    assert!(!dir.path().join("leech").join("downloads").exists(), "streamed data is cleared on release");
 }

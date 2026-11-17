@@ -7,6 +7,7 @@ import AppKit
 ///   CINMA_AUTOSEEK=0.5,0.8,0.2          fractions of duration, after first frame
 ///   CINMA_AUTOQUIT=1                    quit after the last seek (or 5 s of playback)
 ///   CINMA_AUTOQUIT=close                close the player instead and stay running
+///   CINMA_AUTOCLOSE_AFTER=<seconds>     close the player that long after it opens
 @MainActor
 enum DevAutomation {
     static let environment = ProcessInfo.processInfo.environment
@@ -16,6 +17,7 @@ enum DevAutomation {
     }
 
     static var autoQuit: Bool { environment["CINMA_AUTOQUIT"] != nil }
+    static var autoCloseAfter: Double? { environment["CINMA_AUTOCLOSE_AFTER"].flatMap(Double.init) }
     static var closeOnly: Bool { environment["CINMA_AUTOQUIT"] == "close" }
 
     static func run(core: CinmaCore, play: @escaping (PlayRequest) -> Void) {

@@ -4,8 +4,15 @@ import OpenGL.GL3
 /// mpv draws into this layer through the libmpv OpenGL render API (ADR 0004).
 /// `isAsynchronous` is off, so every callback below runs on the main thread;
 /// that is what makes the `@unchecked Sendable` sound.
+///
+/// The layer is always a PQ/BT.2020 EDR surface and mpv always outputs PQ
+/// (SDR content is mapped into it). CAOpenGLLayer ignores colorspace/EDR
+/// changes once its surface exists, and swapping layers mid-playback kills
+/// mpv's video output, so the mode is fixed up front.
 final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
     private(set) var session: PlaybackSession?
+    /// Called once mpv's render context exists; `loadfile` must wait for it.
+    var onRenderReady: (@Sendable () -> Void)?
     private var renderReady = false
     private var context: CGLContextObj?
     private var pixelFormat: CGLPixelFormatObj?
@@ -17,7 +24,7 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
         needsDisplayOnBoundsChange = true
         backgroundColor = NSColor.black.cgColor
         wantsExtendedDynamicRangeContent = true
-        colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+        colorspace = CGColorSpace(name: CGColorSpace.itur_2100_PQ)
     }
 
     /// Used by Core Animation for presentation copies.
@@ -35,12 +42,6 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
 
     func attach(_ session: PlaybackSession) {
         self.session = session
-        setNeedsDisplay()
-    }
-
-    /// Switches between an HDR (PQ, EDR) and an SDR output surface.
-    func setHDR(_ hdr: Bool) {
-        colorspace = CGColorSpace(name: hdr ? CGColorSpace.itur_2100_PQ : CGColorSpace.sRGB)
         setNeedsDisplay()
     }
 
@@ -63,7 +64,8 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
             kCGLPFAAccelerated, kCGLPFADoubleBuffer, kCGLPFAAllowOfflineRenderers,
         ]
         // 16-bit float framebuffer for EDR; fall back to 8-bit if unavailable.
-        for extra in [[kCGLPFAColorSize, CGLPixelFormatAttribute(64), kCGLPFAColorFloat], []] {
+        let float: [CGLPixelFormatAttribute] = [kCGLPFAColorSize, CGLPixelFormatAttribute(64), kCGLPFAColorFloat]
+        for extra in [float, []] {
             var attributes = base + extra + [CGLPixelFormatAttribute(0)]
             var format: CGLPixelFormatObj?
             var count: GLint = 0
@@ -110,6 +112,9 @@ final class VideoLayer: CAOpenGLLayer, @unchecked Sendable {
             do {
                 try session.renderInit(observer: RedrawRequest(layer: self))
                 renderReady = true
+                let ready = onRenderReady
+                onRenderReady = nil
+                DispatchQueue.main.async { ready?() }
             } catch {
                 NSLog("cinma: render init failed: %@", error.localizedDescription)
                 self.session = nil
