@@ -1,6 +1,6 @@
 # ADR 0004 — Render path
 
-**Status:** proposed — **needs owner decision**. Phase 1 ships option B as a stopgap.
+**Status:** accepted (owner, 2026-11-17): **stay on B (OpenGL render API) for now**; revisit with the solution paths below when Dolby Vision or OpenGL removal forces it. Owner also accepted ~19 % CPU for 4K HDR10 as good enough for now.
 
 All findings use Homebrew libmpv 0.42 (libplacebo 7.387, MoltenVK 1.4.2) on an M4 Pro with the built-in XDR display.
 
@@ -31,5 +31,21 @@ All findings use Homebrew libmpv 0.42 (libplacebo 7.387, MoltenVK 1.4.2) on an M
 - This fits naturally with the custom minimal libmpv build the brief already asks for (ADR 0005).
 - It is a C/meson build project, plus a small patch to maintain.
 
-## Recommendation
-Keep B through Phase 3, since everything else works with it. In Phase 4, once DV P5/P8 samples are available, either spend about a day hardening C, or go straight to D as part of the custom libmpv build. D is the long-term answer; C is the quick one.
+## Solution paths for B's limits (ordered by cost)
+
+What B lacks: Dolby Vision P5 (needs libplacebo), HDR peak detection (needs compute shaders), and a future-proof API (OpenGL is deprecated).
+
+1. **Harden C (≈1 day, quick, fragile).** Reparent mpv's macvk view into our view. Keep mpv's hidden window the same size as our view (`setFrame` on resize/fullscreen/backing-scale change) so mpv renders at the right size. Remove the view again before `quit`. Gate it behind a setting with B as fallback. Risk: depends on mpv's private `MacCommon` structure, so pin the mpv version.
+2. **D1 — patch macvk to honour `wid` (≈2–4 days, inside the custom libmpv build from ADR 0005).** In `video/out/mac/*` + `vulkan/context_mac`, when `wid` is set, take the given `CAMetalLayer*` instead of creating a window and report its size from the layer. The patch is small (mostly Swift in mpv's tree) and is a good candidate to upstream, which would remove the maintenance burden.
+3. **D2 — add a Vulkan render API to libmpv (≈1–2 weeks).** An `MPV_RENDER_API_TYPE_VULKAN` backend for libmpv's render API; mpv upstream has discussed this. We'd own the `CAMetalLayer` + MoltenVK swapchain. Cleanest architecture, most work.
+4. **Upstream first.** Watch or ask mpv for macvk `wid` support or a gpu-next render API. If it lands, option 2 or 3 becomes free.
+5. **Not recommended:** our own libplacebo + FFmpeg pipeline without mpv (we'd re-implement subtitles, A/V sync, filters).
+
+Triggers to act: the first Dolby Vision P5/P8 sample that plays with wrong colours, a macOS release that drops OpenGL, or the custom libmpv build starting (do D1 then).
+
+## CPU (accepted for now)
+
+The ~19–21 % in B can likely be reduced if it ever matters:
+- render on a dedicated GL/CA thread (`isAsynchronous` or our own display link) instead of the main thread;
+- `video-sync=display-resample` vs audio;
+- check how often the update callback actually fires per vsync.

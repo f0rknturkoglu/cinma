@@ -32,15 +32,18 @@
 | TTFF, loopback seeder at 6 MB/s, from play request (median of 5) | 192 ms | — |
 | Seek into undownloaded region, loopback 6 MB/s (median) | 953 ms | — |
 | **TTFF / seek on a real swarm** | **not measured** | < 5 s / < 2 s |
-| 4K HDR10 playback CPU | ~19 % | < 10 % ❌ (Phase 4) |
-| Footprint after a torrent playback ends | ~113 MB | ≤ 40 MB ❌ (Phase 2) |
+| 4K HDR10 playback CPU | ~19 % | < 10 % — owner accepted for now |
+| Footprint after a torrent playback ends | ~113 MB | ≤ 40 MB — owner: look at it later |
 
 Real-swarm numbers are missing because the agent's sandbox proxies outbound TCP, so it can't reach BitTorrent peers. To measure on a normal network:
 `tools/measure-playback.sh <addon manifest url> movie <imdb id> 5`
 
 ### Risks / open items
 1. **Real-swarm TTFF and seek** are unverified. librqbit streams with a 32 MB window ahead of the cursor and prioritizes the first and last pieces. Whether that meets < 5 s / < 2 s on real swarms is unknown.
-2. **Memory after torrent playback**: footprint stays at ~113 MB, while the live heap is only 13.5 MB. The rest is malloc fragmentation in the small zone; `malloc_zone_pressure_relief` frees ~0. Phase 2 candidates: mimalloc as the global allocator, or bounding librqbit's buffers (ADR first).
+2. **Memory after torrent playback** (owner: later): footprint stays at ~113 MB, while the live heap is only 13.5 MB. The rest is malloc fragmentation in the small zone; `malloc_zone_pressure_relief` frees ~0. Solution paths, cheapest first:
+   - find librqbit's large transient buffers (per-peer read buffers, chunk caches) and cap them via options or our storage factory;
+   - run the torrent engine's allocations in a separate malloc zone, or a Rust global allocator that returns memory eagerly (mimalloc with `purge_delay=0`, or jemalloc with `dirty_decay_ms`), measured before/after (dependency ADR);
+   - keep the torrent session alive while playing, and when it stops, accept the cost until memory pressure (macOS reclaims under pressure).
 3. **Playback CPU** is ~20 %. **Playback footprint** is 470–630 MB. Both are Phase 4 (ADR 0004).
 4. **Render path is an open decision** (ADR 0004): the current OpenGL render API uses the legacy renderer, which means no Dolby Vision P5, no HDR peak detection, and deprecated OpenGL. **Homebrew libmpv** is a stand-in until a custom build (ADR 0005).
 6. **Uploading:** while streaming, librqbit also uploads to peers (its default). Seeding policy and rate limits come in Phase 5.
