@@ -35,7 +35,7 @@ impl From<CoreError> for CinmaError {
             CoreError::Addon(_) => Self::Network { message },
             CoreError::Torrent(_) => Self::Torrent { message },
             CoreError::Player(_) => Self::Player { message },
-            CoreError::Invalid(_) => Self::Invalid { message },
+            CoreError::Invalid(_) | CoreError::FeatureDisabled(_) => Self::Invalid { message },
             CoreError::Poisoned | CoreError::Task(_) => Self::Internal { message },
         }
     }
@@ -55,6 +55,8 @@ pub struct AddonInfo {
     pub description: Option<String>,
     pub transport_url: String,
     pub types: Vec<String>,
+    /// Enabled for the active profile.
+    pub enabled: bool,
 }
 
 impl From<cinma_core::InstalledAddon> for AddonInfo {
@@ -66,6 +68,7 @@ impl From<cinma_core::InstalledAddon> for AddonInfo {
             description: a.manifest.description,
             transport_url: a.transport_url,
             types: a.manifest.types,
+            enabled: a.enabled,
         }
     }
 }

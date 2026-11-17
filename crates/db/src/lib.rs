@@ -6,15 +6,22 @@
 
 #![forbid(unsafe_code)]
 
+mod repo;
+
 use std::path::Path;
 
 use rusqlite::Connection;
 
 /// Ordered migrations. Index `i` upgrades the schema from version `i` to `i + 1`.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_init.sql"),
+    include_str!("../migrations/0002_core_schema.sql"),
+];
 
 /// Schema version this build understands.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
+
+pub use repo::{AddonRow, DownloadKind, DownloadRow, DownloadState, NewDownload, ProfileId};
 
 #[derive(Debug, thiserror::Error)]
 pub enum DbError {
@@ -22,6 +29,8 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("database schema v{found} is newer than this build (v{supported})")]
     FutureSchema { found: u32, supported: u32 },
+    #[error("invalid stored value: {0}")]
+    Invalid(String),
 }
 
 pub struct Database {
@@ -36,6 +45,12 @@ impl Database {
 
     pub fn open_in_memory() -> Result<Self, DbError> {
         Self::init(Connection::open_in_memory()?)
+    }
+
+    /// Opens without migrating (tests: build an old-version database).
+    #[cfg(test)]
+    fn raw(conn: Connection) -> Self {
+        Self { conn }
     }
 
     fn init(mut conn: Connection) -> Result<Self, DbError> {
@@ -53,23 +68,6 @@ impl Database {
     pub fn connection(&self) -> &Connection {
         &self.conn
     }
-
-    pub fn get_app_setting(&self, key: &str) -> Result<Option<String>, DbError> {
-        use rusqlite::OptionalExtension;
-        Ok(self
-            .conn
-            .query_row("SELECT value FROM app_setting WHERE key = ?1", [key], |r| r.get(0))
-            .optional()?)
-    }
-
-    pub fn set_app_setting(&self, key: &str, value: &str) -> Result<(), DbError> {
-        self.conn.execute(
-            "INSERT INTO app_setting (key, value) VALUES (?1, ?2)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            [key, value],
-        )?;
-        Ok(())
-    }
 }
 
 fn user_version(conn: &Connection) -> Result<u32, DbError> {
@@ -77,6 +75,10 @@ fn user_version(conn: &Connection) -> Result<u32, DbError> {
 }
 
 fn migrate(conn: &mut Connection) -> Result<(), DbError> {
+    migrate_to(conn, SCHEMA_VERSION)
+}
+
+fn migrate_to(conn: &mut Connection, target: u32) -> Result<(), DbError> {
     let current = user_version(conn)?;
     if current > SCHEMA_VERSION {
         return Err(DbError::FutureSchema {
@@ -84,7 +86,7 @@ fn migrate(conn: &mut Connection) -> Result<(), DbError> {
             supported: SCHEMA_VERSION,
         });
     }
-    for (index, sql) in MIGRATIONS.iter().enumerate().skip(current as usize) {
+    for (index, sql) in MIGRATIONS.iter().enumerate().take(target as usize).skip(current as usize) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
         tx.pragma_update(None, "user_version", index as u32 + 1)?;
@@ -161,6 +163,41 @@ mod tests {
         db.set_app_setting("k", "1").unwrap();
         db.set_app_setting("k", "2").unwrap();
         assert_eq!(db.get_app_setting("k").unwrap().as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn upgrade_from_v1_moves_phase1_addons_into_tables() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        migrate_to(&mut conn, 1).unwrap();
+        let phase1 = r#"[
+            {"transport_url":"https://a.example/manifest.json","manifest":{"id":"org.a","name":"A","resources":["stream"],"types":["movie"]}},
+            {"transport_url":"https://b.example/x/manifest.json","manifest":{"id":"org.b","name":"B","resources":["stream"],"types":["series"]}}
+        ]"#;
+        conn.execute(
+            "INSERT INTO app_setting (key, value) VALUES ('addons.v1', ?1)",
+            [phase1],
+        )
+        .unwrap();
+        migrate_to(&mut conn, SCHEMA_VERSION).unwrap();
+        let db = Database::raw(conn);
+        let addons = db.addons_for_profile(1).unwrap();
+        assert_eq!(addons.len(), 2);
+        assert_eq!(addons[0].id, "org.a");
+        assert_eq!(addons[0].position, 0);
+        assert!(addons[0].enabled);
+        assert_eq!(addons[1].transport_url, "https://b.example/x/manifest.json");
+        let manifest: serde_json::Value = serde_json::from_str(&addons[1].manifest_json).unwrap();
+        assert_eq!(manifest["name"], "B");
+        assert_eq!(db.get_app_setting("addons.v1").unwrap(), None);
+    }
+
+    #[test]
+    fn upgrade_from_v1_without_addons() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate_to(&mut conn, 1).unwrap();
+        migrate_to(&mut conn, SCHEMA_VERSION).unwrap();
+        assert!(Database::raw(conn).addons_for_profile(1).unwrap().is_empty());
     }
 
     #[test]

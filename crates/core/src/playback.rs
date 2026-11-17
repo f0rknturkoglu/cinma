@@ -58,7 +58,8 @@ impl Playback {
     /// back to idle.
     pub async fn stop(&self) -> Result<(), CoreError> {
         self.player.shutdown();
-        if let Some(engine) = self.core.torrents.get().cloned() {
+        let engine = self.core.torrents.lock().map_err(|_| CoreError::Poisoned)?.clone();
+        if let Some(engine) = engine {
             self.core
                 .spawn(async move {
                     engine.release_all().await;
