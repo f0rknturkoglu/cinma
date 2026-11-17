@@ -1,6 +1,6 @@
 # ADR 0009 — BlobStore design, and torrents outside it (for now)
 
-**Status:** BlobStore design accepted. The torrent part is **proposed, needs owner decision**: it deviates from §5.1 and §1.6.
+**Status:** accepted (2026-11-17; the owner delegated the call), including the deviation from §5.1/§1.6 for torrents described below.
 
 ## BlobStore
 - A blob is a sparse data file (`<id>.blob`) plus a sidecar (`<id>.ranges`, JSON) listing the byte ranges that may be trusted.
@@ -24,7 +24,7 @@
 
 A killed process keeps its page cache, so these tests **don't** prove power-loss durability. That relies on `fsync` and the disk honouring it.
 
-## Torrents stay on librqbit's own storage (proposed)
+## Torrents stay on librqbit's own storage
 librqbit tracks verified pieces internally (`chunk_tracker`, `piece_tracker` are crate-private) and exposes no "piece verified" hook. Its `TorrentStorage` trait only sees raw, unverified writes. Routing torrent bytes through our Blob would mean one of:
 
 - (a) exposing unverified data;

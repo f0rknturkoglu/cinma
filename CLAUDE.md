@@ -6,6 +6,8 @@
 
 ## Project quick reference
 
+- **Picking this project up? Start with `docs/ROADMAP.md`**: current state, pitfalls already learned, owner decisions, and the remaining phases (3–7) as task lists.
+
 - Build Rust core + Swift bindings: `tools/build-core.sh [Debug|Release]` (the Xcode "Build Rust core" phase runs it too).
 - App: open `app/Cinma.xcodeproj`, scheme **Cinma**. CLI: `xcodebuild -project app/Cinma.xcodeproj -scheme Cinma -configuration Release -derivedDataPath build/xcode build`.
 - Rust tests: `cargo test`. Measure: `tools/measure.sh` (appends to `tools/measurements.csv`).

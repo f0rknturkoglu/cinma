@@ -1,9 +1,11 @@
 # PROGRESS
 
-## Current phase: 2 — Core solid (built; awaiting owner review)
+## Status: Phases 0–2 done and accepted. Remaining work for the next agent is in **docs/ROADMAP.md**.
+
+## Phase 2 — Core solid ✅ (accepted 2026-11-17)
 
 ### Done in Phase 2
-- **Schema 0002** (ADR 0008, *proposed*): `addon` + `profile_addon` (installed globally, enabled per profile), `profile_setting`, `download`; profile gets `avatar` and `pin_hash`.
+- **Schema 0002** (ADR 0008): `addon` + `profile_addon` (installed globally, enabled per profile), `profile_setting`, `download`; profile gets `avatar` and `pin_hash`.
   - The Phase 1 addon list migrates automatically; tested on a v1 database with data.
   - Repositories are profile-scoped; an isolation test covers it.
   - `busy_timeout` 5 s.
@@ -49,11 +51,10 @@
 - Run on a copy of a data dir written by the Phase 1 build: v1 → v2 migration kept the addon and enabled it for profile 1.
 - Debug build: launches and plays a torrent; Info.plist merge OK.
 
-### Open decisions for the owner
-1. ADR 0008 schema (proposed).
-2. ADR 0009: torrents stay on librqbit storage, outside BlobStore (proposed).
-
-### Next: Phase 3 — Browsing & stream selection
+### Decisions (owner delegated, 2026-11-17)
+1. ADR 0008 schema: accepted. Addon identity is the manifest id, as in Stremio.
+2. ADR 0009: torrents stay on librqbit storage: accepted.
+3. `stremio://` links must ask for confirmation before installing. This is the first task in ROADMAP Phase 3.
 
 ---
 

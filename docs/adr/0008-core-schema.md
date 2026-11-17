@@ -1,6 +1,8 @@
 # ADR 0008 — Core schema (migration 0002)
 
-**Status:** proposed — owner review (data formats are ask-first). Easy to change until real data accumulates: migrations are append-only, so a change means a new migration.
+**Status:** accepted (2026-11-17; the owner delegated the call). Migrations are append-only, so any later change means a new migration.
+
+**Addon identity = manifest id.** Installing another configuration of the same addon (same manifest id, different URL) replaces the earlier one. Stremio behaves the same way.
 
 ## Conventions
 - Every user-data table has `profile_id INTEGER NOT NULL REFERENCES profile(id) ON DELETE CASCADE`, and every repository query is scoped by it. A test checks that profile B can't read or delete profile A's rows.
