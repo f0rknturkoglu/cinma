@@ -167,6 +167,12 @@ async fn download(
     let _ = job.report_bytes(total, Some(total));
 
     seed(engine, &handle, job, seeding, total).await;
+    // Someone is watching it via "Play Now": keep it readable until they stop.
+    let hash = normalize_info_hash(&spec.info_hash).map_err(|e| e.to_string())?;
+    tokio::select! {
+        () = job.cancel.cancelled() => {}
+        () = engine.wait_until_unwatched(&hash) => {}
+    }
     engine.forget(&handle).await;
     if job.cancel.is_cancelled() {
         return Ok(());
@@ -182,10 +188,14 @@ async fn download(
     job.set_file_path(&dest).map_err(|e| e.to_string())?;
     let src = file_path.clone();
     let dest_clone = dest.clone();
-    tokio::task::spawn_blocking(move || move_file_no_overwrite(&src, &dest_clone))
+    let moved = tokio::task::spawn_blocking(move || move_file_no_overwrite(&src, &dest_clone))
         .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| format!("could not move the finished file: {e}"))?;
+        .map_err(|e| e.to_string())?;
+    if let Err(e) = moved {
+        // Never leave a path that may point at someone else's file.
+        let _ = job.clear_file_path();
+        return Err(format!("could not move the finished file: {e}"));
+    }
     remove_staging(staging, folder);
     Ok(())
 }

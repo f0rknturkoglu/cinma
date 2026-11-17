@@ -29,15 +29,18 @@ Commits `8c4bda8`…`356b7c6`. 118 Rust tests pass, clippy is clean, and the Rel
   - it finished as one byte-identical copy: 82 MB in the folder, 236 KB left in the data dir;
   - Remove from List kept the file.
 
-  Torrent single-copy, pause/resume and yt-dlp placement are covered by loopback/stub tests, not by the UI.
+  Torrent single-copy, pause/resume, Play Now across completion, stream-then-download, and yt-dlp single-track placement are covered by loopback/stub tests, not by the UI.
+- **Not tested at all:** the yt-dlp mux path (separate video and audio tracks), real devices and services, and a real swarm.
+- **Play Now on a torrent download:** the file is moved only after the last viewer closes, so playback never breaks at completion. Starting a download of a torrent that is streaming drops the stream's cache copy, so the data is written once.
+- **Tracking worker:** waits at least 60 s after a failed or empty pass, so a row that stays due cannot spin.
 
 ### Measured (Release, M-series, 2026-11-17)
-| Metric | Value | Target (relaxed by owner) |
+| Metric | Value | Target (proposed relaxed values, awaiting owner confirmation) |
 |---|---|---|
 | Launch, first frame (median of 5) | 169 ms | < 250 ms ✅ |
 | Idle footprint, empty window | 30 MB | ≤ 70 MB ✅ |
-| Idle, Home with Cinemeta artwork | 172 MB, 0.17 % CPU (hero rotation) | ≤ 200 MB, ≤ 0.5 % ✅ |
-| 4K HEVC HDR10 playback | 16.5 / 17.1 / 17.4 % CPU, ~628 MB | < 20 %, ≤ 700 MB ✅ |
+| Idle, Home with Cinemeta artwork (one 30 s sample) | 172 MB, 0.17 % CPU (hero rotation) | ≤ 200 MB, ≤ 0.5 % ✅ |
+| 4K HEVC HDR10 playback (three 20 s samples, one clip) | 16.5 / 17.1 / 17.4 % CPU, ~628 MB | < 20 %, ≤ 700 MB ✅ |
 
 Correction: the Phase 4 note below claims 7.3 % CPU for 4K HDR10. That figure did not reproduce; the measured value is ~17 %, about the same as Phase 1.
 

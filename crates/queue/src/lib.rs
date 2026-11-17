@@ -114,6 +114,14 @@ impl Job {
         Ok(())
     }
 
+    pub fn clear_file_path(&self) -> Result<(), QueueError> {
+        self.db
+            .lock()
+            .map_err(|_| QueueError::Poisoned)?
+            .set_download_file_path(self.download.id, None)?;
+        Ok(())
+    }
+
     /// Progress for engines without a blob (the bytes are durable in their file).
     pub fn report_bytes(&self, done: u64, total: Option<u64>) -> Result<(), QueueError> {
         self.db

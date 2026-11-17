@@ -263,10 +263,13 @@ impl DownloadEngine for YtdlpDownloadEngine {
                 let dest = unique_destination(&folder, &with_ext(&base_name, "mp4"));
                 job.set_file_path(&dest).map_err(|e| e.to_string())?;
                 let (from, to) = (muxed.clone(), dest.clone());
-                tokio::task::spawn_blocking(move || move_file_no_overwrite(&from, &to))
+                let moved = tokio::task::spawn_blocking(move || move_file_no_overwrite(&from, &to))
                     .await
-                    .map_err(|e| e.to_string())?
                     .map_err(|e| e.to_string())?;
+                if let Err(e) = moved {
+                    let _ = job.clear_file_path();
+                    return Err(e.to_string());
+                }
                 let _ = std::fs::remove_dir(&staging);
                 Ok(())
             }
@@ -447,9 +450,14 @@ impl Finalizer {
             .map_err(|_| "poisoned".to_owned())?
             .set_download_file_path(id, Some(&dest.to_string_lossy()))
             .map_err(|e| e.to_string())?;
-        self.store
-            .finalize_to(blob, dest)
-            .map_err(|e| e.to_string())?;
+        if let Err(e) = self.store.finalize_to(blob, dest) {
+            // Never leave a path that may point at someone else's file; the
+            // next attempt picks a free name again.
+            if let Ok(db) = self.db.lock() {
+                let _ = db.set_download_file_path(id, None);
+            }
+            return Err(e.to_string());
+        }
         // The HTTP engine's resume validator is no longer needed.
         if let Some(meta) = self.meta_dir.as_ref() {
             let _ = std::fs::remove_file(meta.join(format!("http_{id}.json")));
@@ -859,17 +867,26 @@ impl Core {
             let staging = staging_dir(&folder, &spec.info_hash)
                 .ok_or_else(|| CoreError::Invalid("invalid info hash".into()))?;
             let engine = self.torrents()?;
-            // Already in the session while active: no network wait here.
-            return self.runtime()?.block_on(async move {
+            let open = async move {
                 tokio::time::timeout(
                     std::time::Duration::from_secs(10),
-                    engine.open_download(spec.request(), &staging),
+                    engine.watch_download(spec.request(), &staging),
                 )
                 .await
                 .map_err(|_| CoreError::Invalid("torrent is not ready yet".into()))?
-                .map(|(_, source, _)| source)
                 .map_err(CoreError::from)
-            });
+            };
+            // Already in the session while active, so this is quick. From an
+            // async context (casting) we must not block a runtime thread.
+            return if tokio::runtime::Handle::try_current().is_ok() {
+                std::thread::scope(|s| {
+                    s.spawn(|| self.runtime()?.block_on(open))
+                        .join()
+                        .map_err(|_| CoreError::Task("play-now open panicked".into()))?
+                })
+            } else {
+                self.runtime()?.block_on(open)
+            };
         }
         Err(CoreError::Invalid(
             "nothing to play yet: start or resume the download first".into(),

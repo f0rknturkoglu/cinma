@@ -139,6 +139,66 @@ pub struct RqbitEngine {
     /// they are deleted with their files when playback stops, so they never
     /// linger on disk or come back through session persistence.
     roles: std::sync::Mutex<TorrentRoles>,
+    /// Open "Play Now" readers per download; a finished download waits for
+    /// them before it leaves the session and its file is moved.
+    viewers: Arc<Viewers>,
+}
+
+#[derive(Default)]
+struct Viewers {
+    counts: std::sync::Mutex<std::collections::HashMap<String, usize>>,
+    changed: tokio::sync::Notify,
+}
+
+impl Viewers {
+    fn count(&self, hash: &str) -> usize {
+        self.counts
+            .lock()
+            .map(|c| c.get(hash).copied().unwrap_or(0))
+            .unwrap_or(0)
+    }
+}
+
+/// A download's bytes for "Play Now"; counts as a viewer until dropped.
+struct WatchedSource {
+    inner: Arc<dyn ByteSource>,
+    hash: String,
+    viewers: Arc<Viewers>,
+}
+
+impl Drop for WatchedSource {
+    fn drop(&mut self) {
+        if let Ok(mut counts) = self.viewers.counts.lock()
+            && let Some(n) = counts.get_mut(&self.hash)
+        {
+            *n = n.saturating_sub(1);
+            if *n == 0 {
+                counts.remove(&self.hash);
+            }
+        }
+        self.viewers.changed.notify_waiters();
+    }
+}
+
+impl ByteSource for WatchedSource {
+    fn size(&self) -> u64 {
+        self.inner.size()
+    }
+    fn open_reader(&self) -> io::Result<Box<dyn SourceReader>> {
+        self.inner.open_reader()
+    }
+    fn describe(&self) -> String {
+        self.inner.describe()
+    }
+    fn filename(&self) -> Option<&str> {
+        self.inner.filename()
+    }
+    fn available_ranges(&self) -> Option<RangeSet> {
+        self.inner.available_ranges()
+    }
+    fn try_read_at(&self, offset: u64, buf: &mut [u8]) -> Option<usize> {
+        self.inner.try_read_at(offset, buf)
+    }
 }
 
 #[derive(Default)]
@@ -172,6 +232,7 @@ impl RqbitEngine {
                 leftover,
                 ..TorrentRoles::default()
             }),
+            viewers: Arc::new(Viewers::default()),
         }
     }
 
@@ -332,10 +393,50 @@ impl RqbitEngine {
         staging: &std::path::Path,
     ) -> Result<(Arc<ManagedTorrent>, Arc<dyn ByteSource>, PathBuf), TorrentError> {
         let info_hash = normalize_info_hash(&request.info_hash)?;
+        // Streaming the same torrent: drop the stream (and its cache file)
+        // so the download is written once, in its own staging folder.
+        let was_stream = self
+            .roles
+            .lock()
+            .map(|r| r.streams.contains(&info_hash))
+            .unwrap_or(false);
+        if was_stream && let Some(session) = self.session.lock().await.clone() {
+            delete_torrents(&session, std::slice::from_ref(&info_hash)).await;
+        }
         self.mark_download(&info_hash);
         let (handle, source, path) = self.open_with_handle(request, Some(staging)).await?;
         let path = path.ok_or(TorrentError::NoFiles)?;
         Ok((handle, source, path))
+    }
+
+    /// "Play Now" for a download in progress. The download will not leave the
+    /// session or move its file until every returned source is dropped.
+    pub async fn watch_download(
+        &self,
+        request: TorrentFileRequest,
+        staging: &std::path::Path,
+    ) -> Result<Arc<dyn ByteSource>, TorrentError> {
+        let info_hash = normalize_info_hash(&request.info_hash)?;
+        let (_, inner, _) = self.open_download(request, staging).await?;
+        if let Ok(mut counts) = self.viewers.counts.lock() {
+            *counts.entry(info_hash.clone()).or_default() += 1;
+        }
+        Ok(Arc::new(WatchedSource {
+            inner,
+            hash: info_hash,
+            viewers: Arc::clone(&self.viewers),
+        }))
+    }
+
+    /// Waits until no "Play Now" source for `info_hash` is open.
+    pub async fn wait_until_unwatched(&self, info_hash: &str) {
+        loop {
+            let changed = self.viewers.changed.notified();
+            if self.viewers.count(info_hash) == 0 {
+                return;
+            }
+            changed.await;
+        }
     }
 
     /// Removes a torrent from the session but keeps its files (pause, finish).

@@ -209,14 +209,14 @@ PROGRESS.md             phase, done, next, risks
 
 ## 6. Targets (Apple Silicon M1 baseline)
 
-Relaxed by the owner on 2026-11-17 ("we can loosen RAM and CPU a little; we're still good"). The old value is in brackets where it changed.
+On 2026-11-17 the owner said RAM and CPU targets may be loosened a little, without giving numbers. The **new values in this table are proposed by the agent and await the owner's confirmation**. The old value is in brackets where it changed.
 
 | Metric | Target | Last measured |
 |---|---|---|
 | Cold start → first interactive frame | **< 250 ms** | 169 ms |
 | Idle footprint, window open, empty | **≤ 70 MB** | 30 MB |
 | Idle footprint, Home with artwork loaded | **≤ 200 MB** (new) | 172 MB |
-| Idle footprint, menu bar only, queue idle | ≤ 40 MB | 28 MB |
+| Idle footprint, menu bar only, queue idle | ≤ 40 MB | 28 MB (previous agent; not re-measured) |
 | Idle CPU | **≤ 0.5 %** with Home visible (hero rotation); ~0 % with the window closed [~0 %] | 0.17 % / 0.00 % |
 | 4K HEVC HDR10 playback CPU (hwdec) | **< 20 % of one core** [< 10 %] | ~17 % |
 | Playback footprint, 4K HDR | **≤ 700 MB** (new) | ~630 MB |

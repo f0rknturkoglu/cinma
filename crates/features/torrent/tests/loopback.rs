@@ -544,3 +544,201 @@ fn paused_torrent_download_stops_and_resumes_from_its_partial_file() {
         seeder.stop().await;
     });
 }
+
+#[test]
+fn play_now_keeps_reading_across_completion_then_the_file_moves() {
+    use cinma_blobstore::BlobStore;
+    use cinma_db::{Database, DownloadKind, DownloadState, NewDownload};
+    use cinma_queue::Queue;
+    use cinma_torrent::{SeedingPolicy, TorrentDownloadEngine, TorrentPolicy, TorrentSourceSpec};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let seed_dir = dir.path().join("seed");
+    std::fs::create_dir_all(&seed_dir).unwrap();
+    let data = content();
+    let (seeder, info_hash, addr) = runtime.block_on(start_seeder(&seed_dir, &data));
+    let engine = Arc::new(RqbitEngine::with_policy(
+        TorrentConfig {
+            root: dir.path().join("dl_root"),
+            extra_peers: vec![addr],
+            local_only: true,
+        },
+        runtime.handle().clone(),
+        TorrentPolicy {
+            download_bps: Some(2 * 1024 * 1024),
+            ..app_policy()
+        },
+    ));
+    let db = Arc::new(std::sync::Mutex::new(
+        Database::open(&dir.path().join("db.sqlite3")).unwrap(),
+    ));
+    let store = Arc::new(BlobStore::open(&dir.path().join("blobs")).unwrap());
+    let queue = Queue::new(Arc::clone(&db), store, runtime.handle().clone(), 1).unwrap();
+    let out = dir.path().join("Movies");
+    let folder = out.clone();
+    queue
+        .register_engine(
+            DownloadKind::Torrent,
+            Arc::new(TorrentDownloadEngine::new(
+                Arc::clone(&engine),
+                SeedingPolicy::Off,
+                Arc::new(move |_row: &cinma_db::DownloadRow| folder.clone()),
+            )),
+        )
+        .unwrap();
+    let spec = TorrentSourceSpec {
+        info_hash: info_hash.clone(),
+        file_idx: None,
+        trackers: vec![],
+        meta_id: None,
+        media_type: Some("movie".into()),
+    };
+    let id = queue
+        .add(&NewDownload {
+            profile_id: 1,
+            kind: DownloadKind::Torrent,
+            title: "movie.mkv".into(),
+            source_json: serde_json::to_string(&spec).unwrap(),
+            priority: 1,
+        })
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(800));
+
+    // "Play Now" while downloading, as the core does it.
+    let staging = cinma_torrent::staging_dir(&out, &info_hash).unwrap();
+    let source = runtime
+        .block_on(engine.watch_download(spec.request(), &staging))
+        .unwrap();
+    let reader_source = Arc::clone(&source);
+    let expected = data.clone();
+    let reader = std::thread::spawn(move || {
+        let mut r = reader_source.open_reader().unwrap();
+        let cancel = CancellationToken::new();
+        let mut got = Vec::with_capacity(expected.len());
+        let mut buf = vec![0u8; 256 * 1024];
+        while got.len() < expected.len() {
+            let n = r.read_at(got.len() as u64, &mut buf, &cancel).unwrap();
+            assert!(n > 0, "unexpected EOF");
+            got.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(got, expected);
+    });
+    reader.join().unwrap();
+
+    // Fully downloaded, but still being watched: not moved yet.
+    std::thread::sleep(Duration::from_millis(600));
+    let row = db.lock().unwrap().download(1, id).unwrap().unwrap();
+    assert_eq!(row.state, DownloadState::Active, "waits for the viewer");
+    assert!(staging.exists());
+
+    drop(source);
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let done = loop {
+        let row = db.lock().unwrap().download(1, id).unwrap().unwrap();
+        if row.state == DownloadState::Completed {
+            break row;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "not finished: {row:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(std::fs::read(done.file_path.unwrap()).unwrap(), data);
+    runtime.block_on(async {
+        engine.release_all().await;
+        seeder.stop().await;
+    });
+}
+
+#[test]
+fn downloading_a_torrent_that_is_streaming_writes_it_once() {
+    use cinma_blobstore::BlobStore;
+    use cinma_db::{Database, DownloadKind, DownloadState, NewDownload};
+    use cinma_queue::Queue;
+    use cinma_torrent::{SeedingPolicy, TorrentDownloadEngine, TorrentSourceSpec};
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let seed_dir = dir.path().join("seed");
+    std::fs::create_dir_all(&seed_dir).unwrap();
+    let data = content();
+    let (seeder, info_hash, addr) = runtime.block_on(start_seeder(&seed_dir, &data));
+    let root = dir.path().join("dl_root");
+    let engine = Arc::new(RqbitEngine::with_policy(
+        TorrentConfig {
+            root: root.clone(),
+            extra_peers: vec![addr],
+            local_only: true,
+        },
+        runtime.handle().clone(),
+        app_policy(),
+    ));
+    // Streaming first: data goes to the cache folder.
+    drop(open_and_read_head(&runtime, &engine, &info_hash));
+    assert!(root.join("downloads").join("movie.mkv").exists());
+
+    let db = Arc::new(std::sync::Mutex::new(
+        Database::open(&dir.path().join("db.sqlite3")).unwrap(),
+    ));
+    let store = Arc::new(BlobStore::open(&dir.path().join("blobs")).unwrap());
+    let queue = Queue::new(Arc::clone(&db), store, runtime.handle().clone(), 1).unwrap();
+    let out = dir.path().join("Movies");
+    let folder = out.clone();
+    queue
+        .register_engine(
+            DownloadKind::Torrent,
+            Arc::new(TorrentDownloadEngine::new(
+                Arc::clone(&engine),
+                SeedingPolicy::Off,
+                Arc::new(move |_row: &cinma_db::DownloadRow| folder.clone()),
+            )),
+        )
+        .unwrap();
+    let id = queue
+        .add(&NewDownload {
+            profile_id: 1,
+            kind: DownloadKind::Torrent,
+            title: "movie.mkv".into(),
+            source_json: serde_json::to_string(&TorrentSourceSpec {
+                info_hash: info_hash.clone(),
+                file_idx: None,
+                trackers: vec![],
+                meta_id: None,
+                media_type: None,
+            })
+            .unwrap(),
+            priority: 1,
+        })
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let done = loop {
+        let row = db.lock().unwrap().download(1, id).unwrap().unwrap();
+        if row.state == DownloadState::Completed {
+            break row;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "not finished: {row:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(std::fs::read(done.file_path.unwrap()).unwrap(), data);
+    assert!(
+        !root.join("downloads").join("movie.mkv").exists(),
+        "the stream's cache copy is gone"
+    );
+    runtime.block_on(async {
+        engine.release_all().await;
+        seeder.stop().await;
+    });
+}

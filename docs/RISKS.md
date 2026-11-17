@@ -14,7 +14,7 @@ Updated 2026-11-17 after the Phase 3–7 review. Fixed items are recorded in `PR
 - **PiP:** needs the owner to choose between a floating mini-player panel and a frame-copy PiP (ADR 0011).
 - **AirPlay video:** not possible with libmpv; audio goes to AirPlay speakers through CoreAudio.
 
-## Resources (targets relaxed by owner 2026-11-17, see CLAUDE.md §6)
+## Resources (relaxed targets proposed 2026-11-17, awaiting owner confirmation; see CLAUDE.md §6)
 - **4K HDR10 playback:** ~17 % CPU and ~630 MB, inside the relaxed targets (< 20 %, ≤ 700 MB).
 - **Home with artwork:** 172 MB idle (≤ 200 MB target). Decoded backdrops and the 64 MB image cache are the bulk.
 - **Memory after torrent playback** (~113 MB, malloc fragmentation): deferred by the owner.

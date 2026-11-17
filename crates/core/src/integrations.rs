@@ -522,9 +522,16 @@ impl Core {
             if let Ok(mut s) = self.tracking_sync.lock() {
                 s.dirty = false;
             }
-            if let Err(e) = self.drain_tracking_outbox().await {
-                eprintln!("[cinma] tracking sync: {e}");
-            }
+            // After a failed or empty pass, wait at least a minute: a row that
+            // stays due (e.g. Keychain read error) must not cause a busy loop.
+            let min_wait = match self.drain_tracking_outbox().await {
+                Ok(delivered) if delivered > 0 => 0,
+                Ok(_) => 60,
+                Err(e) => {
+                    eprintln!("[cinma] tracking sync: {e}");
+                    60
+                }
+            };
             let next = self
                 .db
                 .lock()
@@ -533,7 +540,7 @@ impl Core {
             let Some(due) = next else {
                 return;
             };
-            let wait = (due - unix_now()).clamp(0, 3600) as u64;
+            let wait = (due - unix_now()).clamp(min_wait, 3600) as u64;
             if wait > 0 {
                 tokio::time::sleep(Duration::from_secs(wait)).await;
             }
