@@ -1,6 +1,6 @@
 # ADR 0003 — Launch/memory targets vs. the AppKit floor
 
-**Status:** proposed — needs owner decision
+**Status:** accepted (owner, 2026-11-17)
 
 ## Finding
 

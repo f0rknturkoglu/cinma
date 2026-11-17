@@ -1,0 +1,26 @@
+{
+  "streams": [
+    {
+      "name": "Fixture\n4k DV | HDR",
+      "title": "Example.Movie.2024.2160p.WEB-DL.DV.HDR.mkv\n👤 152 💾 14 GB ⚙️ ExampleSite",
+      "infoHash": "0123456789abcdef0123456789abcdef01234567",
+      "fileIdx": 2,
+      "behaviorHints": {
+        "bingeGroup": "example|2160p|DV",
+        "filename": "Example.Movie.2024.2160p.WEB-DL.DV.HDR.mkv",
+        "videoSize": 15032385536
+      },
+      "sources": ["tracker:udp://tracker.example.org:1337/announce", "dht:0123456789abcdef0123456789abcdef01234567"]
+    },
+    {
+      "name": "Fixture\n1080p",
+      "title": "Example.Movie.2024.1080p.BluRay.x264.mkv\n👤 40 💾 2.1 GB",
+      "infoHash": "89abcdef0123456789abcdef0123456789abcdef"
+    },
+    {
+      "name": "Direct\n720p",
+      "url": "https://cdn.example.org/video.mp4",
+      "behaviorHints": { "notWebReady": true }
+    }
+  ]
+}

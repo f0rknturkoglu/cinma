@@ -1,6 +1,6 @@
 # ADR 0002 — Phase 0 defaults (cheap to change now)
 
-**Status:** accepted, pending owner review
+**Status:** accepted (owner, 2026-11-17)
 
 | Decision | Choice | Why |
 |---|---|---|

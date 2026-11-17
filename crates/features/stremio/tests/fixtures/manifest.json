@@ -1,0 +1,10 @@
+{
+  "id": "org.example.fixture",
+  "version": "1.0.0",
+  "name": "Fixture Addon",
+  "description": "Test fixture shaped like a torrent stream addon",
+  "resources": ["stream"],
+  "types": ["movie", "series"],
+  "idPrefixes": ["tt"],
+  "catalogs": []
+}
