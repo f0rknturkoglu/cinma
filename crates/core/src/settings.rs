@@ -78,6 +78,9 @@ impl Core {
             let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
             db.set_app_setting(&feature.key(), if enabled { "1" } else { "0" })?;
         }
+        if enabled && feature == Feature::Tracking {
+            self.kick_tracking_sync();
+        }
         if !enabled {
             match feature {
                 Feature::Torrent => {

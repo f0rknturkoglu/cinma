@@ -60,6 +60,17 @@ fn mime_for_path(path: &Path) -> String {
     .to_owned()
 }
 
+/// After this many failed deliveries a row is dropped (about a day at the 1 h cap).
+const MAX_OUTBOX_ATTEMPTS: i64 = 30;
+
+/// Single-flight state of the outbox worker.
+#[derive(Default)]
+pub(crate) struct TrackingSyncState {
+    running: bool,
+    /// New rows arrived while the worker was running: drain once more.
+    dirty: bool,
+}
+
 fn tracking_client_id_key(adapter: &str) -> String {
     format!("tracking.{adapter}.client_id")
 }
@@ -329,6 +340,9 @@ impl Core {
                 .set_adapter_enabled(profile, adapter, true)?;
         }
         self.emit(CoreEvent::TrackingChanged);
+        if token.is_some() {
+            self.kick_tracking_sync();
+        }
         Ok(())
     }
 
@@ -340,8 +354,11 @@ impl Core {
     ) -> Result<(), CoreError> {
         let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
         db.set_app_setting(&tracking_client_id_key(adapter), client_id.trim())?;
+        // Secrets live in the Keychain, never in SQLite (and so never in backups).
+        // Older builds stored it as a setting: drop that row.
+        db.delete_app_setting(&tracking_client_secret_key(adapter))?;
         if let Some(secret) = client_secret {
-            db.set_app_setting(&tracking_client_secret_key(adapter), secret.trim())?;
+            keychain::set_tracking_client_secret(adapter, Some(secret))?;
         }
         Ok(())
     }
@@ -441,8 +458,86 @@ impl Core {
         drop(db);
         if count > 0 {
             self.emit(CoreEvent::TrackingChanged);
+            self.kick_tracking_sync();
         }
         Ok(count)
+    }
+
+    /// Starts the outbox worker if tracking is on and rows are waiting.
+    /// Event-driven: it drains, then sleeps only until the next row is due,
+    /// and exits as soon as the outbox is empty. Nothing runs when idle.
+    pub fn kick_tracking_sync(&self) {
+        if !self.feature_enabled(Feature::Tracking).unwrap_or(false) {
+            return;
+        }
+        let pending = self
+            .db
+            .lock()
+            .ok()
+            .and_then(|db| db.next_outbox_due().ok().flatten());
+        if pending.is_none() {
+            return;
+        }
+        {
+            let Ok(mut state) = self.tracking_sync.lock() else {
+                return;
+            };
+            if state.running {
+                state.dirty = true;
+                return;
+            }
+            state.running = true;
+            state.dirty = false;
+        }
+        let Some(core) = self.me.upgrade() else {
+            return;
+        };
+        let Ok(rt) = self.runtime() else {
+            if let Ok(mut s) = self.tracking_sync.lock() {
+                s.running = false;
+            }
+            return;
+        };
+        rt.spawn(async move {
+            core.tracking_worker().await;
+            let again = core
+                .tracking_sync
+                .lock()
+                .map(|mut s| {
+                    s.running = false;
+                    std::mem::take(&mut s.dirty)
+                })
+                .unwrap_or(false);
+            if again {
+                core.kick_tracking_sync();
+            }
+        });
+    }
+
+    async fn tracking_worker(self: &Arc<Self>) {
+        loop {
+            if !self.feature_enabled(Feature::Tracking).unwrap_or(false) {
+                return;
+            }
+            if let Ok(mut s) = self.tracking_sync.lock() {
+                s.dirty = false;
+            }
+            if let Err(e) = self.drain_tracking_outbox().await {
+                eprintln!("[cinma] tracking sync: {e}");
+            }
+            let next = self
+                .db
+                .lock()
+                .ok()
+                .and_then(|db| db.next_outbox_due().ok().flatten());
+            let Some(due) = next else {
+                return;
+            };
+            let wait = (due - unix_now()).clamp(0, 3600) as u64;
+            if wait > 0 {
+                tokio::time::sleep(Duration::from_secs(wait)).await;
+            }
+        }
     }
 
     pub async fn drain_tracking_outbox(self: &Arc<Self>) -> Result<u32, CoreError> {
@@ -469,6 +564,10 @@ impl Core {
             };
             let Some(token) = keychain::get_tracking_token(row.profile_id, &row.adapter)? else {
                 let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
+                if row.attempts + 1 >= MAX_OUTBOX_ATTEMPTS {
+                    db.delete_outbox_row(row.id)?;
+                    continue;
+                }
                 let delay = backoff_seconds(row.attempts + 1);
                 db.schedule_outbox_retry(
                     row.id,
@@ -527,8 +626,23 @@ impl Core {
                 }
                 Err(e) => {
                     let attempts = row.attempts + 1;
-                    let delay = backoff_seconds(attempts);
-                    db.schedule_outbox_retry(row.id, attempts, unix_now() + delay, &e.to_string())?;
+                    let permanent = e.to_string().contains("missing anilist_id")
+                        || e.to_string().contains("missing mal_id");
+                    if permanent || attempts >= MAX_OUTBOX_ATTEMPTS {
+                        eprintln!(
+                            "[cinma] tracking: dropping {} update after {attempts} attempts: {e}",
+                            row.adapter
+                        );
+                        db.delete_outbox_row(row.id)?;
+                    } else {
+                        let delay = backoff_seconds(attempts);
+                        db.schedule_outbox_retry(
+                            row.id,
+                            attempts,
+                            unix_now() + delay,
+                            &e.to_string(),
+                        )?;
+                    }
                 }
             }
         }

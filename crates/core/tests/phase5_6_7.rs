@@ -388,3 +388,84 @@ fn failed_restore_leaves_the_live_database_untouched() {
     let reopened = Core::open(dir.path()).unwrap();
     assert_eq!(reopened.profiles().unwrap().len(), 3);
 }
+
+#[test]
+fn watched_items_sync_without_a_manual_drain() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(dir.path()).unwrap();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    // Mock tracking API: every request succeeds.
+    let hits = Arc::new(AtomicUsize::new(0));
+    let api_base = rt.block_on(async {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let hits = Arc::clone(&hits);
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let hits = Arc::clone(&hits);
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 16384];
+                    let _ = sock.read(&mut buf).await;
+                    hits.fetch_add(1, Ordering::SeqCst);
+                    let _ = sock
+                        .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                        .await;
+                });
+            }
+        });
+        format!("http://{addr}")
+    });
+
+    rt.block_on(core.set_feature_enabled(Feature::Tracking, true))
+        .unwrap();
+    let client = TrackingClient::with_base_urls(
+        api_base.clone(),
+        api_base.clone(),
+        api_base.clone(),
+        api_base.clone(),
+        api_base,
+    )
+    .unwrap();
+    core.set_tracking_client_override(client).unwrap();
+    core.set_tracking_app_credentials("simkl", "cid", None)
+        .unwrap();
+    unsafe { std::env::set_var("CINMA_TRACKING_SIMKL_TOKEN", "simkl_tok") };
+    core.set_tracking_adapter_enabled("simkl", true).unwrap();
+
+    core.save_watch_progress(WatchProgressInput {
+        video_id: "tt0111161".into(),
+        meta_id: "tt0111161".into(),
+        media_type: "movie".into(),
+        title: "The Shawshank Redemption".into(),
+        artwork: None,
+        season: None,
+        episode: None,
+        position_s: 8000.0,
+        duration_s: 8500.0,
+    })
+    .unwrap();
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let pending: i64 = core
+            .tracking_adapters()
+            .unwrap()
+            .iter()
+            .map(|a| a.outbox_pending)
+            .sum();
+        if pending == 0 {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "outbox was not drained automatically"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(hits.load(Ordering::SeqCst) >= 1);
+    unsafe { std::env::remove_var("CINMA_TRACKING_SIMKL_TOKEN") };
+}

@@ -81,6 +81,11 @@ pub fn get_tracking_token(profile_id: i64, adapter: &str) -> Result<Option<Strin
     read_secret(&account, Some(&env_name))
 }
 
+/// App credentials (client secret) for a tracking adapter; shared by profiles.
+pub fn set_tracking_client_secret(adapter: &str, secret: Option<&str>) -> Result<(), CoreError> {
+    write_secret(&format!("tracking.{adapter}.client_secret"), secret)
+}
+
 pub fn set_tracking_token(
     profile_id: i64,
     adapter: &str,

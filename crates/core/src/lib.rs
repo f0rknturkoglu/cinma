@@ -20,7 +20,7 @@ mod trailers;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use cinma_blobstore::BlobStore;
 use cinma_casting::ActiveCastSession;
@@ -109,6 +109,9 @@ pub struct Core {
     active_cast: Mutex<Option<Arc<ActiveCastSession>>>,
     tracking_client: Mutex<Option<TrackingClient>>,
     listeners: Mutex<Vec<Arc<dyn CoreEventListener>>>,
+    /// Lets `&self` methods start background work that needs an `Arc`.
+    me: Weak<Core>,
+    tracking_sync: Mutex<integrations::TrackingSyncState>,
 }
 
 impl Core {
@@ -117,7 +120,7 @@ impl Core {
     pub fn open(data_dir: &Path) -> Result<Arc<Self>, CoreError> {
         std::fs::create_dir_all(data_dir)?;
         let db = Database::open(&data_dir.join(DB_FILE_NAME))?;
-        Ok(Arc::new(Self {
+        let core = Arc::new_cyclic(|me| Self {
             data_dir: data_dir.to_path_buf(),
             db: Arc::new(Mutex::new(db)),
             runtime: OnceLock::new(),
@@ -131,7 +134,13 @@ impl Core {
             active_cast: Mutex::new(None),
             tracking_client: Mutex::new(None),
             listeners: Mutex::new(Vec::new()),
-        }))
+            me: me.clone(),
+            tracking_sync: Mutex::new(integrations::TrackingSyncState::default()),
+        });
+        // Deliver watch events queued before the last quit (no-op when the
+        // feature is off or the outbox is empty: no runtime is started then).
+        core.kick_tracking_sync();
+        Ok(core)
     }
 
     pub fn data_dir(&self) -> &Path {

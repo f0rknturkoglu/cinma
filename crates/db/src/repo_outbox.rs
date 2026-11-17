@@ -70,6 +70,15 @@ impl Database {
         )?)
     }
 
+    /// Earliest `next_retry_at` across all profiles, or `None` when empty.
+    pub fn next_outbox_due(&self) -> Result<Option<i64>, DbError> {
+        Ok(self
+            .conn
+            .query_row("SELECT MIN(next_retry_at) FROM sync_outbox", [], |r| {
+                r.get(0)
+            })?)
+    }
+
     pub fn delete_outbox_row(&self, id: i64) -> Result<(), DbError> {
         self.conn
             .execute("DELETE FROM sync_outbox WHERE id = ?1", [id])?;
