@@ -69,5 +69,5 @@ printf "%-4s %10s %10s %9s %13s %9s\n" med "$m_first" "$m_core" "$m_rss" "$m_fp"
 
 [ -f "$CSV" ] || echo "date,commit,runs,first_frame_ms,core_ready_ms,rss_mb,footprint_mb,idle_cpu_pct,note" > "$CSV"
 COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo none)
-echo "$(date +%Y-%m-%dT%H:%M:%S),$COMMIT,$RUNS,$m_first,$m_core,$m_rss,$m_fp,$m_cpu,${NOTE:-}" >> "$CSV"
+echo "$(date +%Y-%m-%dT%H:%M:%S),$COMMIT,$RUNS,$m_first,$m_core,$m_rss,$m_fp,$m_cpu,\"${NOTE:-}\"" >> "$CSV"
 echo "Appended medians to tools/measurements.csv" >&2
