@@ -515,7 +515,8 @@ struct SettingsView: View {
         liftAboveControls: true,
         offByDefault: false,
         preferEmbedded: false,
-        forcedWhenNativeAudio: false
+        forcedWhenNativeAudio: false,
+        hideSdh: false
     )
     @State private var playerPrefs = PlayerPreferencesFfi(
         exactSeek: true,
@@ -538,12 +539,31 @@ struct SettingsView: View {
         stallTimeoutS: 12,
         cropMode: "fit",
         audioNormalize: false,
-        downmixStereo: false
+        downmixStereo: false,
+        hideSpoilers: false,
+        rememberLastStream: true,
+        keepSourceNextEpisode: true,
+        trackBlockWords: [],
+        streamSort: "score",
+        pickerShowFilename: true,
+        fullscreenClock: true,
+        fullscreenClockEndTime: true,
+        nextEpisodeLeadS: 35,
+        stillWatchingAfterEpisodes: 0,
+        hideWatchedInCatalogs: false,
+        hideUnreleased: false,
+        episodeSortAsc: true,
+        episodeCompactLayout: false,
+        confirmOnLeave: false,
+        resumeBehavior: "always_resume",
+        volumeHud: true,
+        screenLockEnabled: true
     )
     @State private var subLangsText = "tur, eng"
     @State private var audioLangsText = "eng, jpn, tur"
     @State private var dualLangText = "eng"
     @State private var srtFontText = ""
+    @State private var blockWordsText = ""
     @State private var commands: [CommandInfo] = []
     @State private var editingCommandId: String?
     @State private var keyDraft = ""
@@ -687,6 +707,37 @@ struct SettingsView: View {
                         if val { SpotlightLibraryIndexer.indexLibraryIfEnabled(core: core) }
                     }
             }
+
+            Section(String(localized: "Catalog & Episode Browsing")) {
+                Toggle(String(localized: "Hide Episode Spoilers (Blur Unwatched)"), isOn: $playerPrefs.hideSpoilers)
+                    .onChange(of: playerPrefs.hideSpoilers) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Hide Watched Titles in Catalogs"), isOn: $playerPrefs.hideWatchedInCatalogs)
+                    .onChange(of: playerPrefs.hideWatchedInCatalogs) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Hide Unreleased Titles"), isOn: $playerPrefs.hideUnreleased)
+                    .onChange(of: playerPrefs.hideUnreleased) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Sort Episodes Ascending (1 → N)"), isOn: $playerPrefs.episodeSortAsc)
+                    .onChange(of: playerPrefs.episodeSortAsc) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Compact Episode List"), isOn: $playerPrefs.episodeCompactLayout)
+                    .onChange(of: playerPrefs.episodeCompactLayout) { _, _ in savePlayerPrefs() }
+                Picker(String(localized: "Stream Sort Order"), selection: $playerPrefs.streamSort) {
+                    Text(String(localized: "Recommended (Score)")).tag("score")
+                    Text(String(localized: "Most Seeders")).tag("seeds")
+                    Text(String(localized: "Largest File First")).tag("size_desc")
+                    Text(String(localized: "Smallest File First")).tag("size_asc")
+                }
+                .onChange(of: playerPrefs.streamSort) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Raw Filename in Stream Picker"), isOn: $playerPrefs.pickerShowFilename)
+                    .onChange(of: playerPrefs.pickerShowFilename) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Remember Last Source per Series"), isOn: $playerPrefs.rememberLastStream)
+                    .onChange(of: playerPrefs.rememberLastStream) { _, _ in savePlayerPrefs() }
+                HStack {
+                    Text(String(localized: "Blocked Stream Keywords"))
+                    Spacer()
+                    TextField("CAM, HDCAM, TS", text: $blockWordsText)
+                        .frame(width: 200)
+                        .onSubmit { savePlayerPrefs() }
+                }
+            }
         }
         .formStyle(.grouped)
     }
@@ -761,6 +812,8 @@ struct SettingsView: View {
                     .onChange(of: subSettings.preferEmbedded) { _, _ in saveSubSettings() }
                 Toggle(String(localized: "Forced Subtitles Only When Audio Matches Native Language"), isOn: $subSettings.forcedWhenNativeAudio)
                     .onChange(of: subSettings.forcedWhenNativeAudio) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Hide SDH / Hearing-Impaired Cues"), isOn: $subSettings.hideSdh)
+                    .onChange(of: subSettings.hideSdh) { _, _ in saveSubSettings() }
             }
 
             Section(String(localized: "SRT Appearance")) {
@@ -859,6 +912,24 @@ struct SettingsView: View {
                     .onChange(of: playerPrefs.pauseMinimized) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Pause When Window Loses Focus"), isOn: $playerPrefs.pauseUnfocused)
                     .onChange(of: playerPrefs.pauseUnfocused) { _, _ in savePlayerPrefs() }
+                Picker(String(localized: "Resume Playback"), selection: $playerPrefs.resumeBehavior) {
+                    Text(String(localized: "Always Resume")).tag("always_resume")
+                    Text(String(localized: "Ask Each Time")).tag("ask")
+                    Text(String(localized: "Always Start Over")).tag("always_start_over")
+                }
+                .onChange(of: playerPrefs.resumeBehavior) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Confirm Before Leaving Playback"), isOn: $playerPrefs.confirmOnLeave)
+                    .onChange(of: playerPrefs.confirmOnLeave) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Volume HUD"), isOn: $playerPrefs.volumeHud)
+                    .onChange(of: playerPrefs.volumeHud) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Enable Player Screen Lock"), isOn: $playerPrefs.screenLockEnabled)
+                    .onChange(of: playerPrefs.screenLockEnabled) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Clock in Player HUD"), isOn: $playerPrefs.fullscreenClock)
+                    .onChange(of: playerPrefs.fullscreenClock) { _, _ in savePlayerPrefs() }
+                if playerPrefs.fullscreenClock {
+                    Toggle(String(localized: "Show Estimated Finish Time"), isOn: $playerPrefs.fullscreenClockEndTime)
+                        .onChange(of: playerPrefs.fullscreenClockEndTime) { _, _ in savePlayerPrefs() }
+                }
             }
 
             Section(String(localized: "Video & Audio")) {
@@ -916,6 +987,17 @@ struct SettingsView: View {
                     .onChange(of: playerPrefs.autoSkipOutro) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Auto-Play Next Episode"), isOn: $playerPrefs.autoplayNext)
                     .onChange(of: playerPrefs.autoplayNext) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Keep Same Source for Next Episode"), isOn: $playerPrefs.keepSourceNextEpisode)
+                    .onChange(of: playerPrefs.keepSourceNextEpisode) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Up Next Lead Time")): \(playerPrefs.nextEpisodeLeadS)s", value: $playerPrefs.nextEpisodeLeadS, in: 10...90, step: 5)
+                    .onChange(of: playerPrefs.nextEpisodeLeadS) { _, _ in savePlayerPrefs() }
+                Stepper(
+                    "\(String(localized: "Pause \"Still Watching\" After")): \(playerPrefs.stillWatchingAfterEpisodes == 0 ? String(localized: "Off") : "\(playerPrefs.stillWatchingAfterEpisodes) ep")",
+                    value: $playerPrefs.stillWatchingAfterEpisodes,
+                    in: 0...10,
+                    step: 1
+                )
+                .onChange(of: playerPrefs.stillWatchingAfterEpisodes) { _, _ in savePlayerPrefs() }
                 if playerPrefs.autoplayNext {
                     Stepper("\(String(localized: "Auto-Play Countdown")): \(playerPrefs.autoplayCountdownS)s", value: $playerPrefs.autoplayCountdownS, in: 3...30)
                         .onChange(of: playerPrefs.autoplayCountdownS) { _, _ in savePlayerPrefs() }
@@ -1103,6 +1185,7 @@ struct SettingsView: View {
         }
         if let p = try? core.playerPreferences() {
             playerPrefs = p
+            blockWordsText = p.trackBlockWords.joined(separator: ", ")
         }
         commands = (try? core.commands()) ?? []
     }
@@ -1121,6 +1204,10 @@ struct SettingsView: View {
     }
 
     private func savePlayerPrefs() {
+        playerPrefs.trackBlockWords = blockWordsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
         try? core.setPlayerPreferences(prefs: playerPrefs)
     }
 

@@ -527,14 +527,16 @@ final class HomeBrowserViewController: NSViewController {
     }
 
     private func applyTrending(movies: [MetaPreviewInfo], series: [MetaPreviewInfo]) {
+        let visMovies = CatalogVisibilityFilter.apply(movies, core: core)
+        let visSeries = CatalogVisibilityFilter.apply(series, core: core)
         let hasTmdb = (try? core.hasTmdbKey()) ?? false
         let src = hasTmdb ? "TMDB" : String(localized: "Addon Catalog")
-        trendingMoviesRail.update(source: src, content: .posters(movies))
-        trendingMoviesRail.isHidden = movies.isEmpty
-        trendingSeriesRail.update(source: src, content: .posters(series))
-        trendingSeriesRail.isHidden = series.isEmpty
+        trendingMoviesRail.update(source: src, content: .posters(visMovies))
+        trendingMoviesRail.isHidden = visMovies.isEmpty
+        trendingSeriesRail.update(source: src, content: .posters(visSeries))
+        trendingSeriesRail.isHidden = visSeries.isEmpty
 
-        let candidates = Array((movies.prefix(3) + series.prefix(2)))
+        let candidates = Array((visMovies.prefix(3) + visSeries.prefix(2)))
         if !candidates.isEmpty {
             heroItems = candidates
             heroIndex = heroIndex % candidates.count
@@ -567,14 +569,15 @@ final class HomeBrowserViewController: NSViewController {
     }
 
     private func appendAddonRail(_ batch: CatalogBatchInfo) {
-        guard batch.error == nil, !batch.items.isEmpty else { return }
+        let visItems = CatalogVisibilityFilter.apply(batch.items, core: core)
+        guard batch.error == nil, !visItems.isEmpty else { return }
         // Avoid duplicating if there are already 6 rails.
         guard dynamicRailsStack.arrangedSubviews.count < 6 else { return }
         let rail = CatalogRailView(title: batch.catalogName, source: batch.addonName)
         rail.translatesAutoresizingMaskIntoConstraints = false
         rail.heightAnchor.constraint(equalToConstant: 344).isActive = true
         rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
-        rail.update(content: .posters(batch.items))
+        rail.update(content: .posters(visItems))
         dynamicRailsStack.addArrangedSubview(rail)
         rail.widthAnchor.constraint(equalTo: dynamicRailsStack.widthAnchor).isActive = true
     }
@@ -685,5 +688,24 @@ final class CatalogBatchCollector: CatalogBatchObserver {
 
     func onBatch(batch: CatalogBatchInfo) {
         handler(batch)
+    }
+}
+
+enum CatalogVisibilityFilter {
+    static func apply(_ items: [MetaPreviewInfo], core: CinmaCore) -> [MetaPreviewInfo] {
+        guard let prefs = try? core.playerPreferences() else { return items }
+        guard prefs.hideWatchedInCatalogs || prefs.hideUnreleased else { return items }
+        let watched = prefs.hideWatchedInCatalogs ? Set((try? core.watchedMetaIds()) ?? []) : []
+        let currentYear = Calendar.current.component(.year, from: Date())
+        return items.filter { item in
+            if prefs.hideWatchedInCatalogs && watched.contains(item.id) { return false }
+            if prefs.hideUnreleased, let year = extractYear(item.releaseInfo), year > currentYear { return false }
+            return true
+        }
+    }
+
+    private static func extractYear(_ text: String?) -> Int? {
+        guard let text, let range = text.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression) else { return nil }
+        return Int(text[range])
     }
 }

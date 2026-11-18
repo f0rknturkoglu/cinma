@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
-use cinma_core::{Core, PlayerPreferences, SubtitleSearchRequest, SubtitleSettings, VideoOffsets};
+use cinma_core::{
+    Core, PlayerPreferences, PreferredSeriesSource, Stream, StreamCandidate, SubtitleSearchRequest,
+    SubtitleSettings, VideoOffsets, WatchProgressInput,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
@@ -184,4 +187,119 @@ fn wave1_settings_persist_and_deserialize_legacy_defaults() {
     };
     core.set_player_preferences(&updated_prefs).unwrap();
     assert_eq!(core.player_preferences().unwrap(), updated_prefs);
+}
+
+#[test]
+fn wave2_settings_source_lock_watched_filter_and_stream_sorting() {
+    let dir = tempfile::tempdir().unwrap();
+    let core: Arc<Core> = Core::open(dir.path()).unwrap();
+
+    let mut sub = core.subtitle_settings().unwrap();
+    sub.hide_sdh = true;
+    core.set_subtitle_settings(&sub).unwrap();
+    assert!(core.subtitle_settings().unwrap().hide_sdh);
+
+    let w2_prefs = PlayerPreferences {
+        hide_spoilers: true,
+        remember_last_stream: false,
+        keep_source_next_episode: false,
+        track_block_words: vec!["HDCAM".into(), "CAM".into()],
+        stream_sort: "seeds".into(),
+        picker_show_filename: false,
+        fullscreen_clock: false,
+        fullscreen_clock_end_time: false,
+        next_episode_lead_s: 45,
+        still_watching_after_episodes: 3,
+        hide_watched_in_catalogs: true,
+        hide_unreleased: true,
+        episode_sort_asc: false,
+        episode_compact_layout: true,
+        confirm_on_leave: true,
+        resume_behavior: "ask".into(),
+        volume_hud: false,
+        screen_lock_enabled: false,
+        ..Default::default()
+    };
+    core.set_player_preferences(&w2_prefs).unwrap();
+    assert_eq!(core.player_preferences().unwrap(), w2_prefs);
+
+    let src = PreferredSeriesSource {
+        addon_name: Some("Torrentio".into()),
+        binge_group: Some("bg-1080p".into()),
+        resolution: Some("1080p".into()),
+    };
+    core.set_series_source("tt1234", &src).unwrap();
+    assert_eq!(core.series_source("tt1234").unwrap(), src);
+
+    // Watched movie vs partially watched series: only fully completed meta without active CW appears.
+    core.save_watch_progress(WatchProgressInput {
+        video_id: "tt111".into(),
+        meta_id: "tt111".into(),
+        media_type: "movie".into(),
+        title: "Done Movie".into(),
+        artwork: None,
+        season: None,
+        episode: None,
+        position_s: 5800.0,
+        duration_s: 6000.0,
+    })
+    .unwrap();
+    core.save_watch_progress(WatchProgressInput {
+        video_id: "tt222:1:1".into(),
+        meta_id: "tt222".into(),
+        media_type: "series".into(),
+        title: "Series Ep1".into(),
+        artwork: None,
+        season: Some(1),
+        episode: Some(1),
+        position_s: 1200.0,
+        duration_s: 1200.0,
+    })
+    .unwrap();
+    core.save_watch_progress(WatchProgressInput {
+        video_id: "tt222:1:2".into(),
+        meta_id: "tt222".into(),
+        media_type: "series".into(),
+        title: "Series Ep2".into(),
+        artwork: None,
+        season: Some(1),
+        episode: Some(2),
+        position_s: 300.0,
+        duration_s: 1200.0,
+    })
+    .unwrap();
+    let hidden = core.watched_meta_ids().unwrap();
+    assert_eq!(hidden, vec!["tt111".to_owned()]);
+
+    // Stream block-word filter + seeders sort.
+    let s_cam: Stream =
+        serde_json::from_str(r#"{"name":"CAM","title":"Movie.2025.HDCAM.mp4","url":"http://a"}"#)
+            .unwrap();
+    let s_low: Stream = serde_json::from_str(
+        r#"{"name":"1080p","title":"Movie.1080p.WEB-DL 👤 12 💾 2.0 GB","infoHash":"1111111111111111111111111111111111111111"}"#,
+    )
+    .unwrap();
+    let s_high_seeds: Stream = serde_json::from_str(
+        r#"{"name":"720p","title":"Movie.720p.WEB-DL 👤 240 💾 1.2 GB","infoHash":"2222222222222222222222222222222222222222"}"#,
+    )
+    .unwrap();
+    let ranked = core.rank_streams(
+        vec![
+            StreamCandidate {
+                addon_name: "Test".into(),
+                stream: s_cam,
+            },
+            StreamCandidate {
+                addon_name: "Test".into(),
+                stream: s_low,
+            },
+            StreamCandidate {
+                addon_name: "Test".into(),
+                stream: s_high_seeds,
+            },
+        ],
+        None,
+    );
+    assert_eq!(ranked.ranked.len(), 2);
+    assert_eq!(ranked.ranked[0].parsed.seeders, Some(240));
 }

@@ -141,6 +141,28 @@ pub fn prepare_subtitle_file(
     encoding_hint: Option<&str>,
     lang_hint: Option<&str>,
 ) -> Result<PreparedSubtitle, SubtitleError> {
+    prepare_subtitle_file_with_options(
+        raw_bytes,
+        cache_dir,
+        cache_stem,
+        ext_hint,
+        encoding_hint,
+        lang_hint,
+        false,
+    )
+}
+
+/// Same as [`prepare_subtitle_file`], optionally stripping SDH cues (`[...]`, `(...)`, `♪`)
+/// from SRT tracks when `strip_sdh` is enabled.
+pub fn prepare_subtitle_file_with_options(
+    raw_bytes: &[u8],
+    cache_dir: &Path,
+    cache_stem: &str,
+    ext_hint: Option<&str>,
+    encoding_hint: Option<&str>,
+    lang_hint: Option<&str>,
+    strip_sdh: bool,
+) -> Result<PreparedSubtitle, SubtitleError> {
     std::fs::create_dir_all(cache_dir)?;
     let unpacked = unpack_if_gzipped(raw_bytes)?;
     let decoded = decode_subtitle_bytes(&unpacked, encoding_hint, lang_hint);
@@ -155,23 +177,100 @@ pub fn prepare_subtitle_file(
                 '_'
             }
         })
-        .take(80)
+        .take(72)
         .collect();
-    let filename = if safe_stem.is_empty() {
-        format!("sub.{ext}")
+    let suffix = if strip_sdh && ext == "srt" {
+        "_nosdh"
     } else {
-        format!("{safe_stem}.{ext}")
+        ""
+    };
+    let filename = if safe_stem.is_empty() {
+        format!("sub{suffix}.{ext}")
+    } else {
+        format!("{safe_stem}{suffix}.{ext}")
     };
     let path = cache_dir.join(filename);
+    let output_text = if strip_sdh && ext == "srt" {
+        strip_sdh_cues_srt(&decoded.text)
+    } else {
+        decoded.text
+    };
     // Write UTF-8 cleanly so libmpv / libass render Turkish characters identically;
     // ASS/SSA script sections and style tags stay verbatim (never restyled).
-    std::fs::write(&path, decoded.text.as_bytes())?;
+    std::fs::write(&path, output_text.as_bytes())?;
     Ok(PreparedSubtitle {
         local_path: path,
         format: ext.to_owned(),
         detected_encoding: decoded.detected_encoding,
         restyled_ass: false,
     })
+}
+
+/// Strips inline and standalone SDH annotations (`[...]`, `(...)`, `♪`, empty all-caps speaker
+/// cues) from SRT subtitle text and renumbers remaining cues sequentially.
+pub fn strip_sdh_cues_srt(text: &str) -> String {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut out = String::with_capacity(normalized.len());
+    let mut next_index = 1usize;
+
+    for block in normalized.split("\n\n") {
+        let lines: Vec<&str> = block
+            .lines()
+            .map(str::trim_end)
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        let Some(ts_pos) = lines.iter().position(|l| l.contains("-->")) else {
+            continue;
+        };
+        let ts_line = lines[ts_pos].trim();
+        let cleaned_lines: Vec<String> = lines[(ts_pos + 1)..]
+            .iter()
+            .filter_map(|line| clean_sdh_line(line))
+            .collect();
+        if cleaned_lines.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&format!(
+            "{next_index}\n{ts_line}\n{}\n",
+            cleaned_lines.join("\n")
+        ));
+        next_index += 1;
+    }
+    out
+}
+
+fn clean_sdh_line(line: &str) -> Option<String> {
+    if line.contains('♪') || line.contains('♫') {
+        return None;
+    }
+    let mut stripped = String::with_capacity(line.len());
+    let mut square_depth = 0usize;
+    let mut paren_depth = 0usize;
+    for ch in line.chars() {
+        match ch {
+            '[' => square_depth += 1,
+            ']' if square_depth > 0 => square_depth -= 1,
+            '(' if square_depth == 0 => paren_depth += 1,
+            ')' if square_depth == 0 && paren_depth > 0 => paren_depth -= 1,
+            _ if square_depth == 0 && paren_depth == 0 => stripped.push(ch),
+            _ => {}
+        }
+    }
+    let collapsed: String = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = collapsed.trim();
+    if trimmed.is_empty() || trimmed == "-" {
+        return None;
+    }
+    if let Some(before_colon) = trimmed.strip_suffix(':') {
+        let label = before_colon.trim_start_matches('-').trim();
+        if !label.is_empty() && !label.chars().any(char::is_lowercase) {
+            return None;
+        }
+    }
+    Some(trimmed.to_owned())
 }
 
 fn detect_format_ext<'a>(text: &str, hint: Option<&'a str>) -> &'a str {
@@ -192,5 +291,43 @@ fn detect_format_ext<'a>(text: &str, hint: Option<&'a str>) -> &'a str {
         "vtt"
     } else {
         "srt"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_sdh_cues_srt;
+
+    #[test]
+    fn strips_sdh_cues_and_renumbers_srt() {
+        let src = "\
+1
+00:00:01,000 --> 00:00:02,000
+[door slams]
+
+2
+00:00:03,000 --> 00:00:05,000
+MAN: (sighs)
+Hello there! [music playing]
+
+3
+00:00:06,000 --> 00:00:08,000
+♪ Upbeat jazz ♪
+
+4
+00:00:09,000 --> 00:00:11,000
+Wait for me.
+";
+        let cleaned = strip_sdh_cues_srt(src);
+        let expected = "\
+1
+00:00:03,000 --> 00:00:05,000
+Hello there!
+
+2
+00:00:09,000 --> 00:00:11,000
+Wait for me.
+";
+        assert_eq!(cleaned, expected);
     }
 }

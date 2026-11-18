@@ -1,5 +1,7 @@
 //! Profile management, onboarding flag, library items, and watch progress.
 
+use std::collections::HashSet;
+
 use cinma_db::{LibraryItemRow, ProfileId, ProfileRow, WatchProgressRow};
 
 use crate::events::CoreEvent;
@@ -175,6 +177,23 @@ impl Core {
         let profile = self.active_profile()?;
         let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
         Ok(db.progress_for_meta(profile, meta_id)?)
+    }
+
+    /// Meta IDs that have watched entries and are not currently in-progress in Continue Watching.
+    pub fn watched_meta_ids(&self) -> Result<Vec<String>, CoreError> {
+        let profile = self.active_profile()?;
+        let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
+        let watched = db.watched_items(profile, 2000)?;
+        let active = db.continue_watching(profile, 500)?;
+        let in_progress: HashSet<String> = active.into_iter().map(|r| r.meta_id).collect();
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        for row in watched {
+            if !in_progress.contains(&row.meta_id) && seen.insert(row.meta_id.clone()) {
+                out.push(row.meta_id);
+            }
+        }
+        Ok(out)
     }
 
     pub fn save_watch_progress(&self, input: WatchProgressInput) -> Result<(), CoreError> {

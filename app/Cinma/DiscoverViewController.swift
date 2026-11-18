@@ -255,7 +255,8 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     }
 
     private func appendSearchItems(_ incoming: [MetaPreviewInfo], prepend: Bool = false) {
-        let fresh = incoming.filter { seenIds.insert("\($0.mediaType):\($0.id)").inserted }
+        let visible = CatalogVisibilityFilter.apply(incoming, core: core)
+        let fresh = visible.filter { seenIds.insert("\($0.mediaType):\($0.id)").inserted }
         guard !fresh.isEmpty else { return }
         if prepend {
             items.insert(contentsOf: fresh, at: 0)
@@ -305,9 +306,10 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
                 )
                 guard !Task.isCancelled, let self else { return }
                 self.spinner.stopAnimation(nil)
-                let fresh = page.items.filter { self.seenIds.insert("\($0.mediaType):\($0.id)").inserted }
+                let visible = CatalogVisibilityFilter.apply(page.items, core: self.core)
+                let fresh = visible.filter { self.seenIds.insert("\($0.mediaType):\($0.id)").inserted }
                 self.items.append(contentsOf: fresh)
-                self.hasMore = page.hasMore && cat.supportsSkip && !fresh.isEmpty
+                self.hasMore = page.hasMore && cat.supportsSkip && !page.items.isEmpty
                 self.loadMoreButton.isHidden = !self.hasMore
                 self.emptyStack.isHidden = !self.items.isEmpty
                 if self.items.isEmpty {

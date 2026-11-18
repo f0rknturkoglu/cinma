@@ -7,7 +7,7 @@ use std::sync::Arc;
 use cinma_stremio::SubtitleQuery;
 use cinma_subtitles::{
     OpenSubtitlesClient, PreparedSubtitle, SubtitleCandidate, SubtitleQueryParams,
-    candidate_from_stremio, prepare_subtitle_file, rank_candidates,
+    candidate_from_stremio, prepare_subtitle_file_with_options, rank_candidates,
 };
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,8 @@ pub struct SubtitleSettings {
     pub prefer_embedded: bool,
     /// Only auto-select forced subtitles when the active audio matches a preferred native/audio language.
     pub forced_when_native_audio: bool,
+    /// Filter out SDH / hearing-impaired tracks and strip `[...]` / `(...)` cues from SRT files.
+    pub hide_sdh: bool,
 }
 
 impl Default for SubtitleSettings {
@@ -77,6 +79,7 @@ impl Default for SubtitleSettings {
             off_by_default: false,
             prefer_embedded: false,
             forced_when_native_audio: false,
+            hide_sdh: false,
         }
     }
 }
@@ -122,6 +125,42 @@ pub struct PlayerPreferences {
     pub audio_normalize: bool,
     /// Downmix multichannel audio to stereo (`2.0`).
     pub downmix_stereo: bool,
+    /// Blur unwatched episode thumbnails and hide episode plot descriptions.
+    pub hide_spoilers: bool,
+    /// Remember last selected source/addon/resolution per series.
+    pub remember_last_stream: bool,
+    /// Keep the same addon / bingeGroup when auto-playing the next episode.
+    pub keep_source_next_episode: bool,
+    /// Case-insensitive keywords/release groups blocked from the stream picker.
+    pub track_block_words: Vec<String>,
+    /// Stream picker ordering: `"score"` | `"seeds"` | `"size_desc"` | `"size_asc"`.
+    pub stream_sort: String,
+    /// Show raw filename/title line inside stream picker cards.
+    pub picker_show_filename: bool,
+    /// Display wall-clock time in the player HUD.
+    pub fullscreen_clock: bool,
+    /// Include estimated finish time alongside the player HUD clock.
+    pub fullscreen_clock_end_time: bool,
+    /// Seconds remaining before episode end to trigger the Up Next card (`10..=90`).
+    pub next_episode_lead_s: u32,
+    /// Pause and ask "Still watching?" after N auto-played episodes (`0` disables).
+    pub still_watching_after_episodes: u32,
+    /// Hide fully watched titles in Home/Discover catalog rows.
+    pub hide_watched_in_catalogs: bool,
+    /// Hide titles with a future release year from catalogs.
+    pub hide_unreleased: bool,
+    /// Sort series episodes ascending (`1..N`) when true, descending (`N..1`) when false.
+    pub episode_sort_asc: bool,
+    /// Render series episode rows in a compact text-first layout.
+    pub episode_compact_layout: bool,
+    /// Ask for confirmation before leaving active playback.
+    pub confirm_on_leave: bool,
+    /// Playback resume behavior: `"always_resume"` | `"ask"` | `"always_start_over"`.
+    pub resume_behavior: String,
+    /// Show transient volume percentage HUD toast when changing volume.
+    pub volume_hud: bool,
+    /// Show the screen-lock toggle button in the player bar.
+    pub screen_lock_enabled: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -148,8 +187,34 @@ impl Default for PlayerPreferences {
             crop_mode: "fit".to_owned(),
             audio_normalize: false,
             downmix_stereo: false,
+            hide_spoilers: false,
+            remember_last_stream: true,
+            keep_source_next_episode: true,
+            track_block_words: Vec::new(),
+            stream_sort: "score".to_owned(),
+            picker_show_filename: true,
+            fullscreen_clock: true,
+            fullscreen_clock_end_time: true,
+            next_episode_lead_s: 35,
+            still_watching_after_episodes: 0,
+            hide_watched_in_catalogs: false,
+            hide_unreleased: false,
+            episode_sort_asc: true,
+            episode_compact_layout: false,
+            confirm_on_leave: false,
+            resume_behavior: "always_resume".to_owned(),
+            volume_hud: true,
+            screen_lock_enabled: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct PreferredSeriesSource {
+    pub addon_name: Option<String>,
+    pub binge_group: Option<String>,
+    pub resolution: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -215,6 +280,18 @@ impl Core {
         offsets: &VideoOffsets,
     ) -> Result<(), CoreError> {
         self.save_profile_json(&format!("offset.{video_id}"), offsets)
+    }
+
+    pub fn series_source(&self, meta_id: &str) -> Result<PreferredSeriesSource, CoreError> {
+        self.load_profile_json(&format!("series_source.{meta_id}"))
+    }
+
+    pub fn set_series_source(
+        &self,
+        meta_id: &str,
+        source: &PreferredSeriesSource,
+    ) -> Result<(), CoreError> {
+        self.save_profile_json(&format!("series_source.{meta_id}"), source)
     }
 
     fn load_profile_json<T: serde::de::DeserializeOwned + Default>(
@@ -351,6 +428,9 @@ impl Core {
                 all.append(&mut batch);
             }
         }
+        if settings.hide_sdh {
+            all.retain(|c| !c.is_sdh);
+        }
         rank_candidates(&mut all, &settings.preferred_langs);
         Ok(all)
     }
@@ -413,13 +493,18 @@ impl Core {
                 .await?
             };
 
-        prepare_subtitle_file(
+        let strip_sdh = self
+            .subtitle_settings()
+            .map(|s| s.hide_sdh)
+            .unwrap_or(false);
+        prepare_subtitle_file_with_options(
             &bytes_and_ext.0,
             &cache_dir,
             &format!("{}_{}", candidate.lang, candidate.id),
             bytes_and_ext.1.as_deref(),
             candidate.encoding_hint.as_deref(),
             Some(&candidate.lang),
+            strip_sdh,
         )
         .map_err(|e| CoreError::Invalid(e.to_string()))
     }
@@ -430,8 +515,20 @@ impl Core {
         let bytes = std::fs::read(path)?;
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("local");
         let ext = path.extension().and_then(|s| s.to_str());
-        prepare_subtitle_file(&bytes, &self.subtitles_cache_dir(), stem, ext, None, None)
-            .map_err(|e| CoreError::Invalid(e.to_string()))
+        let strip_sdh = self
+            .subtitle_settings()
+            .map(|s| s.hide_sdh)
+            .unwrap_or(false);
+        prepare_subtitle_file_with_options(
+            &bytes,
+            &self.subtitles_cache_dir(),
+            stem,
+            ext,
+            None,
+            None,
+            strip_sdh,
+        )
+        .map_err(|e| CoreError::Invalid(e.to_string()))
     }
 
     fn subtitles_cache_dir(&self) -> PathBuf {

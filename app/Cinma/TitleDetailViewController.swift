@@ -461,6 +461,28 @@ final class TitleDetailViewController: NSViewController {
             btn.heightAnchor.constraint(equalToConstant: 32).isActive = true
             seasonsStack.addArrangedSubview(btn)
         }
+        let prefs = try? core.playerPreferences()
+        let sortAsc = prefs?.episodeSortAsc ?? true
+        let sortBtn = CinemaTheme.makePillButton(
+            title: sortAsc ? "1→N" : "N→1",
+            symbol: "arrow.up.arrow.down",
+            primary: false,
+            target: self,
+            action: #selector(toggleEpisodeSort)
+        )
+        sortBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        seasonsStack.addArrangedSubview(sortBtn)
+
+        let compact = prefs?.episodeCompactLayout ?? false
+        let layoutBtn = CinemaTheme.makePillButton(
+            title: compact ? String(localized: "Detailed") : String(localized: "Compact"),
+            symbol: compact ? "rectangle.grid.1x2" : "list.bullet",
+            primary: compact,
+            target: self,
+            action: #selector(toggleEpisodeLayout)
+        )
+        layoutBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        seasonsStack.addArrangedSubview(layoutBtn)
     }
 
     private func loadSeason(_ season: UInt32) {
@@ -485,7 +507,12 @@ final class TitleDetailViewController: NSViewController {
             v.removeFromSuperview()
         }
 
-        for ep in episodes {
+        let prefs = try? core.playerPreferences()
+        let ordered = (prefs?.episodeSortAsc ?? true) ? episodes : Array(episodes.reversed())
+        let compact = prefs?.episodeCompactLayout ?? false
+        let hideSpoilers = prefs?.hideSpoilers ?? false
+
+        for ep in ordered {
             let isSelected = ep.id == selectedEpisode?.id
             let row = NSButton(title: "", target: self, action: #selector(episodeClicked(_:)))
             row.identifier = NSUserInterfaceItemIdentifier(ep.id)
@@ -496,28 +523,13 @@ final class TitleDetailViewController: NSViewController {
             row.layer?.borderWidth = 1
             row.layer?.borderColor = (isSelected ? CinemaTheme.highlightBorder : CinemaTheme.cardBorder).cgColor
 
-            let thumb = AspectFillImageView()
-            thumb.layer?.cornerRadius = 10
-            thumb.layer?.masksToBounds = true
-            thumb.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor
-            thumb.translatesAutoresizingMaskIntoConstraints = false
-            var task: Task<Void, Never>?
-            thumb.setRemoteImage(ep.thumbnail ?? richMeta?.meta.background, pointSize: NSSize(width: 176, height: 99), taskStorage: &task)
-            if let task { episodeThumbTasks.append(task) }
-
             let num = ep.episode ?? ep.number ?? 0
-            let title = NSTextField(labelWithString: "\(num). \(ep.title ?? "")")
-            title.font = .systemFont(ofSize: 14.5, weight: .semibold)
-            title.textColor = CinemaTheme.textPrimary
-            title.lineBreakMode = .byTruncatingTail
-
-            let sub = NSTextField(labelWithString: ep.released ?? "")
-            sub.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-            sub.textColor = CinemaTheme.textMuted
-
             let prog = progressByVideo[ep.id]
+            let isWatched = prog?.watched == true
+            let hideSpoiler = hideSpoilers && !isWatched
+
             let statusText: String
-            if prog?.watched == true {
+            if isWatched {
                 statusText = String(localized: "Watched")
             } else if let p = prog, p.durationS > 0 {
                 let leftMin = max(1, Int(((p.durationS - p.positionS) / 60).rounded()))
@@ -527,9 +539,90 @@ final class TitleDetailViewController: NSViewController {
             }
             let statusLabel = NSTextField(labelWithString: statusText)
             statusLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-            statusLabel.textColor = prog?.watched == true ? CinemaTheme.green : CinemaTheme.accent
+            statusLabel.textColor = isWatched ? CinemaTheme.green : CinemaTheme.accent
 
-            let textCol = NSStackView(views: [title, sub, statusLabel])
+            if compact {
+                let compactTitle = NSTextField(labelWithString: "\(num). \(ep.title ?? "")")
+                compactTitle.font = .systemFont(ofSize: 13.5, weight: .semibold)
+                compactTitle.textColor = CinemaTheme.textPrimary
+                compactTitle.lineBreakMode = .byTruncatingTail
+                compactTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+                let dateLabel = NSTextField(labelWithString: ep.released ?? "")
+                dateLabel.font = .monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
+                dateLabel.textColor = CinemaTheme.textMuted
+
+                let spacer = NSView()
+                spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+                let hStack = NSStackView(views: [compactTitle, spacer, dateLabel, statusLabel])
+                hStack.orientation = .horizontal
+                hStack.alignment = .centerY
+                hStack.spacing = 10
+                hStack.translatesAutoresizingMaskIntoConstraints = false
+                row.addSubview(hStack)
+                NSLayoutConstraint.activate([
+                    hStack.topAnchor.constraint(equalTo: row.topAnchor, constant: 10),
+                    hStack.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -10),
+                    hStack.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 14),
+                    hStack.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -14),
+                ])
+                episodesStack.addArrangedSubview(row)
+                row.widthAnchor.constraint(equalTo: episodesStack.widthAnchor).isActive = true
+                continue
+            }
+
+            let thumb = AspectFillImageView()
+            thumb.layer?.cornerRadius = 10
+            thumb.layer?.masksToBounds = true
+            thumb.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor
+            thumb.translatesAutoresizingMaskIntoConstraints = false
+            var task: Task<Void, Never>?
+            thumb.setRemoteImage(ep.thumbnail ?? richMeta?.meta.background, pointSize: NSSize(width: 176, height: 99), taskStorage: &task)
+            if let task { episodeThumbTasks.append(task) }
+
+            if hideSpoiler {
+                let blur = NSVisualEffectView()
+                blur.material = .hudWindow
+                blur.blendingMode = .withinWindow
+                blur.state = .active
+                blur.translatesAutoresizingMaskIntoConstraints = false
+                let eye = NSImageView(
+                    image: NSImage(systemSymbolName: "eye.slash.fill", accessibilityDescription: String(localized: "Spoiler Hidden")) ?? NSImage()
+                )
+                eye.contentTintColor = CinemaTheme.textSecondary
+                eye.translatesAutoresizingMaskIntoConstraints = false
+                blur.addSubview(eye)
+                thumb.addSubview(blur)
+                NSLayoutConstraint.activate([
+                    blur.topAnchor.constraint(equalTo: thumb.topAnchor),
+                    blur.bottomAnchor.constraint(equalTo: thumb.bottomAnchor),
+                    blur.leadingAnchor.constraint(equalTo: thumb.leadingAnchor),
+                    blur.trailingAnchor.constraint(equalTo: thumb.trailingAnchor),
+                    eye.centerXAnchor.constraint(equalTo: blur.centerXAnchor),
+                    eye.centerYAnchor.constraint(equalTo: blur.centerYAnchor),
+                ])
+            }
+
+            let title = NSTextField(labelWithString: "\(num). \(ep.title ?? "")")
+            title.font = .systemFont(ofSize: 14.5, weight: .semibold)
+            title.textColor = CinemaTheme.textPrimary
+            title.lineBreakMode = .byTruncatingTail
+
+            let sub = NSTextField(labelWithString: ep.released ?? "")
+            sub.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+            sub.textColor = CinemaTheme.textMuted
+
+            let overviewText = hideSpoiler
+                ? String(localized: "Spoiler hidden until watched")
+                : (ep.overview ?? "")
+            let overviewLabel = NSTextField(wrappingLabelWithString: overviewText)
+            overviewLabel.font = .systemFont(ofSize: 12, weight: .regular)
+            overviewLabel.textColor = CinemaTheme.textSecondary
+            overviewLabel.maximumNumberOfLines = 2
+            overviewLabel.isHidden = overviewText.isEmpty
+
+            let textCol = NSStackView(views: [title, sub, overviewLabel, statusLabel])
             textCol.orientation = .vertical
             textCol.alignment = .leading
             textCol.spacing = 4
@@ -669,6 +762,16 @@ final class TitleDetailViewController: NSViewController {
             btn.heightAnchor.constraint(equalToConstant: 28).isActive = true
             streamFilterStack.addArrangedSubview(btn)
         }
+        let sortMode = (try? core.playerPreferences())?.streamSort ?? "score"
+        let sortBtn = CinemaTheme.makePillButton(
+            title: Self.sortButtonTitle(sortMode),
+            symbol: "arrow.up.arrow.down",
+            primary: false,
+            target: self,
+            action: #selector(cycleStreamSort)
+        )
+        sortBtn.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        streamFilterStack.addArrangedSubview(sortBtn)
     }
 
     private func renderRankedStreams() {
@@ -679,13 +782,24 @@ final class TitleDetailViewController: NSViewController {
         guard !accumulatedStreams.isEmpty else { return }
         guard let result = rankedWithDebrid ?? (try? core.rankStreams(streams: accumulatedStreams, preferences: nil)) else { return }
 
-        let filtered = result.ranked.filter { item in
+        var filtered = result.ranked.filter { item in
             switch activeFilter {
             case .all: true
             case .uhd2160: item.parsed.resolution == "4K"
             case .fhd1080: item.parsed.resolution == "1080p"
             case .under10Gb: (item.parsed.sizeBytes ?? 0) <= 10 * 1024 * 1024 * 1024
             case .hdr: !item.parsed.hdrBadges.isEmpty
+            }
+        }
+        let prefs = try? core.playerPreferences()
+        if prefs?.rememberLastStream ?? true {
+            let metaId = richMeta?.meta.id ?? preview.id
+            if let saved = try? core.seriesSource(metaId: metaId),
+               saved.bingeGroup != nil || saved.addonName != nil
+            {
+                let preferred = filtered.filter { Self.matchesSavedSource($0, saved: saved) }
+                let rest = filtered.filter { !Self.matchesSavedSource($0, saved: saved) }
+                filtered = preferred + rest
             }
         }
         let addonCount = Set(accumulatedStreams.map(\.addonName)).count
@@ -769,7 +883,22 @@ final class TitleDetailViewController: NSViewController {
         actionsRow.orientation = .horizontal
         actionsRow.spacing = 8
 
-        let vStack = NSStackView(views: [topRow, statsLabel, whyLabel, actionsRow])
+        var cardViews: [NSView] = [topRow]
+        let showFilename = (try? core.playerPreferences())?.pickerShowFilename ?? true
+        if showFilename,
+           let rawName = (item.stream.filename ?? item.stream.title)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !rawName.isEmpty
+        {
+            let nameLabel = NSTextField(labelWithString: rawName)
+            nameLabel.font = .systemFont(ofSize: 12, weight: .medium)
+            nameLabel.textColor = CinemaTheme.textPrimary.withAlphaComponent(0.9)
+            nameLabel.lineBreakMode = .byTruncatingMiddle
+            nameLabel.maximumNumberOfLines = 2
+            cardViews.append(nameLabel)
+        }
+        cardViews.append(contentsOf: [statsLabel, whyLabel, actionsRow])
+
+        let vStack = NSStackView(views: cardViews)
         vStack.orientation = .vertical
         vStack.alignment = .leading
         vStack.spacing = 8
@@ -924,6 +1053,64 @@ final class TitleDetailViewController: NSViewController {
         renderRankedStreams()
     }
 
+    @objc private func toggleEpisodeSort() {
+        guard var prefs = try? core.playerPreferences() else { return }
+        prefs.episodeSortAsc.toggle()
+        try? core.setPlayerPreferences(prefs: prefs)
+        rebuildSeasonTabs(richMeta?.seasonNumbers ?? [])
+        renderEpisodes()
+    }
+
+    @objc private func toggleEpisodeLayout() {
+        guard var prefs = try? core.playerPreferences() else { return }
+        prefs.episodeCompactLayout.toggle()
+        try? core.setPlayerPreferences(prefs: prefs)
+        rebuildSeasonTabs(richMeta?.seasonNumbers ?? [])
+        renderEpisodes()
+    }
+
+    @objc private func cycleStreamSort() {
+        guard var prefs = try? core.playerPreferences() else { return }
+        let order = ["score", "seeds", "size_desc", "size_asc"]
+        let idx = order.firstIndex(of: prefs.streamSort) ?? 0
+        prefs.streamSort = order[(idx + 1) % order.count]
+        try? core.setPlayerPreferences(prefs: prefs)
+        rebuildStreamFilters()
+        renderRankedStreams()
+    }
+
+    private static func sortButtonTitle(_ mode: String) -> String {
+        switch mode {
+        case "seeds": String(localized: "Sort: Seeders")
+        case "size_desc": String(localized: "Sort: Size ↓")
+        case "size_asc": String(localized: "Sort: Size ↑")
+        default: String(localized: "Sort: Recommended")
+        }
+    }
+
+    private static func extractBingeGroup(_ raw: String) -> String? {
+        guard let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let hints = obj["behaviorHints"] as? [String: Any]
+        else { return nil }
+        return hints["bingeGroup"] as? String
+    }
+
+    private static func matchesSavedSource(_ item: RankedStreamInfo, saved: PreferredSeriesSourceFfi) -> Bool {
+        if let bg = saved.bingeGroup, extractBingeGroup(item.stream.raw) == bg { return true }
+        if let addon = saved.addonName, item.stream.addonName == addon {
+            if let res = saved.resolution { return item.parsed.resolution == res }
+            return true
+        }
+        return false
+    }
+
+    private static func formatTime(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds))
+        let (h, m, s) = (total / 3600, total / 60 % 60, total % 60)
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
+    }
+
     @objc private func playStreamClicked(_ sender: NSButton) {
         guard let raw = sender.identifier?.rawValue,
               let stream = accumulatedStreams.first(where: { $0.raw == raw })
@@ -935,7 +1122,7 @@ final class TitleDetailViewController: NSViewController {
         let videoId = ep?.id ?? metaId
         let subtitle = ep.map { "S\($0.season ?? selectedSeason) · B\($0.episode ?? $0.number ?? 0) — \($0.title ?? "")" }
         let existingProgress = try? core.getWatchProgress(videoId: videoId)
-        let resume = (existingProgress?.watched == false && (existingProgress?.positionS ?? 0) > 10)
+        let savedResume = (existingProgress?.watched == false && (existingProgress?.positionS ?? 0) > 10)
             ? existingProgress?.positionS
             : nil
 
@@ -955,30 +1142,60 @@ final class TitleDetailViewController: NSViewController {
             isHdr = lower.contains("hdr") || lower.contains("dolby") || lower.contains("hlg")
         }
 
-        let bingeGroup: String? = {
-            guard let data = stream.raw.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let hints = obj["behaviorHints"] as? [String: Any]
-            else { return nil }
-            return hints["bingeGroup"] as? String
-        }()
+        let bingeGroup = Self.extractBingeGroup(stream.raw)
+        let prefs = try? core.playerPreferences()
+        if prefs?.rememberLastStream ?? true {
+            try? core.setSeriesSource(
+                metaId: metaId,
+                source: PreferredSeriesSourceFfi(
+                    addonName: stream.addonName,
+                    bingeGroup: bingeGroup,
+                    resolution: matched?.parsed.resolution
+                )
+            )
+        }
 
-        let ctx = PlaybackMetadata(
-            videoId: videoId,
-            metaId: metaId,
-            mediaType: mediaType,
-            title: meta?.name ?? preview.name,
-            subtitle: subtitle,
-            artwork: meta?.background ?? meta?.poster ?? preview.poster,
-            season: ep?.season.map { Int64($0) },
-            episode: (ep?.episode ?? ep?.number).map { Int64($0) },
-            resumePosition: resume,
-            streamSummary: summary,
-            isHdr: isHdr,
-            bingeGroup: bingeGroup,
-            rankedStreams: rankedList
-        )
-        onPlay(.stream(stream, metadata: ctx))
+        let launch: (Double?) -> Void = { [weak self] chosenResume in
+            guard let self else { return }
+            let ctx = PlaybackMetadata(
+                videoId: videoId,
+                metaId: metaId,
+                mediaType: mediaType,
+                title: meta?.name ?? self.preview.name,
+                subtitle: subtitle,
+                artwork: meta?.background ?? meta?.poster ?? self.preview.poster,
+                season: ep?.season.map { Int64($0) },
+                episode: (ep?.episode ?? ep?.number).map { Int64($0) },
+                resumePosition: chosenResume,
+                streamSummary: summary,
+                isHdr: isHdr,
+                bingeGroup: bingeGroup,
+                rankedStreams: rankedList
+            )
+            self.onPlay(.stream(stream, metadata: ctx))
+        }
+
+        let resumeBehavior = prefs?.resumeBehavior ?? "always_resume"
+        if resumeBehavior == "always_start_over" {
+            launch(nil)
+        } else if resumeBehavior == "ask", let savedResume {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Resume Playback?")
+            alert.informativeText = String(localized: "Continue from \(Self.formatTime(savedResume)) or start from the beginning?")
+            alert.addButton(withTitle: String(localized: "Resume (\(Self.formatTime(savedResume)))"))
+            alert.addButton(withTitle: String(localized: "Start Over"))
+            if let window = view.window {
+                Task { @MainActor in
+                    let resp = await alert.beginSheetModal(for: window)
+                    launch(resp == .alertFirstButtonReturn ? savedResume : nil)
+                }
+            } else {
+                let resp = alert.runModal()
+                launch(resp == .alertFirstButtonReturn ? savedResume : nil)
+            }
+        } else {
+            launch(savedResume)
+        }
     }
 }
 

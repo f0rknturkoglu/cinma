@@ -1003,6 +1003,7 @@ pub struct SubtitleSettingsFfi {
     pub off_by_default: bool,
     pub prefer_embedded: bool,
     pub forced_when_native_audio: bool,
+    pub hide_sdh: bool,
 }
 
 impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
@@ -1028,6 +1029,7 @@ impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
             off_by_default: s.off_by_default,
             prefer_embedded: s.prefer_embedded,
             forced_when_native_audio: s.forced_when_native_audio,
+            hide_sdh: s.hide_sdh,
         }
     }
 }
@@ -1055,6 +1057,7 @@ impl From<SubtitleSettingsFfi> for cinma_core::SubtitleSettings {
             off_by_default: s.off_by_default,
             prefer_embedded: s.prefer_embedded,
             forced_when_native_audio: s.forced_when_native_audio,
+            hide_sdh: s.hide_sdh,
         }
     }
 }
@@ -1082,6 +1085,24 @@ pub struct PlayerPreferencesFfi {
     pub crop_mode: String,
     pub audio_normalize: bool,
     pub downmix_stereo: bool,
+    pub hide_spoilers: bool,
+    pub remember_last_stream: bool,
+    pub keep_source_next_episode: bool,
+    pub track_block_words: Vec<String>,
+    pub stream_sort: String,
+    pub picker_show_filename: bool,
+    pub fullscreen_clock: bool,
+    pub fullscreen_clock_end_time: bool,
+    pub next_episode_lead_s: u32,
+    pub still_watching_after_episodes: u32,
+    pub hide_watched_in_catalogs: bool,
+    pub hide_unreleased: bool,
+    pub episode_sort_asc: bool,
+    pub episode_compact_layout: bool,
+    pub confirm_on_leave: bool,
+    pub resume_behavior: String,
+    pub volume_hud: bool,
+    pub screen_lock_enabled: bool,
 }
 
 impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
@@ -1108,6 +1129,24 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             crop_mode: p.crop_mode,
             audio_normalize: p.audio_normalize,
             downmix_stereo: p.downmix_stereo,
+            hide_spoilers: p.hide_spoilers,
+            remember_last_stream: p.remember_last_stream,
+            keep_source_next_episode: p.keep_source_next_episode,
+            track_block_words: p.track_block_words,
+            stream_sort: p.stream_sort,
+            picker_show_filename: p.picker_show_filename,
+            fullscreen_clock: p.fullscreen_clock,
+            fullscreen_clock_end_time: p.fullscreen_clock_end_time,
+            next_episode_lead_s: p.next_episode_lead_s,
+            still_watching_after_episodes: p.still_watching_after_episodes,
+            hide_watched_in_catalogs: p.hide_watched_in_catalogs,
+            hide_unreleased: p.hide_unreleased,
+            episode_sort_asc: p.episode_sort_asc,
+            episode_compact_layout: p.episode_compact_layout,
+            confirm_on_leave: p.confirm_on_leave,
+            resume_behavior: p.resume_behavior,
+            volume_hud: p.volume_hud,
+            screen_lock_enabled: p.screen_lock_enabled,
         }
     }
 }
@@ -1136,6 +1175,51 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             crop_mode: p.crop_mode,
             audio_normalize: p.audio_normalize,
             downmix_stereo: p.downmix_stereo,
+            hide_spoilers: p.hide_spoilers,
+            remember_last_stream: p.remember_last_stream,
+            keep_source_next_episode: p.keep_source_next_episode,
+            track_block_words: p.track_block_words,
+            stream_sort: p.stream_sort,
+            picker_show_filename: p.picker_show_filename,
+            fullscreen_clock: p.fullscreen_clock,
+            fullscreen_clock_end_time: p.fullscreen_clock_end_time,
+            next_episode_lead_s: p.next_episode_lead_s,
+            still_watching_after_episodes: p.still_watching_after_episodes,
+            hide_watched_in_catalogs: p.hide_watched_in_catalogs,
+            hide_unreleased: p.hide_unreleased,
+            episode_sort_asc: p.episode_sort_asc,
+            episode_compact_layout: p.episode_compact_layout,
+            confirm_on_leave: p.confirm_on_leave,
+            resume_behavior: p.resume_behavior,
+            volume_hud: p.volume_hud,
+            screen_lock_enabled: p.screen_lock_enabled,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct PreferredSeriesSourceFfi {
+    pub addon_name: Option<String>,
+    pub binge_group: Option<String>,
+    pub resolution: Option<String>,
+}
+
+impl From<cinma_core::PreferredSeriesSource> for PreferredSeriesSourceFfi {
+    fn from(s: cinma_core::PreferredSeriesSource) -> Self {
+        Self {
+            addon_name: s.addon_name,
+            binge_group: s.binge_group,
+            resolution: s.resolution,
+        }
+    }
+}
+
+impl From<PreferredSeriesSourceFfi> for cinma_core::PreferredSeriesSource {
+    fn from(s: PreferredSeriesSourceFfi) -> Self {
+        Self {
+            addon_name: s.addon_name,
+            binge_group: s.binge_group,
+            resolution: s.resolution,
         }
     }
 }
@@ -1407,6 +1491,10 @@ impl CinmaCore {
             .into_iter()
             .map(Into::into)
             .collect())
+    }
+
+    pub fn watched_meta_ids(&self) -> Result<Vec<String>, CinmaError> {
+        Ok(self.inner.watched_meta_ids()?)
     }
 
     pub fn save_watch_progress(&self, input: WatchProgressInputFfi) -> Result<(), CinmaError> {
@@ -1734,6 +1822,18 @@ impl CinmaCore {
 
     pub fn set_player_preferences(&self, prefs: PlayerPreferencesFfi) -> Result<(), CinmaError> {
         Ok(self.inner.set_player_preferences(&prefs.into())?)
+    }
+
+    pub fn series_source(&self, meta_id: String) -> Result<PreferredSeriesSourceFfi, CinmaError> {
+        Ok(self.inner.series_source(&meta_id)?.into())
+    }
+
+    pub fn set_series_source(
+        &self,
+        meta_id: String,
+        source: PreferredSeriesSourceFfi,
+    ) -> Result<(), CinmaError> {
+        Ok(self.inner.set_series_source(&meta_id, &source.into())?)
     }
 
     pub fn video_offsets(&self, video_id: String) -> Result<VideoOffsetsFfi, CinmaError> {

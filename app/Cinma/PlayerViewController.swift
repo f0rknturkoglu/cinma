@@ -81,6 +81,10 @@ final class PlayerViewController: NSViewController {
     private let playButton = NSButton()
     private let speedButton = NSButton()
     private let volumeButton = NSButton()
+    private let lockButton = NSButton()
+    private let clockPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
+    private let clockLabel = NSTextField(labelWithString: "")
+    private let unlockPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 18)
     private let timeLabel = NSTextField(labelWithString: "--:-- / --:--")
 
     // Hover thumbnail preview
@@ -155,6 +159,14 @@ final class PlayerViewController: NSViewController {
     private var lastAutoSkippedSegmentStart: Double?
     private var focusObservers: [NSObjectProtocol] = []
     private var pausedBySystemEvent = false
+    private var isScreenLocked = false
+    private var autoPlayedEpisodesCount: UInt32 = 0
+
+    private static let clockFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
 
     var onEnterPiP: (() -> Void)?
     var onPauseStateChanged: ((Bool) -> Void)?
@@ -205,6 +217,7 @@ final class PlayerViewController: NSViewController {
         root.addSubview(videoView)
 
         buildTopBars()
+        buildClockAndLockPills()
         buildBottomBar()
         buildThumbPreview()
         buildStatsCard()
@@ -218,7 +231,7 @@ final class PlayerViewController: NSViewController {
         statusLabel.lineBreakMode = .byTruncatingTail
         statusPill.addSubview(statusLabel)
 
-        for sub in [titlePill, bar, thumbCard, statsCard, skipButton, nextCard, statusPill] {
+        for sub in [titlePill, clockPill, unlockPill, bar, thumbCard, statsCard, skipButton, nextCard, statusPill] {
             root.addSubview(sub)
         }
 
@@ -234,7 +247,13 @@ final class PlayerViewController: NSViewController {
 
             titlePill.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
             titlePill.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 88),
-            titlePill.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -24),
+            titlePill.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -180),
+
+            clockPill.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
+            clockPill.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
+
+            unlockPill.topAnchor.constraint(equalTo: root.topAnchor, constant: 22),
+            unlockPill.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
 
             bar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 24),
             bar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -24),
@@ -274,7 +293,7 @@ final class PlayerViewController: NSViewController {
         let backBtn = NSButton(
             image: NSImage(systemSymbolName: "chevron.left", accessibilityDescription: String(localized: "Close")) ?? NSImage(),
             target: self,
-            action: #selector(close)
+            action: #selector(requestClose)
         )
         backBtn.isBordered = false
         backBtn.contentTintColor = CinemaTheme.textPrimary
@@ -312,14 +331,53 @@ final class PlayerViewController: NSViewController {
         ])
     }
 
+    private func buildClockAndLockPills() {
+        clockPill.translatesAutoresizingMaskIntoConstraints = false
+        clockPill.isHidden = true
+        clockLabel.font = .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold)
+        clockLabel.textColor = CinemaTheme.textPrimary
+        clockLabel.translatesAutoresizingMaskIntoConstraints = false
+        clockPill.addSubview(clockLabel)
+        NSLayoutConstraint.activate([
+            clockLabel.topAnchor.constraint(equalTo: clockPill.topAnchor, constant: 7),
+            clockLabel.bottomAnchor.constraint(equalTo: clockPill.bottomAnchor, constant: -7),
+            clockLabel.leadingAnchor.constraint(equalTo: clockPill.leadingAnchor, constant: 12),
+            clockLabel.trailingAnchor.constraint(equalTo: clockPill.trailingAnchor, constant: -12),
+        ])
+
+        unlockPill.translatesAutoresizingMaskIntoConstraints = false
+        unlockPill.isHidden = true
+        let unlockBtn = CinemaTheme.makePillButton(
+            title: String(localized: "Unlock Screen"),
+            symbol: "lock.fill",
+            primary: false,
+            target: self,
+            action: #selector(toggleScreenLock)
+        )
+        unlockBtn.translatesAutoresizingMaskIntoConstraints = false
+        unlockPill.addSubview(unlockBtn)
+        NSLayoutConstraint.activate([
+            unlockBtn.topAnchor.constraint(equalTo: unlockPill.topAnchor, constant: 4),
+            unlockBtn.bottomAnchor.constraint(equalTo: unlockPill.bottomAnchor, constant: -4),
+            unlockBtn.leadingAnchor.constraint(equalTo: unlockPill.leadingAnchor, constant: 4),
+            unlockBtn.trailingAnchor.constraint(equalTo: unlockPill.trailingAnchor, constant: -4),
+            unlockBtn.heightAnchor.constraint(equalToConstant: 30),
+        ])
+    }
+
     private func buildBottomBar() {
         bar.translatesAutoresizingMaskIntoConstraints = false
 
         scrubBar.translatesAutoresizingMaskIntoConstraints = false
         scrubBar.heightAnchor.constraint(equalToConstant: 20).isActive = true
-        scrubBar.onSeek = { [weak self] secs in self?.seekAbsolute(secs) }
+        scrubBar.onSeek = { [weak self] secs in
+            guard let self, !self.isScreenLocked else { return }
+            self.autoPlayedEpisodesCount = 0
+            self.seekAbsolute(secs)
+        }
         scrubBar.onHover = { [weak self] secs, localX in
-            self?.handleScrubHover(seconds: secs, localX: localX)
+            guard let self, !self.isScreenLocked else { return }
+            self.handleScrubHover(seconds: secs, localX: localX)
         }
 
         let back10 = makeIconButton("gobackward.10", tooltip: String(localized: "Seek back 10s"), action: #selector(seekBack10))
@@ -369,6 +427,15 @@ final class PlayerViewController: NSViewController {
         let statsBtn = makeIconButton("info.circle", tooltip: String(localized: "Playback Stats (I)"), action: #selector(toggleStats))
         let shotBtn = makeIconButton("camera", tooltip: String(localized: "Screenshot (S)"), action: #selector(takeScreenshot))
         let moreBtn = makeIconButton("ellipsis.circle", tooltip: String(localized: "Video, A/B Loop & Sleep Timer"), action: #selector(showMoreMenu(_:)))
+        lockButton.isBordered = false
+        lockButton.image = NSImage(systemSymbolName: "lock.open", accessibilityDescription: String(localized: "Lock Screen (L)"))
+        lockButton.toolTip = String(localized: "Lock Screen (L)")
+        lockButton.contentTintColor = CinemaTheme.textPrimary
+        lockButton.target = self
+        lockButton.action = #selector(toggleScreenLock)
+        lockButton.translatesAutoresizingMaskIntoConstraints = false
+        lockButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        lockButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
         let fsBtn = makeIconButton("arrow.up.left.and.arrow.down.right", tooltip: String(localized: "Fullscreen (F)"), action: #selector(toggleFullscreen))
 
         let spacer = NSView()
@@ -380,7 +447,7 @@ final class PlayerViewController: NSViewController {
             back10, playButton, fwd10, timeLabel, infoLabel,
             spacer,
             volumeButton, speedButton, subBtn, audioBtn, chapBtn,
-            globeBtn, streamsBtn, castBtn, pipBtn, statsBtn, shotBtn, moreBtn, fsBtn,
+            globeBtn, streamsBtn, castBtn, pipBtn, statsBtn, shotBtn, moreBtn, lockButton, fsBtn,
         ])
         transportRow.orientation = .horizontal
         transportRow.alignment = .centerY
@@ -481,7 +548,7 @@ final class PlayerViewController: NSViewController {
             symbol: "play.fill",
             primary: true,
             target: self,
-            action: #selector(playNextEpisodeNow)
+            action: #selector(playNextEpisodeManually)
         )
         let cancelNextBtn = CinemaTheme.makePillButton(
             title: String(localized: "Cancel"),
@@ -639,7 +706,25 @@ final class PlayerViewController: NSViewController {
                 stallTimeoutS: 12,
                 cropMode: "fit",
                 audioNormalize: false,
-                downmixStereo: false
+                downmixStereo: false,
+                hideSpoilers: false,
+                rememberLastStream: true,
+                keepSourceNextEpisode: true,
+                trackBlockWords: [],
+                streamSort: "score",
+                pickerShowFilename: true,
+                fullscreenClock: true,
+                fullscreenClockEndTime: true,
+                nextEpisodeLeadS: 35,
+                stillWatchingAfterEpisodes: 0,
+                hideWatchedInCatalogs: false,
+                hideUnreleased: false,
+                episodeSortAsc: true,
+                episodeCompactLayout: false,
+                confirmOnLeave: false,
+                resumeBehavior: "always_resume",
+                volumeHud: true,
+                screenLockEnabled: true
             )
             let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface)
             do {
@@ -797,7 +882,7 @@ final class PlayerViewController: NSViewController {
                 attemptStreamRecovery()
             case .eof:
                 if !loadingNextEpisode, nextPlan != nil, !nextDismissed {
-                    playNextEpisodeNow()
+                    autoAdvanceToNextEpisode()
                 }
             case .stopped:
                 break
@@ -827,7 +912,9 @@ final class PlayerViewController: NSViewController {
             volume = min(volume, Double(prefs.volumeBoostMax))
             try? session.setCropMode(mode: prefs.cropMode)
             try? session.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
+            lockButton.isHidden = !prefs.screenLockEnabled
         }
+        updateClockPill()
         try? session.setSpeed(speed: speed)
         if abs(volume - 100.0) > 0.5 {
             try? session.setVolume(volume: volume)
@@ -932,7 +1019,8 @@ final class PlayerViewController: NSViewController {
                 lang: wantSubLang,
                 title: sessionSubTitle,
                 forcedOnly: false,
-                preferEmbedded: prefs.preferEmbedded
+                preferEmbedded: prefs.preferEmbedded,
+                hideSdh: prefs.hideSdh
             ) {
                 primaryId = match.id
                 lastSelectedSid = match.id
@@ -951,7 +1039,8 @@ final class PlayerViewController: NSViewController {
                     lang: lang,
                     title: nil,
                     forcedOnly: needForcedOnly,
-                    preferEmbedded: prefs.preferEmbedded
+                    preferEmbedded: prefs.preferEmbedded,
+                    hideSdh: prefs.hideSdh
                 ) {
                     primaryId = match.id
                     lastSelectedSid = match.id
@@ -975,7 +1064,8 @@ final class PlayerViewController: NSViewController {
                       lang: secLang,
                       title: nil,
                       forcedOnly: false,
-                      preferEmbedded: prefs.preferEmbedded
+                      preferEmbedded: prefs.preferEmbedded,
+                      hideSdh: prefs.hideSdh
                   )
         {
             secondarySid = dualMatch.id
@@ -988,24 +1078,28 @@ final class PlayerViewController: NSViewController {
         lang: String,
         title: String?,
         forcedOnly: Bool,
-        preferEmbedded: Bool
+        preferEmbedded: Bool,
+        hideSdh: Bool
     ) -> MediaTrackInfo? {
         let langMatches = subTracks.filter { trackMatchesLang($0, lang) }
         guard !langMatches.isEmpty else { return nil }
+        let sdhPool = (hideSdh && langMatches.contains(where: { !$0.hearingImpaired }))
+            ? langMatches.filter { !$0.hearingImpaired }
+            : langMatches
         if forcedOnly {
-            let forced = langMatches.filter { $0.forced }
+            let forced = sdhPool.filter { $0.forced }
             if preferEmbedded, let emb = forced.first(where: { !$0.external }) { return emb }
             return forced.first
         }
         if let title, !title.isEmpty {
-            if let exact = langMatches.first(where: { $0.title == title && (!preferEmbedded || !$0.external) })
-                ?? langMatches.first(where: { $0.title == title })
+            if let exact = sdhPool.first(where: { $0.title == title && (!preferEmbedded || !$0.external) })
+                ?? sdhPool.first(where: { $0.title == title })
             {
                 return exact
             }
         }
-        let nonForced = langMatches.filter { !$0.forced }
-        let orderedPool = nonForced.isEmpty ? langMatches : nonForced
+        let nonForced = sdhPool.filter { !$0.forced }
+        let orderedPool = nonForced.isEmpty ? sdhPool : nonForced
         if preferEmbedded, let emb = orderedPool.first(where: { !$0.external }) {
             return emb
         }
@@ -1085,9 +1179,12 @@ final class PlayerViewController: NSViewController {
               duration > 30
         else { return }
 
+        let prefs = try? core.playerPreferences()
+        let leadS = Double(max(10, min(90, prefs?.nextEpisodeLeadS ?? 35)))
+        let remaining = max(0, duration - position)
         let progress = position / duration
         let inOutro = chapters.last(where: { $0.startS <= position }).map { isOutroChapter($0.title) } ?? false
-        if !prefetchedTriggered && (progress >= 0.88 || inOutro) {
+        if !prefetchedTriggered && (remaining <= leadS + 20 || progress >= 0.88 || inOutro) {
             prefetchedTriggered = true
             session?.startNextEpisodePrefetch(
                 metaId: meta.metaId,
@@ -1101,13 +1198,13 @@ final class PlayerViewController: NSViewController {
             nextPlan = plan
         }
 
-        if !nextDismissed && (progress >= 0.92 || inOutro), let plan = nextPlan {
+        if !nextDismissed && (remaining <= leadS || progress >= 0.92 || inOutro), let plan = nextPlan {
             showNextEpisodeCard(plan)
         }
     }
 
     private func showNextEpisodeCard(_ plan: NextEpisodePrefetchInfo) {
-        guard !loadingNextEpisode, nextCard.isHidden else { return }
+        guard !loadingNextEpisode, !isScreenLocked, nextCard.isHidden else { return }
         nextTitleLabel.stringValue = String(localized: "S\(plan.season) · E\(plan.episode) — \(plan.title)")
         nextSubtitleLabel.stringValue = plan.bestStream != nil
             ? String(localized: "Prefetched & ready")
@@ -1129,8 +1226,30 @@ final class PlayerViewController: NSViewController {
                 try? await Task.sleep(for: .seconds(1))
             }
             guard let self, !Task.isCancelled, !self.loadingNextEpisode, !self.nextDismissed, !self.closing else { return }
-            self.playNextEpisodeNow()
+            self.autoAdvanceToNextEpisode()
         }
+    }
+
+    private func autoAdvanceToNextEpisode() {
+        let prefs = try? core.playerPreferences()
+        let limit = prefs?.stillWatchingAfterEpisodes ?? 0
+        if limit > 0, autoPlayedEpisodesCount >= limit {
+            autoPlayedEpisodesCount = 0
+            nextCountdownTask?.cancel()
+            nextCountdownTask = nil
+            if !paused { try? session?.togglePause() }
+            nextCard.isHidden = false
+            showHudAndCancelTimer()
+            nextCountdownLabel.stringValue = String(localized: "Still watching? Click Play Next to continue.")
+            return
+        }
+        autoPlayedEpisodesCount += 1
+        playNextEpisodeNow()
+    }
+
+    @objc private func playNextEpisodeManually() {
+        autoPlayedEpisodesCount = 0
+        playNextEpisodeNow()
     }
 
     @objc private func playNextEpisodeNow() {
@@ -1238,7 +1357,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func updateSkipSegmentVisibility() {
-        guard let seg = currentSkipSegment() else {
+        guard !isScreenLocked, let seg = currentSkipSegment() else {
             skipButton.isHidden = true
             return
         }
@@ -1411,7 +1530,8 @@ final class PlayerViewController: NSViewController {
             liftAboveControls: true,
             offByDefault: false,
             preferEmbedded: false,
-            forcedWhenNativeAudio: false
+            forcedWhenNativeAudio: false,
+            hideSdh: false
         )
         let root = SubtitleManagerPopoverView(
             candidates: onlineSubtitles,
@@ -1476,6 +1596,7 @@ final class PlayerViewController: NSViewController {
     /// Presents a Liquid Glass card inside `view` anchored above `anchor` and
     /// clamped within `[leading + 20, trailing - 20]` so it never overflows off-screen.
     private func presentFloatingPopover<V: View>(_ rootView: V, relativeTo anchor: NSView) {
+        guard !isScreenLocked else { return }
         dismissFloatingPopover()
 
         let backdrop = ClickCatcherView()
@@ -1930,12 +2051,22 @@ final class PlayerViewController: NSViewController {
     }
 
     @objc private func toggleMute() {
+        guard !isScreenLocked else { return }
         muted.toggle()
         try? session?.setMuted(muted: muted)
         volumeButton.image = NSImage(
             systemSymbolName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
             accessibilityDescription: nil
         )
+        showVolumeHudIfEnabled()
+    }
+
+    private func showVolumeHudIfEnabled() {
+        guard (try? core.playerPreferences())?.volumeHud ?? true else { return }
+        let msg = muted
+            ? String(localized: "Muted")
+            : String(localized: "Volume: \(Int(volume.rounded()))%")
+        showStatus(msg, autoHideAfter: 1.8)
     }
 
     private func toggleSubtitlesVisibility() {
@@ -1979,6 +2110,14 @@ final class PlayerViewController: NSViewController {
     private func handleKey(_ event: NSEvent) -> Bool {
         showHudAndResetTimer()
         guard let combo = KeyCombo.from(event) else { return false }
+        if combo == "l", (try? core.playerPreferences())?.screenLockEnabled ?? true {
+            toggleScreenLock()
+            return true
+        }
+        if isScreenLocked {
+            return true
+        }
+        autoPlayedEpisodesCount = 0
         guard let command = try? core.resolveKey(context: "player", combo: combo) else {
             if combo == "p" {
                 enterPiPClicked()
@@ -1996,7 +2135,7 @@ final class PlayerViewController: NSViewController {
             } else if view.window?.styleMask.contains(.fullScreen) == true {
                 toggleFullscreen()
             } else {
-                close()
+                requestClose()
             }
         case "player.fullscreen": toggleFullscreen()
         case "player.toggle_subtitles": toggleSubtitlesVisibility()
@@ -2012,22 +2151,74 @@ final class PlayerViewController: NSViewController {
             volume = min(maxVol, volume + 10)
             try? session?.setVolumeMax(maxPct: UInt32(maxVol))
             try? session?.setVolume(volume: volume)
+            showVolumeHudIfEnabled()
         case "player.volume_down":
             volume = max(0, volume - 10)
             try? session?.setVolume(volume: volume)
+            showVolumeHudIfEnabled()
         case "player.mute": toggleMute()
-        case "player.next_episode": playNextEpisodeNow()
+        case "player.next_episode": playNextEpisodeManually()
         default: return false
         }
         return true
     }
 
+    @objc private func toggleScreenLock() {
+        isScreenLocked.toggle()
+        lockButton.image = NSImage(
+            systemSymbolName: isScreenLocked ? "lock.fill" : "lock.open",
+            accessibilityDescription: isScreenLocked ? String(localized: "Unlock Screen (L)") : String(localized: "Lock Screen (L)")
+        )
+        if isScreenLocked {
+            dismissFloatingPopover()
+            thumbCard.isHidden = true
+            skipButton.isHidden = true
+            nextCard.isHidden = true
+            titlePill.isHidden = true
+            bar.isHidden = true
+            clockPill.isHidden = true
+            unlockPill.isHidden = false
+            unlockPill.alphaValue = 1.0
+            showHudAndResetTimer()
+        } else {
+            unlockPill.isHidden = true
+            showHudAndResetTimer()
+            updateSkipSegmentVisibility()
+            updateClockPill()
+        }
+    }
+
+    @objc private func requestClose() {
+        guard !closing else { return }
+        let shouldConfirm = (try? core.playerPreferences())?.confirmOnLeave ?? false
+        guard shouldConfirm, !paused, duration > 0 else {
+            close()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Leave Playback?")
+        alert.informativeText = String(localized: "Are you sure you want to close active playback?")
+        alert.addButton(withTitle: String(localized: "Leave"))
+        alert.addButton(withTitle: String(localized: "Continue Watching"))
+        if let window = view.window {
+            Task { @MainActor in
+                let resp = await alert.beginSheetModal(for: window)
+                if resp == .alertFirstButtonReturn { self.close() }
+            }
+        } else if alert.runModal() == .alertFirstButtonReturn {
+            close()
+        }
+    }
+
     @objc private func togglePause() {
+        guard !isScreenLocked else { return }
         pausedBySystemEvent = false
         try? session?.togglePause()
     }
 
     @objc private func seekBack10() {
+        guard !isScreenLocked else { return }
+        autoPlayedEpisodesCount = 0
         let prefs = try? core.playerPreferences()
         let exact = prefs?.exactSeek ?? true
         let step = Double(max(3, min(60, prefs?.seekBackStepS ?? 10)))
@@ -2036,6 +2227,8 @@ final class PlayerViewController: NSViewController {
     }
 
     @objc private func seekForward10() {
+        guard !isScreenLocked else { return }
+        autoPlayedEpisodesCount = 0
         let prefs = try? core.playerPreferences()
         let exact = prefs?.exactSeek ?? true
         let step = Double(max(3, min(60, prefs?.seekForwardStepS ?? 10)))
@@ -2105,7 +2298,22 @@ final class PlayerViewController: NSViewController {
             hudVisible = nowVisible
             syncSubtitlePosForHud()
         }
-        let pills = [titlePill, bar]
+        if isScreenLocked {
+            titlePill.isHidden = true
+            bar.isHidden = true
+            clockPill.isHidden = true
+            animatePills([unlockPill], alpha: alpha)
+            return
+        }
+        unlockPill.isHidden = true
+        let showClock = (try? core.playerPreferences())?.fullscreenClock ?? true
+        if nowVisible { updateClockPill() }
+        if !showClock { clockPill.isHidden = true }
+        let pills = showClock ? [titlePill, bar, clockPill] : [titlePill, bar]
+        animatePills(pills, alpha: alpha)
+    }
+
+    private func animatePills(_ pills: [NSView], alpha: CGFloat) {
         if alpha > 0 {
             for p in pills { p.isHidden = false }
         }
@@ -2204,6 +2412,29 @@ final class PlayerViewController: NSViewController {
 
     private func updateTime() {
         timeLabel.stringValue = "\(Self.format(position)) / \(Self.format(duration))"
+        updateClockPill()
+    }
+
+    private func updateClockPill() {
+        guard !isScreenLocked else {
+            clockPill.isHidden = true
+            return
+        }
+        let prefs = try? core.playerPreferences()
+        guard prefs?.fullscreenClock ?? true else {
+            clockPill.isHidden = true
+            return
+        }
+        let now = Date()
+        let nowStr = Self.clockFormatter.string(from: now)
+        if (prefs?.fullscreenClockEndTime ?? true), duration > position, duration.isFinite {
+            let endDate = now.addingTimeInterval(max(0, duration - position) / max(0.25, speed))
+            let endStr = Self.clockFormatter.string(from: endDate)
+            clockLabel.stringValue = "\(nowStr) · \(String(localized: "Ends \(endStr)"))"
+        } else {
+            clockLabel.stringValue = nowStr
+        }
+        clockPill.isHidden = !hudVisible
     }
 
     private static func format(_ seconds: Double) -> String {

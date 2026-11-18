@@ -94,6 +94,15 @@ struct SubtitleManagerPopoverView: View {
         HStack {
             Button(String(localized: "Load File…"), action: onLoadLocal)
             Spacer()
+            Toggle(String(localized: "Hide SDH"), isOn: Binding(
+                get: { draftSettings.hideSdh },
+                set: { val in
+                    draftSettings.hideSdh = val
+                    onUpdateStyle(draftSettings)
+                }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
             Button(String(localized: "Search Online"), action: onSearchOnline)
                 .disabled(loading)
         }
@@ -465,6 +474,13 @@ struct StreamSwitcherPopoverView: View {
                                 Text(item.parsed.codec)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                            }
+                            if let fileTitle = item.stream.filename ?? item.stream.title, !fileTitle.isEmpty {
+                                Text(fileTitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(.primary.opacity(0.85))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
                             Text(summary(item))
                                 .font(.caption2)

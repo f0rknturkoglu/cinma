@@ -377,22 +377,44 @@ impl Playback {
                     .await
                 {
                     let ranked = core.rank_streams(streams, None);
-                    let binge_match = binge_group.as_deref().and_then(|bg| {
-                        ranked.ranked.iter().find(|r| {
-                            r.stream
-                                .behavior_hints
-                                .as_ref()
-                                .and_then(|h| h.binge_group.as_deref())
-                                == Some(bg)
-                        })
-                    });
-                    let chosen =
+                    let prefs = core.player_preferences().unwrap_or_default();
+                    let saved_src = core.series_source(&meta_id).unwrap_or_default();
+                    let chosen = if prefs.keep_source_next_episode {
+                        let target_bg = binge_group.as_deref().or(saved_src.binge_group.as_deref());
+                        let binge_match = target_bg.and_then(|bg| {
+                            ranked.ranked.iter().find(|r| {
+                                r.stream
+                                    .behavior_hints
+                                    .as_ref()
+                                    .and_then(|h| h.binge_group.as_deref())
+                                    == Some(bg)
+                            })
+                        });
+                        let addon_res_match = saved_src.addon_name.as_deref().and_then(|addon| {
+                            saved_src.resolution.as_deref().and_then(|res| {
+                                ranked.ranked.iter().find(|r| {
+                                    r.addon_name == addon && r.parsed.resolution.label() == res
+                                })
+                            })
+                        });
+                        let addon_match = saved_src
+                            .addon_name
+                            .as_deref()
+                            .and_then(|addon| ranked.ranked.iter().find(|r| r.addon_name == addon));
                         binge_match
+                            .or(addon_res_match)
+                            .or(addon_match)
                             .or_else(|| ranked.ranked.first())
                             .map(|r| StreamCandidate {
                                 addon_name: r.addon_name.clone(),
                                 stream: r.stream.clone(),
-                            });
+                            })
+                    } else {
+                        ranked.ranked.first().map(|r| StreamCandidate {
+                            addon_name: r.addon_name.clone(),
+                            stream: r.stream.clone(),
+                        })
+                    };
                     if let Some(cand) = &chosen
                         && let Some(hash) = &cand.stream.info_hash
                         && let Ok(engine) = core.torrents()

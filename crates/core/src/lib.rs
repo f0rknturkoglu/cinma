@@ -54,7 +54,7 @@ pub use cinma_ranker::{
     FilterReason, FilteredOutStream, MachineCapabilities, ParsedStream, RankResult, RankedStream,
     RankerPreferences, Resolution, SafetyLevel, ScoreReason, StreamTier,
 };
-pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo};
+pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo, Stream};
 pub use cinma_subtitles::{OsUserQuota, PreparedSubtitle, SubtitleCandidate, normalize_lang_code};
 pub use cinma_tracking::{TraktDeviceCode, TraktRecommendation, letterboxd::LetterboxdEntry};
 pub use commands::{
@@ -71,7 +71,9 @@ pub use phase9::{
 };
 pub use playback::{NextEpisodePrefetch, Playback, StreamStats, VideoFileIdentity};
 pub use settings::Feature;
-pub use subtitles::{PlayerPreferences, SubtitleSearchRequest, SubtitleSettings, VideoOffsets};
+pub use subtitles::{
+    PlayerPreferences, PreferredSeriesSource, SubtitleSearchRequest, SubtitleSettings, VideoOffsets,
+};
 pub use trailers::YtdlpStatus;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

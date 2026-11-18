@@ -534,8 +534,8 @@ impl Core {
         .await
     }
 
-    /// Ranks stream candidates using machine capabilities (e.g. M3+ AV1 decode)
-    /// and the provided or default preferences.
+    /// Ranks stream candidates using machine capabilities (e.g. M3+ AV1 decode),
+    /// active block-word filters, stream sort order, and the provided or default preferences.
     pub fn rank_streams(
         &self,
         candidates: Vec<StreamCandidate>,
@@ -543,11 +543,63 @@ impl Core {
     ) -> RankResult {
         let caps = machine_capabilities();
         let prefs = prefs.unwrap_or_default();
+        let player_prefs = self.player_preferences().unwrap_or_default();
+        let block_words: Vec<String> = player_prefs
+            .track_block_words
+            .iter()
+            .map(|w| w.trim().to_ascii_lowercase())
+            .filter(|w| !w.is_empty())
+            .collect();
         let raw = candidates
             .into_iter()
+            .filter(|c| {
+                if block_words.is_empty() {
+                    return true;
+                }
+                let filename = c
+                    .stream
+                    .behavior_hints
+                    .as_ref()
+                    .and_then(|h| h.filename.as_deref())
+                    .unwrap_or("");
+                let combined = format!(
+                    "{} {} {} {}",
+                    c.stream.name.as_deref().unwrap_or(""),
+                    c.stream.title.as_deref().unwrap_or(""),
+                    c.stream.description.as_deref().unwrap_or(""),
+                    filename
+                )
+                .to_ascii_lowercase();
+                !block_words.iter().any(|w| combined.contains(w))
+            })
             .map(|c| (c.addon_name, c.stream))
             .collect();
-        rank_streams(raw, &prefs, &caps)
+        let mut result = rank_streams(raw, &prefs, &caps);
+        match player_prefs.stream_sort.as_str() {
+            "seeds" => result.ranked.sort_by(|a, b| {
+                b.parsed
+                    .seeders
+                    .unwrap_or(0)
+                    .cmp(&a.parsed.seeders.unwrap_or(0))
+                    .then_with(|| b.score.cmp(&a.score))
+            }),
+            "size_desc" => result.ranked.sort_by(|a, b| {
+                b.parsed
+                    .size_bytes
+                    .unwrap_or(0)
+                    .cmp(&a.parsed.size_bytes.unwrap_or(0))
+                    .then_with(|| b.score.cmp(&a.score))
+            }),
+            "size_asc" => result.ranked.sort_by(|a, b| {
+                a.parsed
+                    .size_bytes
+                    .unwrap_or(u64::MAX)
+                    .cmp(&b.parsed.size_bytes.unwrap_or(u64::MAX))
+                    .then_with(|| b.score.cmp(&a.score))
+            }),
+            _ => {}
+        }
+        result
     }
 
     pub fn hardware_av1_supported(&self) -> bool {
