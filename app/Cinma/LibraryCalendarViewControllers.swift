@@ -18,6 +18,7 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
         action: #selector(exploreHomeClicked)
     )
     private var items: [MetaPreviewInfo] = []
+    private var posterStyle = PosterStyleContext()
 
     init(core: CinmaCore, onOpenDetail: @escaping (MetaPreviewInfo) -> Void) {
         self.core = core
@@ -97,6 +98,10 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
     }
 
     func reload() {
+        posterStyle = PosterStyleContext.load(from: core)
+        if let layout = collectionView.collectionViewLayout as? NSCollectionViewFlowLayout {
+            layout.itemSize = posterStyle.itemSize
+        }
         let rows = (try? core.libraryItems()) ?? []
         items = rows.map {
             MetaPreviewInfo(
@@ -132,7 +137,7 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
     ) -> NSCollectionViewItem {
         let cell = collectionView.makeItem(withIdentifier: PosterCardItem.identifier, for: indexPath)
         if let card = cell as? PosterCardItem, items.indices.contains(indexPath.item) {
-            card.configure(with: items[indexPath.item])
+            card.configure(with: items[indexPath.item], style: posterStyle)
         }
         return cell
     }
@@ -269,6 +274,27 @@ final class CalendarViewController: NSViewController {
         onOpenSettings?()
     }
 
+    private static let isoDateParser: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    private static let weekdayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EE · yyyy-MM-dd"
+        return f
+    }()
+
+    private static func formattedAirDate(_ raw: String, weekStartsMonday: Bool) -> String {
+        guard let date = isoDateParser.date(from: raw) else { return raw }
+        var cal = Calendar.current
+        cal.firstWeekday = weekStartsMonday ? 2 : 1
+        weekdayFormatter.calendar = cal
+        return weekdayFormatter.string(from: date)
+    }
+
     private func renderEntries(_ entries: [UpcomingEpisodeInfo]) {
         thumbTasks.forEach { $0.cancel() }
         thumbTasks.removeAll()
@@ -276,7 +302,9 @@ final class CalendarViewController: NSViewController {
             listStack.removeArrangedSubview(v)
             v.removeFromSuperview()
         }
+        let weekMonday = (try? core.playerPreferences())?.weekStartsMonday ?? true
         for ep in entries {
+            let formattedDate = Self.formattedAirDate(ep.airDate, weekStartsMonday: weekMonday)
             let row = NSButton(title: "", target: self, action: #selector(openEntry(_:)))
             row.identifier = NSUserInterfaceItemIdentifier("\(ep.showId)|\(ep.showName)")
             row.isBordered = false
@@ -305,7 +333,7 @@ final class CalendarViewController: NSViewController {
             overview.textColor = CinemaTheme.textMuted
             overview.maximumNumberOfLines = 2
 
-            let dateChip = CinemaTheme.makeChip(ep.airDate, highlighted: true)
+            let dateChip = CinemaTheme.makeChip(formattedDate, highlighted: true)
 
             let textCol = NSStackView(views: [title, overview])
             textCol.orientation = .vertical

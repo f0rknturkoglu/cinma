@@ -161,6 +161,64 @@ pub struct PlayerPreferences {
     pub volume_hud: bool,
     /// Show the screen-lock toggle button in the player bar.
     pub screen_lock_enabled: bool,
+    /// HDR-to-SDR tone-mapping algorithm (`"auto"` | `"bt.2390"` | `"reinhard"` | `"hable"` | `"clip"`).
+    pub hdr_tone_mapping: String,
+    /// Enable macOS Extended Dynamic Range (EDR) 16-bit HDR framebuffer when supported.
+    pub mac_edr_enabled: bool,
+    /// Force 8-bit `yuv420p` output via mpv video filter.
+    pub force_yuv420p: bool,
+    /// mpv scaler quality preset (`"fast"` | `"balanced"` | `"high"`).
+    pub mpv_scale_preset: String,
+    /// mpv hardware decode mode (`"videotoolbox"` | `"auto-safe"` | `"no"`).
+    pub mpv_hwdec_mode: String,
+    /// mpv demuxer forward cache budget in MiB (`4..=128`).
+    pub mpv_buffer_mb: u32,
+    /// Extra newline- or comma-separated `key=value` mpv options applied on startup.
+    pub mpv_extra_options: String,
+    /// Hide uncached P2P torrents and show only direct/cached Debrid streams.
+    pub debrid_only_mode: bool,
+    /// HTTP timeout in seconds (`3..=60`) for Stremio addon requests.
+    pub addon_timeout_s: u32,
+    /// Place the Continue Watching rail above Trending rails on the Home screen.
+    pub cw_at_top: bool,
+    /// Maximum number of dynamic addon catalog rails shown on Home (`0..=15`).
+    pub max_addon_rails: u32,
+    /// Poster card scale percentage (`80..=125`).
+    pub poster_scale_pct: u32,
+    /// Poster corner radius in points (`4..=24`).
+    pub poster_radius_pt: u32,
+    /// Hide title and metadata captions underneath poster cards.
+    pub hide_poster_titles: bool,
+    /// Show IMDb rating badge on poster cards.
+    pub show_imdb_badge: bool,
+    /// Show Movie/Series type badge on poster cards.
+    pub show_type_badge: bool,
+    /// Show Watched checkmark badge on poster cards.
+    pub show_watched_badge: bool,
+    /// Show In-Library badge on poster cards.
+    pub show_library_badge: bool,
+    /// Draw chapter tick marks on the player seek bar.
+    pub seek_bar_chapters: bool,
+    /// Show series name as primary title and episode info as subtitle (false swaps them).
+    pub player_title_series_first: bool,
+    /// Preferred app UI language (`"system"` | `"tr"` | `"en"`).
+    pub ui_language: String,
+    /// Keep the player window floating above other windows.
+    pub player_always_on_top: bool,
+    /// Mask media title in Discord Rich Presence ("Watching on Cinma").
+    pub discord_hide_title: bool,
+    /// Keep showing Discord Rich Presence while playback is paused.
+    pub discord_show_when_paused: bool,
+    /// Broadcast "Browsing Catalogs" in Discord Rich Presence on Home.
+    pub discord_show_when_browsing: bool,
+    /// Start calendar week formatting on Monday (`true`) vs Sunday (`false`).
+    pub week_starts_monday: bool,
+    /// Hide nearly finished items (`>= 85%`) from Continue Watching.
+    pub cw_hide_caught_up: bool,
+    /// Custom preset duration in minutes for the Sleep Timer menu.
+    pub custom_sleep_minutes: u32,
+    /// Show compact live torrent speed and peer count next to the Globe button.
+    pub show_p2p_speed_chip: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -205,6 +263,35 @@ impl Default for PlayerPreferences {
             resume_behavior: "always_resume".to_owned(),
             volume_hud: true,
             screen_lock_enabled: true,
+            hdr_tone_mapping: "auto".to_owned(),
+            mac_edr_enabled: true,
+            force_yuv420p: false,
+            mpv_scale_preset: "balanced".to_owned(),
+            mpv_hwdec_mode: "videotoolbox".to_owned(),
+            mpv_buffer_mb: 8,
+            mpv_extra_options: String::new(),
+            debrid_only_mode: false,
+            addon_timeout_s: 15,
+            cw_at_top: true,
+            max_addon_rails: 6,
+            poster_scale_pct: 100,
+            poster_radius_pt: 12,
+            hide_poster_titles: false,
+            show_imdb_badge: true,
+            show_type_badge: true,
+            show_watched_badge: true,
+            show_library_badge: false,
+            seek_bar_chapters: true,
+            player_title_series_first: true,
+            ui_language: "system".to_owned(),
+            player_always_on_top: false,
+            discord_hide_title: false,
+            discord_show_when_paused: true,
+            discord_show_when_browsing: false,
+            week_starts_monday: true,
+            cw_hide_caught_up: false,
+            custom_sleep_minutes: 45,
+            show_p2p_speed_chip: true,
         }
     }
 }
@@ -267,7 +354,11 @@ impl Core {
     }
 
     pub fn set_player_preferences(&self, prefs: &PlayerPreferences) -> Result<(), CoreError> {
-        self.save_profile_json(KEY_PLAYER_PREFS, prefs)
+        self.save_profile_json(KEY_PLAYER_PREFS, prefs)?;
+        if let Ok(mut slot) = self.http.lock() {
+            *slot = None;
+        }
+        Ok(())
     }
 
     pub fn video_offsets(&self, video_id: &str) -> Result<VideoOffsets, CoreError> {

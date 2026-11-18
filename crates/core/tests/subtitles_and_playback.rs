@@ -303,3 +303,102 @@ fn wave2_settings_source_lock_watched_filter_and_stream_sorting() {
     assert_eq!(ranked.ranked.len(), 2);
     assert_eq!(ranked.ranked[0].parsed.seeders, Some(240));
 }
+
+#[test]
+fn wave3_settings_debrid_only_cw_caught_up_and_disk_download_limit() {
+    let dir = tempfile::tempdir().unwrap();
+    let core: Arc<Core> = Core::open(dir.path()).unwrap();
+
+    // Debrid-only mode filters out uncached P2P torrents while keeping HTTP direct streams.
+    let w3_prefs = PlayerPreferences {
+        debrid_only_mode: true,
+        cw_hide_caught_up: true,
+        addon_timeout_s: 25,
+        max_addon_rails: 10,
+        cw_at_top: false,
+        poster_scale_pct: 110,
+        poster_radius_pt: 16,
+        hide_poster_titles: true,
+        show_imdb_badge: false,
+        show_type_badge: false,
+        show_watched_badge: true,
+        show_library_badge: true,
+        seek_bar_chapters: false,
+        player_title_series_first: false,
+        ui_language: "tr".into(),
+        player_always_on_top: true,
+        discord_hide_title: true,
+        discord_show_when_paused: false,
+        discord_show_when_browsing: true,
+        week_starts_monday: false,
+        custom_sleep_minutes: 90,
+        show_p2p_speed_chip: false,
+        ..Default::default()
+    };
+    core.set_player_preferences(&w3_prefs).unwrap();
+    assert_eq!(core.player_preferences().unwrap(), w3_prefs);
+
+    let s_p2p: Stream = serde_json::from_str(
+        r#"{"name":"1080p","title":"Show.S01E01.1080p.WEB-DL 👤 40","infoHash":"1111111111111111111111111111111111111111"}"#,
+    )
+    .unwrap();
+    let s_direct: Stream = serde_json::from_str(
+        r#"{"name":"1080p","title":"Show.S01E01.Direct","url":"https://cdn.example/ep1.mp4"}"#,
+    )
+    .unwrap();
+    let ranked = core.rank_streams(
+        vec![
+            StreamCandidate {
+                addon_name: "Torrentio".into(),
+                stream: s_p2p,
+            },
+            StreamCandidate {
+                addon_name: "Direct".into(),
+                stream: s_direct,
+            },
+        ],
+        None,
+    );
+    assert_eq!(ranked.ranked.len(), 1);
+    assert!(!ranked.ranked[0].parsed.is_torrent);
+
+    // Continue Watching hides items >= 85% watched when cw_hide_caught_up is enabled.
+    core.save_watch_progress(WatchProgressInput {
+        video_id: "ep_nearly".into(),
+        meta_id: "tt333".into(),
+        media_type: "series".into(),
+        title: "Almost Done".into(),
+        artwork: None,
+        season: Some(1),
+        episode: Some(1),
+        position_s: 880.0,
+        duration_s: 1000.0,
+    })
+    .unwrap();
+    core.save_watch_progress(WatchProgressInput {
+        video_id: "ep_mid".into(),
+        meta_id: "tt444".into(),
+        media_type: "series".into(),
+        title: "In Progress".into(),
+        artwork: None,
+        season: Some(1),
+        episode: Some(1),
+        position_s: 400.0,
+        duration_s: 1000.0,
+    })
+    .unwrap();
+    let cw = core.continue_watching(10).unwrap();
+    assert_eq!(cw.len(), 1);
+    assert_eq!(cw[0].meta_id, "tt444");
+
+    // Disk policy download cap maps cleanly to TorrentPolicy.download_bps.
+    let mut disk = core.disk_policy_settings().unwrap();
+    disk.download_limit_kbps = 2048;
+    core.set_disk_policy_settings(&disk).unwrap();
+    let reloaded_disk = core.disk_policy_settings().unwrap();
+    assert_eq!(reloaded_disk.download_limit_kbps, 2048);
+    assert_eq!(
+        reloaded_disk.torrent_policy(true).download_bps,
+        Some(2048 * 1024)
+    );
+}

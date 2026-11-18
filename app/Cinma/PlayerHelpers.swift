@@ -6,8 +6,9 @@ import MediaPlayer
 // MARK: - HDR Surface Detection
 
 enum HDRProbe {
-    static func detectIsHdr(for request: PlayRequest, forceHdr: Bool) async -> Bool {
+    static func detectIsHdr(for request: PlayRequest, forceHdr: Bool, macEdrEnabled: Bool = true) async -> Bool {
         if forceHdr { return true }
+        if !macEdrEnabled { return false }
         switch request {
         case .stream(let stream, let meta):
             if let meta, meta.isHdr { return true }
@@ -48,6 +49,7 @@ final class ScrubBarView: NSView {
         }
     }
     var chapters: [ChapterInfo] = [] { didSet { needsDisplay = true } }
+    var showChapterMarkers = true { didSet { needsDisplay = true } }
     var abLoopA: Double? { didSet { needsDisplay = true } }
     var abLoopB: Double? { didSet { needsDisplay = true } }
 
@@ -158,10 +160,12 @@ final class ScrubBarView: NSView {
                 yRadius: trackH / 2
             ).fill()
 
-            NSColor(white: 0.05, alpha: 0.75).setFill()
-            for ch in chapters where ch.startS > 2 && ch.startS < duration - 2 {
-                let cx = pad + trackW * CGFloat(ch.startS / duration)
-                NSBezierPath(rect: NSRect(x: cx - 1, y: trackRect.minY - 1, width: 2, height: trackH + 2)).fill()
+            if showChapterMarkers {
+                NSColor(white: 0.05, alpha: 0.75).setFill()
+                for ch in chapters where ch.startS > 2 && ch.startS < duration - 2 {
+                    let cx = pad + trackW * CGFloat(ch.startS / duration)
+                    NSBezierPath(rect: NSRect(x: cx - 1, y: trackRect.minY - 1, width: 2, height: trackH + 2)).fill()
+                }
             }
 
             let knobSize: CGFloat = (hoverFraction != nil || isDragging) ? 14 : 11

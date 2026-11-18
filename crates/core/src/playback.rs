@@ -82,11 +82,17 @@ impl Core {
     ) -> Result<Playback, CoreError> {
         let prefs = self.player_preferences().unwrap_or_default();
         let config = PlayerConfig {
-            hdr_surface: hdr_surface || prefs.force_hdr_surface,
+            hdr_surface: (hdr_surface && prefs.mac_edr_enabled) || prefs.force_hdr_surface,
             hdr_target_peak: prefs.hdr_target_peak,
             exact_seek: prefs.exact_seek,
             gl_advanced_control: true,
             shader_paths: self.resolve_shader_paths(&prefs.shader_preset)?,
+            tone_mapping: prefs.hdr_tone_mapping,
+            force_yuv420p: prefs.force_yuv420p,
+            scale_preset: prefs.mpv_scale_preset,
+            hwdec_mode: prefs.mpv_hwdec_mode,
+            demuxer_max_mb: prefs.mpv_buffer_mb,
+            extra_options: prefs.mpv_extra_options,
         };
         self.create_playback_with_config(events, config)
     }

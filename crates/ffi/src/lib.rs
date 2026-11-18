@@ -1103,6 +1103,35 @@ pub struct PlayerPreferencesFfi {
     pub resume_behavior: String,
     pub volume_hud: bool,
     pub screen_lock_enabled: bool,
+    pub hdr_tone_mapping: String,
+    pub mac_edr_enabled: bool,
+    pub force_yuv420p: bool,
+    pub mpv_scale_preset: String,
+    pub mpv_hwdec_mode: String,
+    pub mpv_buffer_mb: u32,
+    pub mpv_extra_options: String,
+    pub debrid_only_mode: bool,
+    pub addon_timeout_s: u32,
+    pub cw_at_top: bool,
+    pub max_addon_rails: u32,
+    pub poster_scale_pct: u32,
+    pub poster_radius_pt: u32,
+    pub hide_poster_titles: bool,
+    pub show_imdb_badge: bool,
+    pub show_type_badge: bool,
+    pub show_watched_badge: bool,
+    pub show_library_badge: bool,
+    pub seek_bar_chapters: bool,
+    pub player_title_series_first: bool,
+    pub ui_language: String,
+    pub player_always_on_top: bool,
+    pub discord_hide_title: bool,
+    pub discord_show_when_paused: bool,
+    pub discord_show_when_browsing: bool,
+    pub week_starts_monday: bool,
+    pub cw_hide_caught_up: bool,
+    pub custom_sleep_minutes: u32,
+    pub show_p2p_speed_chip: bool,
 }
 
 impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
@@ -1147,6 +1176,35 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             resume_behavior: p.resume_behavior,
             volume_hud: p.volume_hud,
             screen_lock_enabled: p.screen_lock_enabled,
+            hdr_tone_mapping: p.hdr_tone_mapping,
+            mac_edr_enabled: p.mac_edr_enabled,
+            force_yuv420p: p.force_yuv420p,
+            mpv_scale_preset: p.mpv_scale_preset,
+            mpv_hwdec_mode: p.mpv_hwdec_mode,
+            mpv_buffer_mb: p.mpv_buffer_mb,
+            mpv_extra_options: p.mpv_extra_options,
+            debrid_only_mode: p.debrid_only_mode,
+            addon_timeout_s: p.addon_timeout_s,
+            cw_at_top: p.cw_at_top,
+            max_addon_rails: p.max_addon_rails,
+            poster_scale_pct: p.poster_scale_pct,
+            poster_radius_pt: p.poster_radius_pt,
+            hide_poster_titles: p.hide_poster_titles,
+            show_imdb_badge: p.show_imdb_badge,
+            show_type_badge: p.show_type_badge,
+            show_watched_badge: p.show_watched_badge,
+            show_library_badge: p.show_library_badge,
+            seek_bar_chapters: p.seek_bar_chapters,
+            player_title_series_first: p.player_title_series_first,
+            ui_language: p.ui_language,
+            player_always_on_top: p.player_always_on_top,
+            discord_hide_title: p.discord_hide_title,
+            discord_show_when_paused: p.discord_show_when_paused,
+            discord_show_when_browsing: p.discord_show_when_browsing,
+            week_starts_monday: p.week_starts_monday,
+            cw_hide_caught_up: p.cw_hide_caught_up,
+            custom_sleep_minutes: p.custom_sleep_minutes,
+            show_p2p_speed_chip: p.show_p2p_speed_chip,
         }
     }
 }
@@ -1193,6 +1251,35 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             resume_behavior: p.resume_behavior,
             volume_hud: p.volume_hud,
             screen_lock_enabled: p.screen_lock_enabled,
+            hdr_tone_mapping: p.hdr_tone_mapping,
+            mac_edr_enabled: p.mac_edr_enabled,
+            force_yuv420p: p.force_yuv420p,
+            mpv_scale_preset: p.mpv_scale_preset,
+            mpv_hwdec_mode: p.mpv_hwdec_mode,
+            mpv_buffer_mb: p.mpv_buffer_mb,
+            mpv_extra_options: p.mpv_extra_options,
+            debrid_only_mode: p.debrid_only_mode,
+            addon_timeout_s: p.addon_timeout_s,
+            cw_at_top: p.cw_at_top,
+            max_addon_rails: p.max_addon_rails,
+            poster_scale_pct: p.poster_scale_pct,
+            poster_radius_pt: p.poster_radius_pt,
+            hide_poster_titles: p.hide_poster_titles,
+            show_imdb_badge: p.show_imdb_badge,
+            show_type_badge: p.show_type_badge,
+            show_watched_badge: p.show_watched_badge,
+            show_library_badge: p.show_library_badge,
+            seek_bar_chapters: p.seek_bar_chapters,
+            player_title_series_first: p.player_title_series_first,
+            ui_language: p.ui_language,
+            player_always_on_top: p.player_always_on_top,
+            discord_hide_title: p.discord_hide_title,
+            discord_show_when_paused: p.discord_show_when_paused,
+            discord_show_when_browsing: p.discord_show_when_browsing,
+            week_starts_monday: p.week_starts_monday,
+            cw_hide_caught_up: p.cw_hide_caught_up,
+            custom_sleep_minutes: p.custom_sleep_minutes,
+            show_p2p_speed_chip: p.show_p2p_speed_chip,
         }
     }
 }
@@ -1466,6 +1553,10 @@ impl CinmaCore {
         media_type: String,
     ) -> Result<(), CinmaError> {
         Ok(self.inner.remove_from_library(&meta_id, &media_type)?)
+    }
+
+    pub fn library_meta_ids(&self) -> Result<Vec<String>, CinmaError> {
+        Ok(self.inner.library_meta_ids()?)
     }
 
     pub fn continue_watching(&self, limit: u32) -> Result<Vec<WatchProgressInfo>, CinmaError> {
@@ -2034,6 +2125,7 @@ impl CinmaCore {
         current.seeding_ratio = s.seeding_ratio;
         current.seeding_minutes = s.seeding_minutes;
         current.upload_limit_kbps = s.upload_limit_kbps;
+        current.download_limit_kbps = s.download_limit_kbps;
         Ok(self.inner.set_disk_policy_settings(&current)?)
     }
 
@@ -2549,6 +2641,7 @@ pub struct DiskPolicySettingsInfo {
     pub seeding_ratio: f64,
     pub seeding_minutes: u64,
     pub upload_limit_kbps: u32,
+    pub download_limit_kbps: u32,
 }
 
 impl From<cinma_core::DiskPolicySettings> for DiskPolicySettingsInfo {
@@ -2567,6 +2660,7 @@ impl From<cinma_core::DiskPolicySettings> for DiskPolicySettingsInfo {
             seeding_ratio: s.seeding_ratio,
             seeding_minutes: s.seeding_minutes,
             upload_limit_kbps: s.upload_limit_kbps,
+            download_limit_kbps: s.download_limit_kbps,
         }
     }
 }
@@ -3216,6 +3310,14 @@ impl PlaybackSession {
             .inner
             .player()
             .set_hdr_target_peak(nits)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_tone_mapping(&self, mode: String) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_tone_mapping(&mode)
             .map_err(CoreError::from)?)
     }
 

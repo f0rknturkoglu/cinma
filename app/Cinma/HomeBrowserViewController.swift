@@ -13,6 +13,7 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
     private let collectionView = KeyboardCollectionView()
     private let scrollView = NSScrollView()
     private var content: Content = .posters([])
+    private var posterStyle = PosterStyleContext()
 
     var onSelectPoster: ((MetaPreviewInfo) -> Void)?
     var onSelectContinue: ((WatchProgressInfo) -> Void)?
@@ -73,16 +74,17 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func update(title: String? = nil, source: String? = nil, content: Content) {
+    func update(title: String? = nil, source: String? = nil, content: Content, style: PosterStyleContext? = nil) {
         if let title { headingLabel.stringValue = title }
         if let source { sourceLabel.stringValue = source }
+        if let style { posterStyle = style }
         self.content = content
         if let layout = collectionView.collectionViewLayout as? NSCollectionViewFlowLayout {
             switch content {
             case .continueWatching:
                 layout.itemSize = ContinueWatchingCardItem.itemSize
             case .posters:
-                layout.itemSize = PosterCardItem.itemSize
+                layout.itemSize = posterStyle.itemSize
             }
         }
         collectionView.reloadData()
@@ -115,7 +117,7 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
                 for: indexPath
             )
             if let card = item as? PosterCardItem, items.indices.contains(indexPath.item) {
-                card.configure(with: items[indexPath.item])
+                card.configure(with: items[indexPath.item], style: posterStyle)
             }
             return item
         }
@@ -178,6 +180,8 @@ final class HomeBrowserViewController: NSViewController {
 
     private let continueRail = CatalogRailView(title: String(localized: "Continue Watching"))
     private var continueHeight: NSLayoutConstraint?
+    private var moviesRailHeight: NSLayoutConstraint?
+    private var seriesRailHeight: NSLayoutConstraint?
     private let trendingMoviesRail = CatalogRailView(title: String(localized: "Trending Movies"))
     private let trendingSeriesRail = CatalogRailView(title: String(localized: "Trending Series"))
     private let dynamicRailsStack = NSStackView()
@@ -253,6 +257,18 @@ final class HomeBrowserViewController: NSViewController {
         scrollView.reflectScrolledClipView(scrollView.contentView)
         installWindowObserversIfNeeded()
         startHeroRotationIfNeeded()
+        if (try? core.playerPreferences())?.discordShowWhenBrowsing == true {
+            let core = core
+            Task {
+                try? await core.updateDiscordPresence(
+                    title: "Browsing Catalogs",
+                    subtitle: nil,
+                    durationS: nil,
+                    positionS: 0,
+                    paused: false
+                )
+            }
+        }
     }
 
     override func viewWillDisappear() {
@@ -469,9 +485,11 @@ final class HomeBrowserViewController: NSViewController {
         continueRail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
         contentStack.setCustomSpacing(-44, after: heroContainer)
 
-        for rail in [trendingMoviesRail, trendingSeriesRail] {
+        for (idx, rail) in [trendingMoviesRail, trendingSeriesRail].enumerated() {
             rail.translatesAutoresizingMaskIntoConstraints = false
-            rail.heightAnchor.constraint(equalToConstant: 344).isActive = true
+            let h = rail.heightAnchor.constraint(equalToConstant: 344)
+            h.isActive = true
+            if idx == 0 { moviesRailHeight = h } else { seriesRailHeight = h }
             rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
             contentStack.addArrangedSubview(rail)
             rail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
@@ -527,13 +545,20 @@ final class HomeBrowserViewController: NSViewController {
     }
 
     private func applyTrending(movies: [MetaPreviewInfo], series: [MetaPreviewInfo]) {
+        let prefs = try? core.playerPreferences()
+        syncContinueRailPosition(cwAtTop: prefs?.cwAtTop ?? true)
+        let style = PosterStyleContext.load(from: core)
+        let railH = style.itemSize.height + 42
+        moviesRailHeight?.constant = railH
+        seriesRailHeight?.constant = railH
+
         let visMovies = CatalogVisibilityFilter.apply(movies, core: core)
         let visSeries = CatalogVisibilityFilter.apply(series, core: core)
         let hasTmdb = (try? core.hasTmdbKey()) ?? false
         let src = hasTmdb ? "TMDB" : String(localized: "Addon Catalog")
-        trendingMoviesRail.update(source: src, content: .posters(visMovies))
+        trendingMoviesRail.update(source: src, content: .posters(visMovies), style: style)
         trendingMoviesRail.isHidden = visMovies.isEmpty
-        trendingSeriesRail.update(source: src, content: .posters(visSeries))
+        trendingSeriesRail.update(source: src, content: .posters(visSeries), style: style)
         trendingSeriesRail.isHidden = visSeries.isEmpty
 
         let candidates = Array((visMovies.prefix(3) + visSeries.prefix(2)))
@@ -548,6 +573,24 @@ final class HomeBrowserViewController: NSViewController {
             heroOverview.stringValue = String(localized: "Cinma ships without content sources. Open Profile → Addons or Settings to add a Stremio addon or TMDB API key.")
             emptyHintLabel.stringValue = String(localized: "No catalogs loaded yet. Install a catalog addon or set your TMDB key in Settings.")
             emptyHintLabel.isHidden = false
+        }
+    }
+
+    private func syncContinueRailPosition(cwAtTop: Bool) {
+        let targetIdx: Int
+        if cwAtTop {
+            guard let heroIdx = contentStack.arrangedSubviews.firstIndex(of: heroContainer) else { return }
+            targetIdx = heroIdx + 1
+        } else {
+            guard let seriesIdx = contentStack.arrangedSubviews.firstIndex(of: trendingSeriesRail) else { return }
+            targetIdx = seriesIdx + 1
+        }
+        if contentStack.arrangedSubviews.firstIndex(of: continueRail) != targetIdx {
+            contentStack.removeArrangedSubview(continueRail)
+            let safeIdx = min(targetIdx, contentStack.arrangedSubviews.count)
+            contentStack.insertArrangedSubview(continueRail, at: safeIdx)
+            continueRail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+            contentStack.setCustomSpacing(cwAtTop ? -44 : 28, after: heroContainer)
         }
     }
 
@@ -570,14 +613,14 @@ final class HomeBrowserViewController: NSViewController {
 
     private func appendAddonRail(_ batch: CatalogBatchInfo) {
         let visItems = CatalogVisibilityFilter.apply(batch.items, core: core)
-        guard batch.error == nil, !visItems.isEmpty else { return }
-        // Avoid duplicating if there are already 6 rails.
-        guard dynamicRailsStack.arrangedSubviews.count < 6 else { return }
+        let maxRails = Int(min(15, (try? core.playerPreferences())?.maxAddonRails ?? 6))
+        guard batch.error == nil, !visItems.isEmpty, dynamicRailsStack.arrangedSubviews.count < maxRails else { return }
+        let style = PosterStyleContext.load(from: core)
         let rail = CatalogRailView(title: batch.catalogName, source: batch.addonName)
         rail.translatesAutoresizingMaskIntoConstraints = false
-        rail.heightAnchor.constraint(equalToConstant: 344).isActive = true
+        rail.heightAnchor.constraint(equalToConstant: style.itemSize.height + 42).isActive = true
         rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
-        rail.update(content: .posters(visItems))
+        rail.update(content: .posters(visItems), style: style)
         dynamicRailsStack.addArrangedSubview(rail)
         rail.widthAnchor.constraint(equalTo: dynamicRailsStack.widthAnchor).isActive = true
     }

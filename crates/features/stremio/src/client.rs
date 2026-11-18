@@ -102,9 +102,14 @@ pub struct AddonClient {
 
 impl AddonClient {
     pub fn new() -> Result<Self, AddonError> {
+        Self::with_timeout(15)
+    }
+
+    pub fn with_timeout(timeout_secs: u64) -> Result<Self, AddonError> {
+        let secs = timeout_secs.clamp(3, 60);
         let http = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
+            .connect_timeout(Duration::from_secs(secs.min(10)))
+            .timeout(Duration::from_secs(secs))
             .build()?;
         Ok(Self { http })
     }

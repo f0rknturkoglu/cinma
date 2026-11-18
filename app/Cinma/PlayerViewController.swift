@@ -82,6 +82,7 @@ final class PlayerViewController: NSViewController {
     private let speedButton = NSButton()
     private let volumeButton = NSButton()
     private let lockButton = NSButton()
+    private let p2pSpeedLabel = NSTextField(labelWithString: "")
     private let clockPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
     private let clockLabel = NSTextField(labelWithString: "")
     private let unlockPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 18)
@@ -161,6 +162,7 @@ final class PlayerViewController: NSViewController {
     private var pausedBySystemEvent = false
     private var isScreenLocked = false
     private var autoPlayedEpisodesCount: UInt32 = 0
+    private var p2pChipTask: Task<Void, Never>?
 
     private static let clockFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -421,6 +423,10 @@ final class PlayerViewController: NSViewController {
         let audioBtn = makeIconButton("waveform", tooltip: String(localized: "Audio Track & Delay"), action: #selector(showAudioMenu(_:)))
         let chapBtn = makeIconButton("list.bullet.rectangle", tooltip: String(localized: "Chapters"), action: #selector(showChaptersMenu(_:)))
         let globeBtn = makeIconButton("globe", tooltip: String(localized: "Streaming Details"), action: #selector(showStreamDetailsPopover(_:)))
+        p2pSpeedLabel.font = .monospacedDigitSystemFont(ofSize: 10.5, weight: .semibold)
+        p2pSpeedLabel.textColor = CinemaTheme.textSecondary
+        p2pSpeedLabel.isHidden = true
+        p2pSpeedLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         let streamsBtn = makeIconButton("rectangle.stack", tooltip: String(localized: "Switch Stream"), action: #selector(showStreamSwitcher(_:)))
         let castBtn = makeIconButton("tv.and.mediabox", tooltip: String(localized: "Cast to LAN Device"), action: #selector(openCastSheet(_:)))
         let pipBtn = makeIconButton("pip.enter", tooltip: String(localized: "Mini Player (P)"), action: #selector(enterPiPClicked))
@@ -447,7 +453,7 @@ final class PlayerViewController: NSViewController {
             back10, playButton, fwd10, timeLabel, infoLabel,
             spacer,
             volumeButton, speedButton, subBtn, audioBtn, chapBtn,
-            globeBtn, streamsBtn, castBtn, pipBtn, statsBtn, shotBtn, moreBtn, lockButton, fsBtn,
+            globeBtn, p2pSpeedLabel, streamsBtn, castBtn, pipBtn, statsBtn, shotBtn, moreBtn, lockButton, fsBtn,
         ])
         transportRow.orientation = .horizontal
         transportRow.alignment = .centerY
@@ -593,9 +599,18 @@ final class PlayerViewController: NSViewController {
     private func refreshTitles() {
         switch request {
         case .stream(let s, let meta):
-            titleField.stringValue = meta?.title ?? s.addonName
-            subField.stringValue = meta?.subtitle ?? ""
-            subField.isHidden = (meta?.subtitle ?? "").isEmpty
+            let seriesFirst = (try? core.playerPreferences())?.playerTitleSeriesFirst ?? true
+            let seriesName = meta?.title ?? s.addonName
+            let episodeSub = meta?.subtitle ?? ""
+            if !seriesFirst && !episodeSub.isEmpty {
+                titleField.stringValue = episodeSub
+                subField.stringValue = seriesName
+                subField.isHidden = false
+            } else {
+                titleField.stringValue = seriesName
+                subField.stringValue = episodeSub
+                subField.isHidden = episodeSub.isEmpty
+            }
             infoLabel.stringValue = meta?.streamSummary ?? s.name ?? s.addonName
         case .file(let url):
             titleField.stringValue = url.lastPathComponent
@@ -724,9 +739,38 @@ final class PlayerViewController: NSViewController {
                 confirmOnLeave: false,
                 resumeBehavior: "always_resume",
                 volumeHud: true,
-                screenLockEnabled: true
+                screenLockEnabled: true,
+                hdrToneMapping: "auto",
+                macEdrEnabled: true,
+                forceYuv420p: false,
+                mpvScalePreset: "balanced",
+                mpvHwdecMode: "videotoolbox",
+                mpvBufferMb: 8,
+                mpvExtraOptions: "",
+                debridOnlyMode: false,
+                addonTimeoutS: 15,
+                cwAtTop: true,
+                maxAddonRails: 6,
+                posterScalePct: 100,
+                posterRadiusPt: 12,
+                hidePosterTitles: false,
+                showImdbBadge: true,
+                showTypeBadge: true,
+                showWatchedBadge: true,
+                showLibraryBadge: false,
+                seekBarChapters: true,
+                playerTitleSeriesFirst: true,
+                uiLanguage: "system",
+                playerAlwaysOnTop: false,
+                discordHideTitle: false,
+                discordShowWhenPaused: true,
+                discordShowWhenBrowsing: false,
+                weekStartsMonday: true,
+                cwHideCaughtUp: false,
+                customSleepMinutes: 45,
+                showP2pSpeedChip: true
             )
-            let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface)
+            let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface, macEdrEnabled: prefs.macEdrEnabled)
             do {
                 await MainActor.run {
                     let initialSpeed = Double(prefs.defaultSpeedPct) / 100.0
@@ -912,8 +956,12 @@ final class PlayerViewController: NSViewController {
             volume = min(volume, Double(prefs.volumeBoostMax))
             try? session.setCropMode(mode: prefs.cropMode)
             try? session.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
+            try? session.setToneMapping(mode: prefs.hdrToneMapping)
+            scrubBar.showChapterMarkers = prefs.seekBarChapters
             lockButton.isHidden = !prefs.screenLockEnabled
+            view.window?.level = prefs.playerAlwaysOnTop ? .floating : .normal
         }
+        refreshP2pSpeedChip()
         updateClockPill()
         try? session.setSpeed(speed: speed)
         if abs(volume - 100.0) > 0.5 {
@@ -1873,8 +1921,14 @@ final class PlayerViewController: NSViewController {
         abItem.target = self
         menu.addItem(abItem)
 
+        let prefs = try? core.playerPreferences()
+        let onTopItem = NSMenuItem(title: String(localized: "Always on Top"), action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
+        onTopItem.target = self
+        onTopItem.state = (prefs?.playerAlwaysOnTop ?? false) ? .on : .off
+        menu.addItem(onTopItem)
+
         // Aspect / Crop submenu
-        let currentCrop = (try? core.playerPreferences())?.cropMode ?? "fit"
+        let currentCrop = prefs?.cropMode ?? "fit"
         let cropMenu = NSMenu()
         for (label, mode) in [
             (String(localized: "Fit (Original)"), "fit"),
@@ -1892,6 +1946,26 @@ final class PlayerViewController: NSViewController {
         let cropHolder = NSMenuItem(title: String(localized: "Aspect / Crop"), action: nil, keyEquivalent: "")
         cropHolder.submenu = cropMenu
         menu.addItem(cropHolder)
+
+        // Tone Mapping submenu
+        let currentTm = prefs?.hdrToneMapping ?? "auto"
+        let tmMenu = NSMenu()
+        for (label, mode) in [
+            (String(localized: "Auto"), "auto"),
+            ("BT.2390", "bt.2390"),
+            ("Reinhard", "reinhard"),
+            ("Hable", "hable"),
+            ("Clip", "clip"),
+        ] {
+            let item = NSMenuItem(title: label, action: #selector(selectToneMapping(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode
+            item.state = currentTm == mode ? .on : .off
+            tmMenu.addItem(item)
+        }
+        let tmHolder = NSMenuItem(title: String(localized: "HDR Tone Mapping"), action: nil, keyEquivalent: "")
+        tmHolder.submenu = tmMenu
+        menu.addItem(tmHolder)
 
         // Shaders submenu
         let shaderMenu = NSMenu()
@@ -1920,7 +1994,12 @@ final class PlayerViewController: NSViewController {
 
         // Sleep timer submenu
         let sleepMenu = NSMenu()
-        for (label, mins) in [(String(localized: "Off"), 0), ("15m", 15), ("30m", 30), ("60m", 60)] {
+        var sleepOptions: [(String, Int)] = [(String(localized: "Off"), 0), ("15m", 15), ("30m", 30), ("60m", 60)]
+        let customMins = Int(prefs?.customSleepMinutes ?? 45)
+        if customMins > 0 && ![15, 30, 60].contains(customMins) {
+            sleepOptions.append((String(localized: "Custom (\(customMins)m)"), customMins))
+        }
+        for (label, mins) in sleepOptions {
             let item = NSMenuItem(title: label, action: #selector(setSleepTimerMinutes(_:)), keyEquivalent: "")
             item.target = self
             item.tag = mins
@@ -1931,6 +2010,24 @@ final class PlayerViewController: NSViewController {
         menu.addItem(sleepHolder)
 
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc private func toggleAlwaysOnTop() {
+        guard var prefs = try? core.playerPreferences() else { return }
+        prefs.playerAlwaysOnTop.toggle()
+        try? core.setPlayerPreferences(prefs: prefs)
+        view.window?.level = prefs.playerAlwaysOnTop ? .floating : .normal
+        showStatus(prefs.playerAlwaysOnTop ? String(localized: "Always on top enabled") : String(localized: "Always on top disabled"))
+    }
+
+    @objc private func selectToneMapping(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? String else { return }
+        if var prefs = try? core.playerPreferences() {
+            prefs.hdrToneMapping = mode
+            try? core.setPlayerPreferences(prefs: prefs)
+        }
+        try? session?.setToneMapping(mode: mode)
+        showStatus("\(String(localized: "Tone Mapping")): \(sender.title)")
     }
 
     @objc private func selectCropMode(_ sender: NSMenuItem) {
@@ -2437,6 +2534,33 @@ final class PlayerViewController: NSViewController {
         clockPill.isHidden = !hudVisible
     }
 
+    private func refreshP2pSpeedChip() {
+        p2pChipTask?.cancel()
+        p2pChipTask = nil
+        let showChip = (try? core.playerPreferences())?.showP2pSpeedChip ?? true
+        guard showChip else {
+            p2pSpeedLabel.isHidden = true
+            return
+        }
+        p2pChipTask = Task { [weak self] in
+            while let self, !Task.isCancelled, !self.closing {
+                if let st = self.session?.streamStats(), st.isTorrent {
+                    let speedStr: String
+                    if st.downloadSpeedBps >= 1024 * 1024 {
+                        speedStr = String(format: "%.1f MB/s", Double(st.downloadSpeedBps) / (1024 * 1024))
+                    } else {
+                        speedStr = "\(st.downloadSpeedBps / 1024) KB/s"
+                    }
+                    self.p2pSpeedLabel.stringValue = "\(speedStr) · \(st.peersConnected)p"
+                    self.p2pSpeedLabel.isHidden = false
+                } else {
+                    self.p2pSpeedLabel.isHidden = true
+                }
+                try? await Task.sleep(for: .milliseconds(1500))
+            }
+        }
+    }
+
     private static func format(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "--:--" }
         let total = Int(seconds)
@@ -2465,9 +2589,12 @@ final class PlayerViewController: NSViewController {
         hudHideTask?.cancel()
         statusClearTask?.cancel()
         statsTask?.cancel()
+        p2pChipTask?.cancel()
+        p2pChipTask = nil
         sleepTimerTask?.cancel()
         nextCountdownTask?.cancel()
         cancelStallWatchdog()
+        view.window?.level = .normal
         for obs in focusObservers { NotificationCenter.default.removeObserver(obs) }
         focusObservers.removeAll()
         dismissFloatingPopover()

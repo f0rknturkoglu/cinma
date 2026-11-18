@@ -123,6 +123,14 @@ impl Core {
         Ok(db.library_items(profile)?)
     }
 
+    pub fn library_meta_ids(&self) -> Result<Vec<String>, CoreError> {
+        Ok(self
+            .library_items()?
+            .into_iter()
+            .map(|i| i.meta_id)
+            .collect())
+    }
+
     pub fn is_in_library(&self, meta_id: &str, media_type: &str) -> Result<bool, CoreError> {
         let profile = self.active_profile()?;
         let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
@@ -160,8 +168,22 @@ impl Core {
     /// Pure SQLite read — called on launch before any network call (§5.16).
     pub fn continue_watching(&self, limit: usize) -> Result<Vec<WatchProgressRow>, CoreError> {
         let profile = self.active_profile()?;
+        let hide_caught_up = self
+            .player_preferences()
+            .map(|p| p.cw_hide_caught_up)
+            .unwrap_or(false);
+        let fetch_limit = if hide_caught_up {
+            limit.saturating_mul(2).max(limit)
+        } else {
+            limit
+        };
         let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
-        Ok(db.continue_watching(profile, limit)?)
+        let mut rows = db.continue_watching(profile, fetch_limit)?;
+        if hide_caught_up {
+            rows.retain(|r| r.duration_s <= 0.0 || (r.position_s / r.duration_s) < 0.85);
+            rows.truncate(limit);
+        }
+        Ok(rows)
     }
 
     pub fn get_watch_progress(

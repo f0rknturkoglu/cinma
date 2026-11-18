@@ -74,6 +74,12 @@ pub struct PlayerConfig {
     pub exact_seek: bool,
     pub gl_advanced_control: bool,
     pub shader_paths: Vec<String>,
+    pub tone_mapping: String,
+    pub force_yuv420p: bool,
+    pub scale_preset: String,
+    pub hwdec_mode: String,
+    pub demuxer_max_mb: u32,
+    pub extra_options: String,
 }
 
 impl Default for PlayerConfig {
@@ -84,6 +90,12 @@ impl Default for PlayerConfig {
             exact_seek: true,
             gl_advanced_control: true,
             shader_paths: Vec::new(),
+            tone_mapping: "auto".to_owned(),
+            force_yuv420p: false,
+            scale_preset: "balanced".to_owned(),
+            hwdec_mode: "videotoolbox".to_owned(),
+            demuxer_max_mb: 8,
+            extra_options: String::new(),
         }
     }
 }
@@ -221,6 +233,18 @@ impl Player {
         } else {
             ("bt.1886", "bt.709", "rgba8")
         };
+        let hwdec = match self.config.hwdec_mode.trim() {
+            "no" => "no",
+            "auto-safe" => "auto-safe",
+            _ => "videotoolbox",
+        };
+        let scale = match self.config.scale_preset.trim() {
+            "fast" => "bilinear",
+            "high" => "ewa_lanczossharp",
+            _ => "spline36",
+        };
+        let mb = self.config.demuxer_max_mb.clamp(4, 128);
+        let back_mb = (mb / 4).max(2);
         let mut options: Vec<(&str, String)> = vec![
             // Never read user config, run scripts or spawn yt-dlp.
             ("config", "no".into()),
@@ -232,7 +256,9 @@ impl Player {
             ("input-vo-keyboard", "no".into()),
             // Rendering through the render API (ADR 0004 / ADR 0011).
             ("vo", "libmpv".into()),
-            ("hwdec", "videotoolbox".into()),
+            ("hwdec", hwdec.into()),
+            ("scale", scale.into()),
+            ("cscale", scale.into()),
             ("target-trc", trc.into()),
             ("target-prim", prim.into()),
             ("fbo-format", fbo_fmt.into()),
@@ -240,8 +266,8 @@ impl Player {
             ("idle", "yes".into()),
             ("keep-open", "yes".into()),
             ("cache", "yes".into()),
-            ("demuxer-max-bytes", "8MiB".into()),
-            ("demuxer-max-back-bytes", "2MiB".into()),
+            ("demuxer-max-bytes", format!("{mb}MiB")),
+            ("demuxer-max-back-bytes", format!("{back_mb}MiB")),
             ("demuxer-readahead-secs", "10".into()),
             ("cache-pause-wait", "1".into()),
             ("vd-lavc-threads", "4".into()),
@@ -256,11 +282,29 @@ impl Player {
         if let Some(peak) = self.config.hdr_target_peak {
             options.push(("target-peak", peak.to_string()));
         }
+        let tm = self.config.tone_mapping.trim();
+        if !tm.is_empty() && tm != "auto" {
+            options.push(("tone-mapping", tm.to_owned()));
+        }
+        if self.config.force_yuv420p {
+            options.push(("vf", "format=yuv420p".into()));
+        }
         if !self.config.shader_paths.is_empty() {
             options.push(("glsl-shaders", self.config.shader_paths.join(":")));
         }
         for (name, value) in options {
             self.set_option(name, &value)?;
+        }
+        for pair in self.config.extra_options.split([',', '\n']) {
+            let Some((raw_k, raw_v)) = pair.split_once('=') else {
+                continue;
+            };
+            let k = raw_k.trim();
+            let v = raw_v.trim();
+            if k.is_empty() || matches!(k, "vo" | "config" | "load-scripts" | "ytdl") {
+                continue;
+            }
+            let _ = self.set_option(k, v);
         }
         // SAFETY: handle is valid and not yet initialized.
         self.check(unsafe { (self.api.initialize)(self.handle.0) })?;
@@ -747,6 +791,11 @@ impl Player {
     pub fn set_hdr_target_peak(&self, nits: Option<u32>) -> Result<(), PlayerError> {
         let val = nits.map_or_else(|| "auto".to_owned(), |n| n.clamp(100, 10_000).to_string());
         self.set_property_str("target-peak", &val)
+    }
+
+    pub fn set_tone_mapping(&self, mode: &str) -> Result<(), PlayerError> {
+        let m = mode.trim();
+        self.set_property_str("tone-mapping", if m.is_empty() { "auto" } else { m })
     }
 
     pub fn set_glsl_shaders(&self, paths: &[String]) -> Result<(), PlayerError> {

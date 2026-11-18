@@ -37,6 +37,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     private var hasMore = false
     private var searchModeQuery: String?
     private var activeTask: Task<Void, Never>?
+    private var posterStyle = PosterStyleContext()
 
     init(core: CinmaCore, onOpenDetail: @escaping (MetaPreviewInfo) -> Void) {
         self.core = core
@@ -192,7 +193,20 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         reloadCatalogList()
     }
 
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        refreshPosterStyle()
+    }
+
+    private func refreshPosterStyle() {
+        posterStyle = PosterStyleContext.load(from: core)
+        if let layout = collectionView.collectionViewLayout as? NSCollectionViewFlowLayout {
+            layout.itemSize = posterStyle.itemSize
+        }
+    }
+
     func reloadCatalogList() {
+        refreshPosterStyle()
         catalogs = ((try? core.catalogs()) ?? []).filter(\.isBrowsable)
         catalogPopup.removeAllItems()
         for c in catalogs {
@@ -394,7 +408,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     ) -> NSCollectionViewItem {
         let cell = collectionView.makeItem(withIdentifier: PosterCardItem.identifier, for: indexPath)
         if let card = cell as? PosterCardItem, items.indices.contains(indexPath.item) {
-            card.configure(with: items[indexPath.item])
+            card.configure(with: items[indexPath.item], style: posterStyle)
         }
         return cell
     }

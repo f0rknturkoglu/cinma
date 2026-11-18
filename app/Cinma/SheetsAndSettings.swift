@@ -492,7 +492,8 @@ struct SettingsView: View {
         seedingMode: "off",
         seedingRatio: 1.0,
         seedingMinutes: 60,
-        uploadLimitKbps: 0
+        uploadLimitKbps: 0,
+        downloadLimitKbps: 0
     )
     @State private var ytdlpStatus = YtdlpStatusInfo(available: false, path: nil, managed: false)
     @State private var subSettings = SubtitleSettingsFfi(
@@ -557,13 +558,43 @@ struct SettingsView: View {
         confirmOnLeave: false,
         resumeBehavior: "always_resume",
         volumeHud: true,
-        screenLockEnabled: true
+        screenLockEnabled: true,
+        hdrToneMapping: "auto",
+        macEdrEnabled: true,
+        forceYuv420p: false,
+        mpvScalePreset: "balanced",
+        mpvHwdecMode: "videotoolbox",
+        mpvBufferMb: 8,
+        mpvExtraOptions: "",
+        debridOnlyMode: false,
+        addonTimeoutS: 15,
+        cwAtTop: true,
+        maxAddonRails: 6,
+        posterScalePct: 100,
+        posterRadiusPt: 12,
+        hidePosterTitles: false,
+        showImdbBadge: true,
+        showTypeBadge: true,
+        showWatchedBadge: true,
+        showLibraryBadge: false,
+        seekBarChapters: true,
+        playerTitleSeriesFirst: true,
+        uiLanguage: "system",
+        playerAlwaysOnTop: false,
+        discordHideTitle: false,
+        discordShowWhenPaused: true,
+        discordShowWhenBrowsing: false,
+        weekStartsMonday: true,
+        cwHideCaughtUp: false,
+        customSleepMinutes: 45,
+        showP2pSpeedChip: true
     )
     @State private var subLangsText = "tur, eng"
     @State private var audioLangsText = "eng, jpn, tur"
     @State private var dualLangText = "eng"
     @State private var srtFontText = ""
     @State private var blockWordsText = ""
+    @State private var extraMpvText = ""
     @State private var commands: [CommandInfo] = []
     @State private var editingCommandId: String?
     @State private var keyDraft = ""
@@ -652,6 +683,15 @@ struct SettingsView: View {
                 .onChange(of: language) { _, newValue in
                     try? core.setMetadataLanguage(lang: newValue)
                 }
+                Picker(String(localized: "App Interface Language"), selection: $playerPrefs.uiLanguage) {
+                    Text(String(localized: "System Default")).tag("system")
+                    Text("Türkçe").tag("tr")
+                    Text("English").tag("en")
+                }
+                .onChange(of: playerPrefs.uiLanguage) { _, newValue in
+                    savePlayerPrefs()
+                    applyAppLanguagePreference(newValue)
+                }
             }
 
             Section(String(localized: "Features")) {
@@ -737,6 +777,40 @@ struct SettingsView: View {
                         .frame(width: 200)
                         .onSubmit { savePlayerPrefs() }
                 }
+            }
+
+            Section(String(localized: "Home, Posters & Calendar")) {
+                Toggle(String(localized: "Show Continue Watching Above Trending"), isOn: $playerPrefs.cwAtTop)
+                    .onChange(of: playerPrefs.cwAtTop) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Hide Nearly Finished Items in Continue Watching"), isOn: $playerPrefs.cwHideCaughtUp)
+                    .onChange(of: playerPrefs.cwHideCaughtUp) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Addon Catalog Rails on Home")): \(playerPrefs.maxAddonRails)", value: $playerPrefs.maxAddonRails, in: 0...15, step: 1)
+                    .onChange(of: playerPrefs.maxAddonRails) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Poster Card Scale")): \(playerPrefs.posterScalePct)%", value: $playerPrefs.posterScalePct, in: 80...125, step: 5)
+                    .onChange(of: playerPrefs.posterScalePct) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Poster Corner Radius")): \(playerPrefs.posterRadiusPt) pt", value: $playerPrefs.posterRadiusPt, in: 4...24, step: 2)
+                    .onChange(of: playerPrefs.posterRadiusPt) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Hide Poster Titles"), isOn: $playerPrefs.hidePosterTitles)
+                    .onChange(of: playerPrefs.hidePosterTitles) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show IMDb Rating Badge"), isOn: $playerPrefs.showImdbBadge)
+                    .onChange(of: playerPrefs.showImdbBadge) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Movie / Series Type Label"), isOn: $playerPrefs.showTypeBadge)
+                    .onChange(of: playerPrefs.showTypeBadge) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Watched Badge on Posters"), isOn: $playerPrefs.showWatchedBadge)
+                    .onChange(of: playerPrefs.showWatchedBadge) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show In-Library Badge on Posters"), isOn: $playerPrefs.showLibraryBadge)
+                    .onChange(of: playerPrefs.showLibraryBadge) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Calendar Week Starts on Monday"), isOn: $playerPrefs.weekStartsMonday)
+                    .onChange(of: playerPrefs.weekStartsMonday) { _, _ in savePlayerPrefs() }
+            }
+
+            Section(String(localized: "Discord Rich Presence Privacy")) {
+                Toggle(String(localized: "Hide Media Title in Discord Status"), isOn: $playerPrefs.discordHideTitle)
+                    .onChange(of: playerPrefs.discordHideTitle) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Discord Status When Paused"), isOn: $playerPrefs.discordShowWhenPaused)
+                    .onChange(of: playerPrefs.discordShowWhenPaused) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Discord Status While Browsing Home"), isOn: $playerPrefs.discordShowWhenBrowsing)
+                    .onChange(of: playerPrefs.discordShowWhenBrowsing) { _, _ in savePlayerPrefs() }
             }
         }
         .formStyle(.grouped)
@@ -930,6 +1004,16 @@ struct SettingsView: View {
                     Toggle(String(localized: "Show Estimated Finish Time"), isOn: $playerPrefs.fullscreenClockEndTime)
                         .onChange(of: playerPrefs.fullscreenClockEndTime) { _, _ in savePlayerPrefs() }
                 }
+                Toggle(String(localized: "Keep Player Window Always on Top"), isOn: $playerPrefs.playerAlwaysOnTop)
+                    .onChange(of: playerPrefs.playerAlwaysOnTop) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Chapter Markers on Seek Bar"), isOn: $playerPrefs.seekBarChapters)
+                    .onChange(of: playerPrefs.seekBarChapters) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Series Title Before Episode Title"), isOn: $playerPrefs.playerTitleSeriesFirst)
+                    .onChange(of: playerPrefs.playerTitleSeriesFirst) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Live P2P Speed Next to Globe"), isOn: $playerPrefs.showP2pSpeedChip)
+                    .onChange(of: playerPrefs.showP2pSpeedChip) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Custom Sleep Timer")): \(playerPrefs.customSleepMinutes) min", value: $playerPrefs.customSleepMinutes, in: 5...240, step: 5)
+                    .onChange(of: playerPrefs.customSleepMinutes) { _, _ in savePlayerPrefs() }
             }
 
             Section(String(localized: "Video & Audio")) {
@@ -964,6 +1048,39 @@ struct SettingsView: View {
                 }
                 Toggle(String(localized: "Force 16-bit HDR Surface on SDR"), isOn: $playerPrefs.forceHdrSurface)
                     .onChange(of: playerPrefs.forceHdrSurface) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Enable macOS EDR HDR Output"), isOn: $playerPrefs.macEdrEnabled)
+                    .onChange(of: playerPrefs.macEdrEnabled) { _, _ in savePlayerPrefs() }
+                Picker(String(localized: "HDR Tone Mapping"), selection: $playerPrefs.hdrToneMapping) {
+                    Text(String(localized: "Auto")).tag("auto")
+                    Text("BT.2390").tag("bt.2390")
+                    Text("Reinhard").tag("reinhard")
+                    Text("Hable").tag("hable")
+                    Text("Clip").tag("clip")
+                }
+                .onChange(of: playerPrefs.hdrToneMapping) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Force YUV420P Pixel Format"), isOn: $playerPrefs.forceYuv420p)
+                    .onChange(of: playerPrefs.forceYuv420p) { _, _ in savePlayerPrefs() }
+                Picker(String(localized: "mpv Scaler Quality"), selection: $playerPrefs.mpvScalePreset) {
+                    Text(String(localized: "Fast (Bilinear)")).tag("fast")
+                    Text(String(localized: "Balanced (Spline36)")).tag("balanced")
+                    Text(String(localized: "High (EWA Lanczos)")).tag("high")
+                }
+                .onChange(of: playerPrefs.mpvScalePreset) { _, _ in savePlayerPrefs() }
+                Picker(String(localized: "Hardware Decoding"), selection: $playerPrefs.mpvHwdecMode) {
+                    Text("VideoToolbox").tag("videotoolbox")
+                    Text("Auto-Safe").tag("auto-safe")
+                    Text(String(localized: "Software (Off)")).tag("no")
+                }
+                .onChange(of: playerPrefs.mpvHwdecMode) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "mpv Buffer Size")): \(playerPrefs.mpvBufferMb) MiB", value: $playerPrefs.mpvBufferMb, in: 4...128, step: 8)
+                    .onChange(of: playerPrefs.mpvBufferMb) { _, _ in savePlayerPrefs() }
+                HStack {
+                    Text(String(localized: "Extra mpv Options"))
+                    Spacer()
+                    TextField("deband=yes, video-sync=display-resample", text: $extraMpvText)
+                        .frame(width: 240)
+                        .onSubmit { savePlayerPrefs() }
+                }
                 Picker(String(localized: "Max Volume Boost"), selection: $playerPrefs.volumeBoostMax) {
                     Text("100%").tag(UInt32(100))
                     Text("150%").tag(UInt32(150))
@@ -1008,6 +1125,10 @@ struct SettingsView: View {
                     Stepper("\(String(localized: "Stall Timeout")): \(playerPrefs.stallTimeoutS)s", value: $playerPrefs.stallTimeoutS, in: 5...30, step: 1)
                         .onChange(of: playerPrefs.stallTimeoutS) { _, _ in savePlayerPrefs() }
                 }
+                Toggle(String(localized: "Debrid / Direct Only (Hide P2P Torrents)"), isOn: $playerPrefs.debridOnlyMode)
+                    .onChange(of: playerPrefs.debridOnlyMode) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Addon HTTP Timeout")): \(playerPrefs.addonTimeoutS)s", value: $playerPrefs.addonTimeoutS, in: 3...60, step: 1)
+                    .onChange(of: playerPrefs.addonTimeoutS) { _, _ in savePlayerPrefs() }
             }
         }
         .formStyle(.grouped)
@@ -1048,6 +1169,8 @@ struct SettingsView: View {
 
                 Stepper("\(String(localized: "Upload Limit")): \(diskPolicy.uploadLimitKbps == 0 ? String(localized: "Unlimited") : "\(diskPolicy.uploadLimitKbps) KB/s")", value: $diskPolicy.uploadLimitKbps, in: 0...50_000, step: 512)
                     .onChange(of: diskPolicy.uploadLimitKbps) { _, _ in saveDiskPolicy() }
+                Stepper("\(String(localized: "Download Limit")): \(diskPolicy.downloadLimitKbps == 0 ? String(localized: "Unlimited") : "\(diskPolicy.downloadLimitKbps) KB/s")", value: $diskPolicy.downloadLimitKbps, in: 0...100_000, step: 1024)
+                    .onChange(of: diskPolicy.downloadLimitKbps) { _, _ in saveDiskPolicy() }
             }
 
             Section(String(localized: "VPN Interface Binding & Kill Switch")) {
@@ -1186,6 +1309,7 @@ struct SettingsView: View {
         if let p = try? core.playerPreferences() {
             playerPrefs = p
             blockWordsText = p.trackBlockWords.joined(separator: ", ")
+            extraMpvText = p.mpvExtraOptions
         }
         commands = (try? core.commands()) ?? []
     }
@@ -1208,7 +1332,17 @@ struct SettingsView: View {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+        playerPrefs.mpvExtraOptions = extraMpvText.trimmingCharacters(in: .whitespacesAndNewlines)
         try? core.setPlayerPreferences(prefs: playerPrefs)
+    }
+
+    private func applyAppLanguagePreference(_ code: String) {
+        if code == "system" {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([code], forKey: "AppleLanguages")
+        }
+        status = String(localized: "App language updated. Relaunch Cinma to apply across all windows.")
     }
 
     private func saveVpnBinding() {

@@ -1,5 +1,39 @@
 import AppKit
 
+struct PosterStyleContext {
+    var scalePct: UInt32 = 100
+    var cornerRadius: CGFloat = 12
+    var hideTitles: Bool = false
+    var showImdbBadge: Bool = true
+    var showTypeBadge: Bool = true
+    var showWatchedBadge: Bool = true
+    var showLibraryBadge: Bool = false
+    var watchedIds: Set<String> = []
+    var libraryIds: Set<String> = []
+
+    var scaleFactor: CGFloat { CGFloat(max(80, min(125, scalePct))) / 100.0 }
+    var artworkWidth: CGFloat { (168 * scaleFactor).rounded() }
+    var artworkHeight: CGFloat { (252 * scaleFactor).rounded() }
+    var itemSize: NSSize { NSSize(width: artworkWidth, height: artworkHeight + (hideTitles ? 4 : 50)) }
+
+    static func load(from core: CinmaCore) -> PosterStyleContext {
+        guard let prefs = try? core.playerPreferences() else { return PosterStyleContext() }
+        let watched = prefs.showWatchedBadge ? Set((try? core.watchedMetaIds()) ?? []) : []
+        let lib = prefs.showLibraryBadge ? Set((try? core.libraryMetaIds()) ?? []) : []
+        return PosterStyleContext(
+            scalePct: prefs.posterScalePct,
+            cornerRadius: CGFloat(max(4, min(24, prefs.posterRadiusPt))),
+            hideTitles: prefs.hidePosterTitles,
+            showImdbBadge: prefs.showImdbBadge,
+            showTypeBadge: prefs.showTypeBadge,
+            showWatchedBadge: prefs.showWatchedBadge,
+            showLibraryBadge: prefs.showLibraryBadge,
+            watchedIds: watched,
+            libraryIds: lib
+        )
+    }
+}
+
 /// Portrait poster card (`168×252` artwork + metadata line, matching mockup M0).
 @MainActor
 final class PosterCardItem: NSCollectionViewItem {
@@ -12,8 +46,11 @@ final class PosterCardItem: NSCollectionViewItem {
     private let fallbackTitle = NSTextField(wrappingLabelWithString: "")
     private let badgeBox = NSView()
     private let badgeLabel = NSTextField(labelWithString: "")
+    private let statusBadgeBox = NSView()
+    private let statusBadgeLabel = NSTextField(labelWithString: "")
     private let titleLabel = NSTextField(labelWithString: "")
     private let metaLabel = NSTextField(labelWithString: "")
+    private var cardHeightConstraint: NSLayoutConstraint?
     private var loadTask: Task<Void, Never>?
 
     override func loadView() {
@@ -55,10 +92,24 @@ final class PosterCardItem: NSCollectionViewItem {
         badgeLabel.translatesAutoresizingMaskIntoConstraints = false
         badgeBox.addSubview(badgeLabel)
 
+        statusBadgeBox.wantsLayer = true
+        statusBadgeBox.layer?.cornerRadius = 6
+        statusBadgeBox.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.62).cgColor
+        statusBadgeBox.layer?.borderWidth = 1
+        statusBadgeBox.layer?.borderColor = NSColor(white: 1, alpha: 0.22).cgColor
+        statusBadgeBox.translatesAutoresizingMaskIntoConstraints = false
+        statusBadgeBox.isHidden = true
+
+        statusBadgeLabel.font = .systemFont(ofSize: 10.5, weight: .bold)
+        statusBadgeLabel.textColor = CinemaTheme.green
+        statusBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
+        statusBadgeBox.addSubview(statusBadgeLabel)
+
         cardBox.addSubview(artworkView)
         cardBox.addSubview(scrim)
         cardBox.addSubview(fallbackTitle)
         cardBox.addSubview(badgeBox)
+        cardBox.addSubview(statusBadgeBox)
 
         titleLabel.font = .systemFont(ofSize: 13.5, weight: .semibold)
         titleLabel.textColor = CinemaTheme.textPrimary
@@ -74,11 +125,14 @@ final class PosterCardItem: NSCollectionViewItem {
         root.addSubview(titleLabel)
         root.addSubview(metaLabel)
 
+        let hConstraint = cardBox.heightAnchor.constraint(equalToConstant: 252)
+        cardHeightConstraint = hConstraint
+
         NSLayoutConstraint.activate([
             cardBox.topAnchor.constraint(equalTo: root.topAnchor),
             cardBox.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             cardBox.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            cardBox.heightAnchor.constraint(equalToConstant: 252),
+            hConstraint,
 
             artworkView.topAnchor.constraint(equalTo: cardBox.topAnchor),
             artworkView.leadingAnchor.constraint(equalTo: cardBox.leadingAnchor),
@@ -100,6 +154,13 @@ final class PosterCardItem: NSCollectionViewItem {
             badgeLabel.trailingAnchor.constraint(equalTo: badgeBox.trailingAnchor, constant: -7),
             badgeLabel.topAnchor.constraint(equalTo: badgeBox.topAnchor, constant: 2),
             badgeLabel.bottomAnchor.constraint(equalTo: badgeBox.bottomAnchor, constant: -2),
+
+            statusBadgeBox.topAnchor.constraint(equalTo: cardBox.topAnchor, constant: 10),
+            statusBadgeBox.leadingAnchor.constraint(equalTo: cardBox.leadingAnchor, constant: 10),
+            statusBadgeLabel.leadingAnchor.constraint(equalTo: statusBadgeBox.leadingAnchor, constant: 7),
+            statusBadgeLabel.trailingAnchor.constraint(equalTo: statusBadgeBox.trailingAnchor, constant: -7),
+            statusBadgeLabel.topAnchor.constraint(equalTo: statusBadgeBox.topAnchor, constant: 2),
+            statusBadgeLabel.bottomAnchor.constraint(equalTo: statusBadgeBox.bottomAnchor, constant: -2),
 
             titleLabel.topAnchor.constraint(equalTo: cardBox.bottomAnchor, constant: 8),
             titleLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -139,24 +200,41 @@ final class PosterCardItem: NSCollectionViewItem {
         updateSelectionRing()
     }
 
-    func configure(with item: MetaPreviewInfo) {
+    func configure(with item: MetaPreviewInfo, style: PosterStyleContext = PosterStyleContext()) {
+        cardBox.layer?.cornerRadius = style.cornerRadius
+        cardHeightConstraint?.constant = style.artworkHeight
         gradientLayer.colors = ArtworkPlaceholder.gradient(for: item.id)
         titleLabel.stringValue = item.name
+        titleLabel.isHidden = style.hideTitles
         fallbackTitle.stringValue = item.poster == nil ? item.name.uppercased() : ""
         fallbackTitle.isHidden = item.poster != nil
 
         let year = item.releaseInfo ?? ""
-        let kind = item.mediaType == "series" ? String(localized: "Series") : String(localized: "Movie")
+        let kind = style.showTypeBadge ? (item.mediaType == "series" ? String(localized: "Series") : String(localized: "Movie")) : ""
         metaLabel.stringValue = [year, kind].filter { !$0.isEmpty }.joined(separator: " · ")
+        metaLabel.isHidden = style.hideTitles
 
-        if let rating = item.imdbRating, !rating.isEmpty {
+        if style.showImdbBadge, let rating = item.imdbRating, !rating.isEmpty {
             badgeLabel.stringValue = "★ \(rating)"
             badgeBox.isHidden = false
         } else {
             badgeBox.isHidden = true
         }
 
-        artworkView.setRemoteImage(item.poster, pointSize: NSSize(width: 168, height: 252), taskStorage: &loadTask)
+        let isWatched = style.showWatchedBadge && style.watchedIds.contains(item.id)
+        let inLib = style.showLibraryBadge && style.libraryIds.contains(item.id)
+        var statusTokens: [String] = []
+        if isWatched { statusTokens.append("✓") }
+        if inLib { statusTokens.append("♥") }
+        if statusTokens.isEmpty {
+            statusBadgeBox.isHidden = true
+        } else {
+            statusBadgeLabel.stringValue = statusTokens.joined(separator: " ")
+            statusBadgeLabel.textColor = isWatched ? CinemaTheme.green : CinemaTheme.accent
+            statusBadgeBox.isHidden = false
+        }
+
+        artworkView.setRemoteImage(item.poster, pointSize: NSSize(width: style.artworkWidth, height: style.artworkHeight), taskStorage: &loadTask)
         view.setAccessibilityElement(true)
         view.setAccessibilityRole(.button)
         view.setAccessibilityTitle(item.name)

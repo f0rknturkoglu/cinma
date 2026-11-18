@@ -575,6 +575,11 @@ impl Core {
             .map(|c| (c.addon_name, c.stream))
             .collect();
         let mut result = rank_streams(raw, &prefs, &caps);
+        if player_prefs.debrid_only_mode {
+            result
+                .ranked
+                .retain(|r| !r.parsed.is_torrent || r.parsed.cached_debrid);
+        }
         match player_prefs.stream_sort.as_str() {
             "seeds" => result.ranked.sort_by(|a, b| {
                 b.parsed

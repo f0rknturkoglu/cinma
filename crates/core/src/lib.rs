@@ -221,7 +221,11 @@ impl Core {
         if let Some(client) = slot.as_ref() {
             return Ok(client.clone());
         }
-        let client = AddonClient::new()?;
+        let timeout_s = self
+            .player_preferences()
+            .map(|p| u64::from(p.addon_timeout_s))
+            .unwrap_or(15);
+        let client = AddonClient::with_timeout(timeout_s)?;
         *slot = Some(client.clone());
         Ok(client)
     }

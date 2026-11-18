@@ -850,6 +850,10 @@ impl Core {
         if !self.feature_enabled(Feature::Discord)? {
             return Ok(());
         }
+        let prefs = self.player_preferences().unwrap_or_default();
+        if input.paused && !prefs.discord_show_when_paused {
+            return self.clear_discord_presence().await;
+        }
         let client = self.discord_client()?;
         let now = now_unix();
         let start_ts = (!input.paused).then(|| now - input.position_s as i64);
@@ -859,9 +863,14 @@ impl Core {
             }
             _ => None,
         };
+        let (details, state) = if prefs.discord_hide_title {
+            ("Watching on Cinma".to_owned(), None)
+        } else {
+            (input.title, input.subtitle)
+        };
         let act = PresenceActivity {
-            details: input.title,
-            state: input.subtitle,
+            details,
+            state,
             start_ts,
             end_ts,
             paused: input.paused,
