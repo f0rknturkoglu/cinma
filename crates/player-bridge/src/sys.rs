@@ -18,6 +18,13 @@ pub const FORMAT_DOUBLE: c_int = 5;
 pub const FORMAT_NODE: c_int = 6;
 pub const FORMAT_NODE_ARRAY: c_int = 7;
 pub const FORMAT_NODE_MAP: c_int = 8;
+pub const FORMAT_BYTE_ARRAY: c_int = 9;
+
+#[repr(C)]
+pub struct mpv_byte_array {
+    pub data: *mut c_void,
+    pub size: usize,
+}
 
 #[repr(C)]
 pub union mpv_node_union {
@@ -163,6 +170,8 @@ pub struct Api {
     pub free_node_contents: unsafe extern "C" fn(*mut mpv_node),
     pub free: unsafe extern "C" fn(*mut c_void),
     pub command_async: unsafe extern "C" fn(*mut mpv_handle, u64, *mut *const c_char) -> c_int,
+    pub command_ret:
+        unsafe extern "C" fn(*mut mpv_handle, *mut *const c_char, *mut mpv_node) -> c_int,
     pub observe_property: unsafe extern "C" fn(*mut mpv_handle, u64, *const c_char, c_int) -> c_int,
     pub request_log_messages: unsafe extern "C" fn(*mut mpv_handle, *const c_char) -> c_int,
     pub wait_event: unsafe extern "C" fn(*mut mpv_handle, f64) -> *mut mpv_event,
@@ -236,6 +245,7 @@ fn resolve(lib: libloading::Library) -> Result<Api, libloading::Error> {
             free_node_contents: *lib.get(b"mpv_free_node_contents\0")?,
             free: *lib.get(b"mpv_free\0")?,
             command_async: *lib.get(b"mpv_command_async\0")?,
+            command_ret: *lib.get(b"mpv_command_ret\0")?,
             observe_property: *lib.get(b"mpv_observe_property\0")?,
             request_log_messages: *lib.get(b"mpv_request_log_messages\0")?,
             wait_event: *lib.get(b"mpv_wait_event\0")?,

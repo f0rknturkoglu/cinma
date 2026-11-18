@@ -752,6 +752,64 @@ pub fn pick_video_file(files: &[(String, u64)]) -> Option<usize> {
     largest(true).or_else(|| largest(false))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedTorrentInput {
+    pub info_hash: String,
+    pub name: Option<String>,
+    pub trackers: Vec<String>,
+}
+
+/// Parses a `magnet:?xt=urn:btih:...` URI into a normalized 40-char hex `info_hash`,
+/// optional display name, and tracker list.
+pub fn parse_magnet_uri_meta(uri: &str) -> Result<ParsedTorrentInput, TorrentError> {
+    let parsed = librqbit::Magnet::parse(uri.trim())
+        .map_err(|e| TorrentError::InvalidInfoHash(e.to_string()))?;
+    let hash_id = parsed
+        .as_id20()
+        .ok_or_else(|| TorrentError::InvalidInfoHash("magnet URI missing v1 info_hash".into()))?;
+    let info_hash = hash_id.as_string();
+    let name = parsed.name.filter(|s| !s.trim().is_empty());
+    let trackers = parsed
+        .trackers
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+    Ok(ParsedTorrentInput {
+        info_hash,
+        name,
+        trackers,
+    })
+}
+
+/// Parses raw `.torrent` metainfo bytes into a normalized 40-char hex `info_hash`,
+/// optional torrent title, and tracker list.
+pub fn parse_torrent_file_meta(bytes: &[u8]) -> Result<ParsedTorrentInput, TorrentError> {
+    let parsed = librqbit::torrent_from_bytes(bytes)
+        .map_err(|e| TorrentError::InvalidInfoHash(e.to_string()))?;
+    let info_hash = parsed.info_hash.as_string();
+    let name = parsed
+        .info
+        .data
+        .name
+        .as_ref()
+        .and_then(|b| std::str::from_utf8(b.as_ref()).ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    let trackers: Vec<String> = parsed
+        .iter_announce()
+        .filter_map(|u| std::str::from_utf8(u.as_ref()).ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect();
+    Ok(ParsedTorrentInput {
+        info_hash,
+        name,
+        trackers,
+    })
+}
+
 struct TorrentSource {
     handle: Arc<ManagedTorrent>,
     file_idx: usize,

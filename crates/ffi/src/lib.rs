@@ -1172,6 +1172,12 @@ pub struct PlayerPreferencesFfi {
     pub haptic_feedback_enabled: bool,
     pub external_player_preset: String,
     pub split_continue_watching: bool,
+    pub pause_on_audio_output_change: bool,
+    pub clipboard_catcher_enabled: bool,
+    pub blackout_other_screens: bool,
+    pub auto_pip_on_occlusion: bool,
+    pub notify_on_download_complete: bool,
+    pub quick_play_enabled: bool,
 }
 
 impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
@@ -1267,6 +1273,12 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             haptic_feedback_enabled: p.haptic_feedback_enabled,
             external_player_preset: p.external_player_preset,
             split_continue_watching: p.split_continue_watching,
+            pause_on_audio_output_change: p.pause_on_audio_output_change,
+            clipboard_catcher_enabled: p.clipboard_catcher_enabled,
+            blackout_other_screens: p.blackout_other_screens,
+            auto_pip_on_occlusion: p.auto_pip_on_occlusion,
+            notify_on_download_complete: p.notify_on_download_complete,
+            quick_play_enabled: p.quick_play_enabled,
         }
     }
 }
@@ -1364,6 +1376,12 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             haptic_feedback_enabled: p.haptic_feedback_enabled,
             external_player_preset: p.external_player_preset,
             split_continue_watching: p.split_continue_watching,
+            pause_on_audio_output_change: p.pause_on_audio_output_change,
+            clipboard_catcher_enabled: p.clipboard_catcher_enabled,
+            blackout_other_screens: p.blackout_other_screens,
+            auto_pip_on_occlusion: p.auto_pip_on_occlusion,
+            notify_on_download_complete: p.notify_on_download_complete,
+            quick_play_enabled: p.quick_play_enabled,
         }
     }
 }
@@ -1701,6 +1719,22 @@ impl CinmaCore {
             .set_watched(video_id, meta_id, media_type, title, watched)?)
     }
 
+    pub fn mark_episodes_watched(
+        &self,
+        meta_id: String,
+        media_type: String,
+        items: Vec<BatchEpisodeMarkFfi>,
+        watched: bool,
+    ) -> Result<(), CinmaError> {
+        let mapped: Vec<(String, String, i64, i64)> = items
+            .into_iter()
+            .map(|e| (e.video_id, e.title, e.season, e.episode))
+            .collect();
+        Ok(self
+            .inner
+            .mark_episodes_watched(&meta_id, &media_type, &mapped, watched)?)
+    }
+
     pub fn has_tmdb_key(&self) -> Result<bool, CinmaError> {
         Ok(self.inner.has_tmdb_key()?)
     }
@@ -2026,6 +2060,38 @@ impl CinmaCore {
         Ok(self.inner.set_series_source(&meta_id, &source.into())?)
     }
 
+    pub fn clear_series_source(&self, meta_id: String) -> Result<(), CinmaError> {
+        Ok(self.inner.clear_series_source(&meta_id)?)
+    }
+
+    pub fn manual_skip_markers(&self, meta_id: String) -> Result<ManualSkipMarkersFfi, CinmaError> {
+        Ok(self.inner.manual_skip_markers(&meta_id)?.into())
+    }
+
+    pub fn set_manual_skip_markers(
+        &self,
+        meta_id: String,
+        markers: ManualSkipMarkersFfi,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .set_manual_skip_markers(&meta_id, &markers.into())?)
+    }
+
+    pub fn search_subtitle_cues(
+        &self,
+        path: String,
+        query: String,
+        limit: u32,
+    ) -> Result<Vec<SubtitleCueFfi>, CinmaError> {
+        Ok(self
+            .inner
+            .search_subtitle_cues(std::path::Path::new(&path), &query, limit as usize)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     pub fn video_offsets(&self, video_id: String) -> Result<VideoOffsetsFfi, CinmaError> {
         let o = self.inner.video_offsets(&video_id)?;
         Ok(VideoOffsetsFfi {
@@ -2159,6 +2225,26 @@ impl CinmaCore {
             media_type,
             priority,
         )?)
+    }
+
+    pub fn parse_magnet_stream(&self, uri: String) -> Result<StreamInfo, CinmaError> {
+        let stream = self.inner.parse_magnet_stream(&uri)?;
+        Ok(cinma_core::StreamCandidate {
+            addon_name: "Magnet".to_owned(),
+            stream,
+        }
+        .into())
+    }
+
+    pub fn parse_torrent_file_stream(&self, path: String) -> Result<StreamInfo, CinmaError> {
+        let stream = self
+            .inner
+            .parse_torrent_file_stream(std::path::Path::new(&path))?;
+        Ok(cinma_core::StreamCandidate {
+            addon_name: "Torrent File".to_owned(),
+            stream,
+        }
+        .into())
     }
 
     pub fn add_ytdlp_download(
@@ -2581,6 +2667,29 @@ impl CinmaCore {
         Ok(self.inner.title_extras(media_type, id).await?.into())
     }
 
+    pub async fn title_collection(
+        &self,
+        media_type: String,
+        id: String,
+    ) -> Result<Option<MovieCollectionInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .title_collection(media_type, id)
+            .await?
+            .map(Into::into))
+    }
+
+    pub async fn person_credits(
+        &self,
+        person_name: String,
+    ) -> Result<Option<PersonProfileInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .person_credits(person_name)
+            .await?
+            .map(Into::into))
+    }
+
     pub async fn add_m3u_source(
         &self,
         name: String,
@@ -2891,6 +3000,124 @@ impl From<cinma_core::TraktRecommendation> for TraktRecommendationInfo {
             tmdb_id: r.tmdb_id,
         }
     }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct BatchEpisodeMarkFfi {
+    pub video_id: String,
+    pub title: String,
+    pub season: i64,
+    pub episode: i64,
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct ManualSkipMarkersFfi {
+    pub intro_end_s: Option<f64>,
+    pub outro_last_s: Option<f64>,
+}
+
+impl From<cinma_core::ManualSkipMarkers> for ManualSkipMarkersFfi {
+    fn from(m: cinma_core::ManualSkipMarkers) -> Self {
+        Self {
+            intro_end_s: m.intro_end_s,
+            outro_last_s: m.outro_last_s,
+        }
+    }
+}
+
+impl From<ManualSkipMarkersFfi> for cinma_core::ManualSkipMarkers {
+    fn from(m: ManualSkipMarkersFfi) -> Self {
+        Self {
+            intro_end_s: m.intro_end_s,
+            outro_last_s: m.outro_last_s,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct SubtitleCueFfi {
+    pub start_s: f64,
+    pub end_s: f64,
+    pub text: String,
+}
+
+impl From<cinma_core::SubtitleCue> for SubtitleCueFfi {
+    fn from(c: cinma_core::SubtitleCue) -> Self {
+        Self {
+            start_s: c.start_s,
+            end_s: c.end_s,
+            text: c.text,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct MovieCollectionInfo {
+    pub id: i64,
+    pub name: String,
+    pub overview: Option<String>,
+    pub parts: Vec<MetaPreviewInfo>,
+}
+
+impl From<cinma_core::MovieCollection> for MovieCollectionInfo {
+    fn from(c: cinma_core::MovieCollection) -> Self {
+        Self {
+            id: c.id,
+            name: c.name,
+            overview: c.overview,
+            parts: c.parts.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct PersonProfileInfo {
+    pub id: i64,
+    pub name: String,
+    pub biography: Option<String>,
+    pub birthday: Option<String>,
+    pub place_of_birth: Option<String>,
+    pub profile_image: Option<String>,
+    pub known_for: Option<String>,
+    pub credits: Vec<MetaPreviewInfo>,
+}
+
+impl From<cinma_core::PersonProfile> for PersonProfileInfo {
+    fn from(p: cinma_core::PersonProfile) -> Self {
+        Self {
+            id: p.id,
+            name: p.name,
+            biography: p.biography,
+            birthday: p.birthday,
+            place_of_birth: p.place_of_birth,
+            profile_image: p.profile_image,
+            known_for: p.known_for,
+            credits: p.credits.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct AudioDeviceInfo {
+    pub name: String,
+    pub description: String,
+}
+
+impl From<cinma_core::AudioDeviceEntry> for AudioDeviceInfo {
+    fn from(d: cinma_core::AudioDeviceEntry) -> Self {
+        Self {
+            name: d.name,
+            description: d.description,
+        }
+    }
+}
+
+#[derive(uniffi::Record)]
+pub struct RawFrameFfi {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub bgr0: Vec<u8>,
 }
 
 #[derive(uniffi::Record)]
@@ -3356,6 +3583,55 @@ impl PlaybackSession {
             .player()
             .frame_step(forward)
             .map_err(CoreError::from)?)
+    }
+
+    pub fn sub_seek(&self, offset: i32) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .sub_seek(offset)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn audio_devices(&self) -> Result<Vec<AudioDeviceInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .audio_devices()
+            .map_err(CoreError::from)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn current_audio_device(&self) -> Result<String, CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .current_audio_device()
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_audio_device(&self, name: String) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_audio_device(&name)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn capture_raw_frame(&self) -> Result<RawFrameFfi, CinmaError> {
+        let f = self
+            .inner
+            .player()
+            .capture_raw_frame()
+            .map_err(CoreError::from)?;
+        Ok(RawFrameFfi {
+            width: f.width,
+            height: f.height,
+            stride: f.stride,
+            bgr0: f.bgr0,
+        })
     }
 
     pub fn set_subtitle_pos(&self, pos: u32) -> Result<(), CinmaError> {

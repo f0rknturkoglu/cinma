@@ -790,3 +790,104 @@ struct VideoEqPopoverView: View {
         }
     }
 }
+
+/// Subtitle Dialogue / Scene Search popover (#N14).
+struct DialogueSearchPopoverView: View {
+    let core: CinmaCore
+    let subtitlePath: String?
+    let onSeek: (Double) -> Void
+    let onSubSeek: (Int32) -> Void
+    let onDismiss: () -> Void
+
+    @State private var query = ""
+    @State private var hits: [SubtitleCueFfi] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(String(localized: "Search Dialogue (Scene Search)"))
+                    .font(.headline)
+                Spacer()
+                Button(String(localized: "Prev Line (⌥←)")) { onSubSeek(-1) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                Button(String(localized: "Next Line (⌥→)")) { onSubSeek(1) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+
+            if let subtitlePath, !subtitlePath.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField(String(localized: "Find spoken line in active subtitle…"), text: $query)
+                        .textFieldStyle(.plain)
+                        .onChange(of: query) { _, newValue in
+                            let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if q.isEmpty {
+                                hits = []
+                            } else {
+                                hits = (try? core.searchSubtitleCues(path: subtitlePath, query: q, limit: 60)) ?? []
+                            }
+                        }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+
+                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(String(localized: "Type a word or phrase to jump to that scene."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if hits.isEmpty {
+                    Text(String(localized: "No matching dialogue lines found."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(hits.enumerated()), id: \.offset) { _, cue in
+                                Button {
+                                    onSeek(cue.startS)
+                                    onDismiss()
+                                } label: {
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text(Self.formatTimestamp(cue.startS))
+                                            .font(.caption.monospacedDigit().bold())
+                                            .foregroundStyle(.orange)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Color.orange.opacity(0.16), in: Capsule())
+                                        Text(cue.text)
+                                            .font(.caption)
+                                            .foregroundStyle(.primary)
+                                            .multilineTextAlignment(.leading)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.vertical, 4)
+                                    .padding(.horizontal, 6)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 220)
+                }
+            } else {
+                Text(String(localized: "Load or select an external/online .srt or .ass subtitle to search dialogue lines. You can still jump lines on embedded subtitles using Prev/Next buttons above."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(width: 390)
+    }
+
+    private static func formatTimestamp(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds))
+        let (h, m, s) = (total / 3600, total / 60 % 60, total % 60)
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
+    }
+}

@@ -1094,6 +1094,16 @@
         }
       }
     },
+    "Added to Library": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kütüphaneye eklendi"
+          }
+        }
+      }
+    },
     "Addon": {
       "localizations": {
         "en": {
@@ -1520,6 +1530,26 @@
         }
       }
     },
+    "Audio Output": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses Çıkışı"
+          }
+        }
+      }
+    },
+    "Audio Output Device": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses Çıkış Cihazı"
+          }
+        }
+      }
+    },
     "Audio Priority": {
       "localizations": {
         "en": {
@@ -1610,6 +1640,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Otomatik Algıla"
+          }
+        }
+      }
+    },
+    "Auto Mini Player (PiP) When Space/Window Hidden": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pencere / Masaüstü Gizlenince Otomatik Mini Oynatıcı (PiP)"
           }
         }
       }
@@ -1912,6 +1952,26 @@
         }
       }
     },
+    "Black Out Other Monitors (Fullscreen)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diğer Monitörleri Karart (Tam Ekran)"
+          }
+        }
+      }
+    },
+    "Black Out Other Monitors in Fullscreen": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tam Ekranda Diğer Monitörleri Karart"
+          }
+        }
+      }
+    },
     "Black Outline": {
       "localizations": {
         "en": {
@@ -2155,6 +2215,7 @@
       }
     },
     "Cast: %@": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -2405,6 +2466,16 @@
         }
       }
     },
+    "Clear Manual Skip Markers": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manuel Atlama İşaretlerini Temizle"
+          }
+        }
+      }
+    },
     "Clear Search": {
       "localizations": {
         "en": {
@@ -2453,6 +2524,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kapat"
+          }
+        }
+      }
+    },
+    "Collection": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seri / Koleksiyon"
           }
         }
       }
@@ -2641,6 +2722,16 @@
         }
       }
     },
+    "Copied %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopyalandı: %@"
+          }
+        }
+      }
+    },
     "Copy": {
       "localizations": {
         "en": {
@@ -2657,6 +2748,16 @@
         }
       }
     },
+    "Copy IMDb ID": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IMDb Kimliğini Kopyala"
+          }
+        }
+      }
+    },
     "Core failed to start: %@": {
       "localizations": {
         "en": {
@@ -2669,6 +2770,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Çekirdek başlatılamadı: %@"
+          }
+        }
+      }
+    },
+    "Could not capture paused frame for Live Text": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canlı Metin için duraklatılan kare yakalanamadı"
           }
         }
       }
@@ -2887,6 +2998,16 @@
         }
       }
     },
+    "Detect Magnet Links in Clipboard on App Focus": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uygulama Öne Gelince Panodaki Magnet Bağlantılarını Algıla"
+          }
+        }
+      }
+    },
     "Deutsch (de-DE)": {
       "localizations": {
         "tr": {
@@ -2919,6 +3040,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Doğrudan HTTP/S (Parçalı)"
+          }
+        }
+      }
+    },
+    "Director": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yönetmen"
           }
         }
       }
@@ -2975,6 +3106,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "İndir"
+          }
+        }
+      }
+    },
+    "Download Complete": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İndirme Tamamlandı"
           }
         }
       }
@@ -3130,6 +3271,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ağda Cihaz Bulmayı ve Yayınlamayı Aç"
+          }
+        }
+      }
+    },
+    "Enable One-Click Quick Play (Hero & Context Menu)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tek Tıkla Hızlı Oynatmayı Etkinleştir (Vitrin ve Sağ Tık)"
           }
         }
       }
@@ -3540,6 +3691,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kütüphanede filtrele…"
+          }
+        }
+      }
+    },
+    "Find spoken line in active subtitle…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktif altyazıda replik ara…"
+          }
+        }
+      }
+    },
+    "Finding best stream for %@…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ için en iyi akış bulunuyor…"
           }
         }
       }
@@ -4534,6 +4705,26 @@
         }
       }
     },
+    "Live Text ready — drag to select text (Press T to clear)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canlı Metin hazır — metin seçmek için sürükleyin (kapatmak için T)"
+          }
+        }
+      }
+    },
+    "Live Text unavailable on this frame": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu karede Canlı Metin kullanılamıyor"
+          }
+        }
+      }
+    },
     "Live subtitle preview line.\nSample bilingual text rendering.": {
       "localizations": {
         "tr": {
@@ -4582,6 +4773,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Son İzlenenleri Yükle"
+          }
+        }
+      }
+    },
+    "Load or select an external/online .srt or .ass subtitle to search dialogue lines. You can still jump lines on embedded subtitles using Prev/Next buttons above.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diyalog aramak için harici/çevrimiçi bir .srt veya .ass altyazı yükleyin veya seçin. Gömülü altyazılarda da yukarıdaki Önceki/Sonraki düğmeleriyle replikler arası atlayabilirsiniz."
           }
         }
       }
@@ -4738,12 +4939,122 @@
         }
       }
     },
+    "Magnet Download": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magnet İndirmesi"
+          }
+        }
+      }
+    },
+    "Manual skip markers cleared": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manuel atlama işaretleri temizlendi"
+          }
+        }
+      }
+    },
     "Margins": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Kenar Boşlukları"
+          }
+        }
+      }
+    },
+    "Mark Episode as Unwatched": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bölümü İzlenmedi İşaretle"
+          }
+        }
+      }
+    },
+    "Mark Episode as Watched": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bölümü İzlendi İşaretle"
+          }
+        }
+      }
+    },
+    "Mark Intro End Here (%@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Şu Anı Intro Bitişi Yap (%@)"
+          }
+        }
+      }
+    },
+    "Mark Outro Start Here (%@)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Şu Anı Kapanış Başlangıcı Yap (%@)"
+          }
+        }
+      }
+    },
+    "Mark This & Previous Episodes as Watched": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu ve Önceki Tüm Bölümleri İzlendi İşaretle"
+          }
+        }
+      }
+    },
+    "Mark as Unwatched": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzlenmedi İşaretle"
+          }
+        }
+      }
+    },
+    "Mark as Watched": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzlendi İşaretle"
+          }
+        }
+      }
+    },
+    "Marked as unwatched": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzlenmedi olarak işaretlendi"
+          }
+        }
+      }
+    },
+    "Marked as watched": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzlendi olarak işaretlendi"
           }
         }
       }
@@ -4864,6 +5175,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Küçült"
+          }
+        }
+      }
+    },
+    "Monitor blackout off": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monitör karartması kapatıldı"
           }
         }
       }
@@ -5018,6 +5339,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sonraki"
+          }
+        }
+      }
+    },
+    "Next Line (⌥→)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sonraki Replik (⌥→)"
           }
         }
       }
@@ -5189,6 +5520,16 @@
         }
       }
     },
+    "No credits found on TMDB for this person.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TMDB'de bu kişiye ait yapım bulunamadı."
+          }
+        }
+      }
+    },
     "No downloads yet. Download streams from a title page or add an HTTP / yt-dlp URL.": {
       "localizations": {
         "tr": {
@@ -5241,12 +5582,32 @@
         }
       }
     },
+    "No matching dialogue lines found.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eşleşen diyalog satırı bulunamadı."
+          }
+        }
+      }
+    },
     "No matching settings found.": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Eşleşen ayar bulunamadı."
+          }
+        }
+      }
+    },
+    "No matching streams after filters — opening details": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtrelerden sonra eşleşen akış yok — detay açılıyor"
           }
         }
       }
@@ -5267,6 +5628,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Etkin eklentilerde oynatılabilir yayın bulunamadı. Eklentileri kontrol edin ya da başka bir kaynak deneyin."
+          }
+        }
+      }
+    },
+    "No streams found for %@ — opening details": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ için akış bulunamadı — detay açılıyor"
+          }
+        }
+      }
+    },
+    "No text detected in paused frame": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duraklatılan karede metin algılanmadı"
           }
         }
       }
@@ -5349,6 +5730,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bağlı değil"
+          }
+        }
+      }
+    },
+    "Notify When Download Completes": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İndirme Tamamlanınca Bildirim Gönder"
           }
         }
       }
@@ -5461,6 +5852,16 @@
         }
       }
     },
+    "Open Details": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detayları Aç"
+          }
+        }
+      }
+    },
     "Open Download Folder": {
       "localizations": {
         "tr": {
@@ -5487,6 +5888,26 @@
         }
       }
     },
+    "Open Magnet / URL…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magnet / URL Aç…"
+          }
+        }
+      }
+    },
+    "Open Magnet or Stream URL": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magnet veya Akış URL'si Aç"
+          }
+        }
+      }
+    },
     "Open Settings…": {
       "localizations": {
         "en": {
@@ -5499,6 +5920,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ayarları Aç…"
+          }
+        }
+      }
+    },
+    "Open Torrent File": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Torrent Dosyası Aç"
           }
         }
       }
@@ -5643,6 +6074,16 @@
         }
       }
     },
+    "Other monitors dimmed in fullscreen": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tam ekranda diğer monitörler karartıldı"
+          }
+        }
+      }
+    },
     "Outline color": {
       "localizations": {
         "en": {
@@ -5747,6 +6188,16 @@
         }
       }
     },
+    "Paste a magnet:? link or direct HTTP/HTTPS media URL to stream immediately or queue for download.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hemen oynatmak veya indirme kuyruğuna eklemek için bir magnet:? bağlantısı ya da doğrudan HTTP/HTTPS medya URL'si yapıştırın."
+          }
+        }
+      }
+    },
     "Pause": {
       "localizations": {
         "en": {
@@ -5793,6 +6244,16 @@
         }
       }
     },
+    "Pause When Audio Output Changes (Headphone Disconnect)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses Çıkışı Değiştiğinde Duraklat (Kulaklık Çıkarılınca)"
+          }
+        }
+      }
+    },
     "Pause When Minimized": {
       "localizations": {
         "tr": {
@@ -5819,6 +6280,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Duraklatıldı"
+          }
+        }
+      }
+    },
+    "Paused — audio output changed": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duraklatıldı — ses çıkışı değişti"
           }
         }
       }
@@ -6122,6 +6593,16 @@
         }
       }
     },
+    "Prev Line (⌥←)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Önceki Replik (⌥←)"
+          }
+        }
+      }
+    },
     "Profiles": {
       "localizations": {
         "en": {
@@ -6242,6 +6723,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eşitleme için %u öğe sıraya alındı"
+          }
+        }
+      }
+    },
+    "Queued download: %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İndirme kuyruğa eklendi: %@"
+          }
+        }
+      }
+    },
+    "Queued magnet download: %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Magnet indirmesi kuyruğa eklendi: %@"
+          }
+        }
+      }
+    },
+    "Queued torrent download: %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Torrent indirmesi kuyruğa eklendi: %@"
+          }
+        }
+      }
+    },
+    "Quick Play": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hızlı Oynat"
+          }
+        }
+      }
+    },
+    "Quick Play Best Stream": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En İyi Akışı Hemen Oynat"
+          }
+        }
+      }
+    },
+    "Quick Play Episode": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bölümü Hemen Oynat"
           }
         }
       }
@@ -6456,6 +6997,16 @@
         }
       }
     },
+    "Remove from Library": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kütüphaneden Çıkar"
+          }
+        }
+      }
+    },
     "Remove from List": {
       "localizations": {
         "tr": {
@@ -6472,6 +7023,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "“%@” kaldırılsın mı?"
+          }
+        }
+      }
+    },
+    "Removed from Library": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kütüphaneden çıkarıldı"
           }
         }
       }
@@ -6504,6 +7065,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ses Gecikmesini Sıfırla"
+          }
+        }
+      }
+    },
+    "Reset Remembered Source": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hatırlanan Kaynağı Sıfırla"
           }
         }
       }
@@ -6793,6 +7364,26 @@
         }
       }
     },
+    "Saved manual intro end: %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manuel intro bitişi kaydedildi: %@"
+          }
+        }
+      }
+    },
+    "Saved manual outro offset": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manuel kapanış konumu kaydedildi"
+          }
+        }
+      }
+    },
     "Saved screenshot: %@": {
       "localizations": {
         "en": {
@@ -6815,6 +7406,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ölçek"
+          }
+        }
+      }
+    },
+    "Scan Frame Text (Live Text · T)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Karedeki Metni Tara (Canlı Metin · T)"
+          }
+        }
+      }
+    },
+    "Scanning text in frame…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Karedeki metin taranıyor…"
           }
         }
       }
@@ -6857,6 +7468,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ara"
+          }
+        }
+      }
+    },
+    "Search Dialogue (Scene Search)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diyalog Ara (Sahne Arama)"
+          }
+        }
+      }
+    },
+    "Search Dialogue… (⌘F)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diyalog Ara… (⌘F)"
           }
         }
       }
@@ -7111,6 +7742,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cinma Kitaplığındaki Dizi"
+          }
+        }
+      }
+    },
+    "Series source preference cleared": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dizi kaynak tercihi sıfırlandı"
           }
         }
       }
@@ -7511,6 +8152,16 @@
         }
       }
     },
+    "Skip Markers (Series)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atlama İşaretleri (Dizi)"
+          }
+        }
+      }
+    },
     "Skip Outro": {
       "localizations": {
         "tr": {
@@ -7837,6 +8488,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Durdur"
+          }
+        }
+      }
+    },
+    "Stream Now": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hemen Oynat"
           }
         }
       }
@@ -8705,6 +9366,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tür"
+          }
+        }
+      }
+    },
+    "Type a word or phrase to jump to that scene.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Doğrudan o sahneye atlamak için bir kelime veya replik yazın."
           }
         }
       }

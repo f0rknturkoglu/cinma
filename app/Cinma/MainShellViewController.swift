@@ -149,6 +149,20 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        let posterMenu: (MetaPreviewInfo) -> NSMenu? = { [weak self] item in
+            guard let self else { return nil }
+            return QuickPlayHelper.makePosterMenu(
+                core: self.core,
+                item: item,
+                onOpenDetail: { [weak self] target in self?.openDetail(target) },
+                onQuickPlay: { [weak self] target in self?.quickPlay(target) },
+                onStatus: { [weak self] msg in self?.showStatus(msg) }
+            )
+        }
+        homeVC.onQuickPlay = { [weak self] item in self?.quickPlay(item) }
+        homeVC.onBuildContextMenu = posterMenu
+        discoverVC.onBuildContextMenu = posterMenu
+        libraryVC.onBuildContextMenu = posterMenu
         discoverVC.onOpenAddons = { [weak self] in self?.openAddons() }
         libraryVC.onOpenHome = { [weak self] in self?.switchToTab(.home) }
         calendarVC.onOpenSettings = { [weak self] in self?.openSettings() }
@@ -367,6 +381,7 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
             onPlay: onPlay
         )
         vc.onOpenAddons = { [weak self] in self?.openAddons() }
+        vc.onOpenRelated = { [weak self] related in self?.openDetail(related) }
         detailItem = item
         detailVC = vc
         updateTabButtonStyles()
@@ -558,6 +573,16 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         if let first = (try? core.continueWatching(limit: 1))?.first {
             resumeContinueWatching(first)
         }
+    }
+
+    private func quickPlay(_ item: MetaPreviewInfo) {
+        QuickPlayHelper.launchBest(
+            core: core,
+            item: item,
+            onPlay: onPlay,
+            onStatus: { [weak self] msg in self?.showStatus(msg) },
+            onFallbackOpenDetail: { [weak self] in self?.openDetail(item) }
+        )
     }
 
     func openById(mediaType: String, id: String) {

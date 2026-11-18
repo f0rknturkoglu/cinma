@@ -17,7 +17,8 @@ use cinma_debrid::{DebridClient, DebridProvider};
 use cinma_discord::{DiscordPresenceClient, PresenceActivity};
 use cinma_iptv::IptvClient;
 use cinma_metadata::{
-    FanartArt, FanartClient, KitsuClient, SkipSegment, SkipSegmentClient, WatchProvider,
+    FanartArt, FanartClient, KitsuClient, MovieCollection, PersonProfile, SkipKind, SkipSegment,
+    SkipSegmentClient, WatchProvider,
 };
 use cinma_ranker::RankResult;
 use cinma_stremio::Stream;
@@ -25,6 +26,7 @@ use cinma_subtitles::{OpenSubtitlesClient, OsUserQuota};
 use cinma_tracking::{
     OAuthProvider, PendingOAuthFlow, TrackingClient, build_oauth_request, parse_oauth_callback,
 };
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::addons::StreamCandidate;
@@ -42,6 +44,13 @@ fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct ManualSkipMarkers {
+    pub intro_end_s: Option<f64>,
+    pub outro_last_s: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,57 +153,88 @@ impl Core {
         season: Option<u32>,
         episode: Option<u32>,
     ) -> Result<Vec<SkipSegment>, CoreError> {
-        if !self.feature_enabled(Feature::SkipSegments)? {
-            return Ok(Vec::new());
-        }
-        let key = format!(
-            "skip:{media_type}:{meta_id}:{}:{}",
-            season.unwrap_or(0),
-            episode.unwrap_or(0)
-        );
-        let min_ts = now_unix() - SKIP_TTL_SECS;
-        if let Some(row) = self
-            .db
-            .lock()
-            .map_err(|_| CoreError::Poisoned)?
-            .get_skip_segment_cache(&key, min_ts)?
-            && let Ok(segs) = serde_json::from_str::<Vec<SkipSegment>>(&row.segments_json)
-        {
-            return Ok(segs);
-        }
-
-        let (imdb_id, mal_id) = self.resolve_skip_ids(&media_type, &meta_id)?;
-        if imdb_id.is_none() && mal_id.is_none() {
-            return Ok(Vec::new());
-        }
-
-        let client = self.skip_client()?;
-        let ep = episode.unwrap_or(1);
-        let segs = self
-            .spawn(async move {
-                let mut combined = Vec::new();
-                if let Some(mal) = mal_id
-                    && let Ok(mut ani) = client.fetch_aniskip(mal, ep).await
-                {
-                    combined.append(&mut ani);
-                }
-                if let Some(imdb) = imdb_id
-                    && let Ok(mut intro) = client.fetch_introdb(&imdb, season, episode).await
-                {
-                    combined.append(&mut intro);
-                }
-                Ok(combined)
-            })
-            .await?;
-
-        if let Ok(json) = serde_json::to_string(&segs) {
-            let _ = self
+        let manual = self.manual_skip_markers(&meta_id).unwrap_or_default();
+        let mut out = if self.feature_enabled(Feature::SkipSegments)? {
+            let key = format!(
+                "skip:{media_type}:{meta_id}:{}:{}",
+                season.unwrap_or(0),
+                episode.unwrap_or(0)
+            );
+            let min_ts = now_unix() - SKIP_TTL_SECS;
+            if let Some(row) = self
                 .db
                 .lock()
                 .map_err(|_| CoreError::Poisoned)?
-                .set_skip_segment_cache(&key, &json, now_unix());
+                .get_skip_segment_cache(&key, min_ts)?
+                && let Ok(segs) = serde_json::from_str::<Vec<SkipSegment>>(&row.segments_json)
+            {
+                segs
+            } else {
+                let (imdb_id, mal_id) = self.resolve_skip_ids(&media_type, &meta_id)?;
+                if imdb_id.is_none() && mal_id.is_none() {
+                    Vec::new()
+                } else {
+                    let client = self.skip_client()?;
+                    let ep = episode.unwrap_or(1);
+                    let segs = self
+                        .spawn(async move {
+                            let mut combined = Vec::new();
+                            if let Some(mal) = mal_id
+                                && let Ok(mut ani) = client.fetch_aniskip(mal, ep).await
+                            {
+                                combined.append(&mut ani);
+                            }
+                            if let Some(imdb) = imdb_id
+                                && let Ok(mut intro) =
+                                    client.fetch_introdb(&imdb, season, episode).await
+                            {
+                                combined.append(&mut intro);
+                            }
+                            Ok(combined)
+                        })
+                        .await?;
+
+                    if let Ok(json) = serde_json::to_string(&segs) {
+                        let _ = self
+                            .db
+                            .lock()
+                            .map_err(|_| CoreError::Poisoned)?
+                            .set_skip_segment_cache(&key, &json, now_unix());
+                    }
+                    segs
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        if let Some(intro_end_s) = manual.intro_end_s.filter(|v| *v > 1.0) {
+            out.retain(|s| s.kind != SkipKind::Intro);
+            out.insert(
+                0,
+                SkipSegment {
+                    kind: SkipKind::Intro,
+                    start_s: 0.0,
+                    end_s: intro_end_s,
+                    source: "Manual".to_owned(),
+                },
+            );
         }
-        Ok(segs)
+        Ok(out)
+    }
+
+    pub fn manual_skip_markers(&self, meta_id: &str) -> Result<ManualSkipMarkers, CoreError> {
+        let base_id = meta_id.split(':').next().unwrap_or(meta_id);
+        self.load_profile_json(&format!("manual_skip.{base_id}"))
+    }
+
+    pub fn set_manual_skip_markers(
+        &self,
+        meta_id: &str,
+        markers: &ManualSkipMarkers,
+    ) -> Result<(), CoreError> {
+        let base_id = meta_id.split(':').next().unwrap_or(meta_id);
+        self.save_profile_json(&format!("manual_skip.{base_id}"), markers)
     }
 
     fn resolve_skip_ids(
@@ -668,6 +708,58 @@ impl Core {
             fanart_backdrop: art.backdrop,
             watch_providers: providers,
         })
+    }
+
+    pub async fn title_collection(
+        self: &Arc<Self>,
+        media_type: String,
+        id: String,
+    ) -> Result<Option<MovieCollection>, CoreError> {
+        if media_type != "movie" {
+            return Ok(None);
+        }
+        let Some(api_key) = self.tmdb_key()? else {
+            return Ok(None);
+        };
+        let lang = self.metadata_language()?;
+        let prefer_original = self
+            .player_preferences()
+            .map(|p| p.prefer_original_titles)
+            .unwrap_or(false);
+        let Some((tmdb_id, _)) = self
+            .resolve_tmdb_and_base(&api_key, &media_type, &id, &lang)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let client = self.tmdb_client()?;
+        self.spawn(async move {
+            Ok(client
+                .movie_collection(&api_key, tmdb_id, &lang, prefer_original)
+                .await?)
+        })
+        .await
+    }
+
+    pub async fn person_credits(
+        self: &Arc<Self>,
+        person_name: String,
+    ) -> Result<Option<PersonProfile>, CoreError> {
+        let Some(api_key) = self.tmdb_key()? else {
+            return Ok(None);
+        };
+        let lang = self.metadata_language()?;
+        let prefer_original = self
+            .player_preferences()
+            .map(|p| p.prefer_original_titles)
+            .unwrap_or(false);
+        let client = self.tmdb_client()?;
+        self.spawn(async move {
+            Ok(client
+                .person_credits(&api_key, &person_name, &lang, prefer_original)
+                .await?)
+        })
+        .await
     }
 
     pub async fn kitsu_meta(self: &Arc<Self>, kitsu_id: i64) -> Result<RichMetaResult, CoreError> {

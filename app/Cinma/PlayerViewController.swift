@@ -1,6 +1,8 @@
 import AppKit
+import CoreAudio
 import SwiftUI
 import UniformTypeIdentifiers
+import VisionKit
 
 /// Forwards Rust playback events (background thread) to a handler.
 final class PlaybackEventSink: PlaybackObserver {
@@ -224,6 +226,18 @@ final class PlayerViewController: NSViewController {
     private var speedBeforeHoldBoost: Double = 1.0
     private var scrollAccumX: CGFloat = 0
     private var scrollAccumY: CGFloat = 0
+    private var activeSubtitleFilePath: String?
+    private var manualSkipMarkers = ManualSkipMarkersFfi(introEndS: nil, outroLastS: nil)
+    private var audioRouteAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    private var audioRouteListener: AudioObjectPropertyListenerBlock?
+    private var liveTextOverlay: ImageAnalysisOverlayView?
+    private var liveTextTask: Task<Void, Never>?
+    private var blackoutWindows: [NSWindow] = []
+    private var isInPiP = false
 
     private static let clockFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -716,6 +730,7 @@ final class PlayerViewController: NSViewController {
         view.window?.makeFirstResponder(view)
         installMediaKeys()
         installWindowFocusObservers()
+        installAudioRouteObserver()
         start()
         showHudAndResetTimer()
         if let delay = DevAutomation.autoCloseAfter {
@@ -751,6 +766,15 @@ final class PlayerViewController: NSViewController {
             },
             nc.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.handleResumeAfterSystemEvent() }
+            },
+            nc.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.syncMonitorBlackout() }
+            },
+            nc.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.clearBlackoutWindows() }
+            },
+            nc.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.handleWindowOcclusionChanged() }
             },
         ]
     }
@@ -870,7 +894,13 @@ final class PlayerViewController: NSViewController {
                 trackpadGesturesEnabled: true,
                 hapticFeedbackEnabled: true,
                 externalPlayerPreset: "auto",
-                splitContinueWatching: false
+                splitContinueWatching: false,
+                pauseOnAudioOutputChange: true,
+                clipboardCatcherEnabled: false,
+                blackoutOtherScreens: false,
+                autoPipOnOcclusion: false,
+                notifyOnDownloadComplete: true,
+                quickPlayEnabled: true
             )
             let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface, macEdrEnabled: prefs.macEdrEnabled)
             do {
@@ -992,6 +1022,7 @@ final class PlayerViewController: NSViewController {
                 saveProgressIfNeeded(force: true)
                 showHudAndCancelTimer()
             } else {
+                removeLiveTextOverlay()
                 showHudAndResetTimer()
             }
             pushNowPlaying()
@@ -1319,6 +1350,8 @@ final class PlayerViewController: NSViewController {
 
     private func loadSkipSegmentsIfEnabled() {
         guard let meta = metadata else { return }
+        manualSkipMarkers = (try? core.manualSkipMarkers(metaId: meta.metaId))
+            ?? ManualSkipMarkersFfi(introEndS: nil, outroLastS: nil)
         let core = core
         Task { [weak self] in
             let segs = (try? await core.skipSegments(
@@ -1503,6 +1536,15 @@ final class PlayerViewController: NSViewController {
     private func currentSkipSegment() -> (kind: String, startS: Double, endS: Double)? {
         if let seg = activeApiSkipSegment() {
             return (seg.kind, seg.startS, seg.endS)
+        }
+        if let outroLast = manualSkipMarkers.outroLastS,
+           outroLast > 5,
+           duration > outroLast + 10
+        {
+            let outroStart = max(0, duration - outroLast)
+            if position >= outroStart && position < duration - 1.5 {
+                return ("outro", outroStart, duration)
+            }
         }
         guard let idx = chapters.lastIndex(where: { $0.startS <= position }) else { return nil }
         let ch = chapters[idx]
@@ -1833,6 +1875,7 @@ final class PlayerViewController: NSViewController {
                 await MainActor.run {
                     self?.subtitlesEnabled = true
                     self?.sessionSubEnabled = true
+                    self?.activeSubtitleFilePath = prepared.localPath
                     self?.sessionSubLang = candidate.lang
                     self?.sessionSubTitle = candidate.title ?? candidate.provider
                     self?.showStatus(String(localized: "Loaded \(candidate.lang.uppercased()) subtitle (\(prepared.detectedEncoding))"))
@@ -1862,6 +1905,7 @@ final class PlayerViewController: NSViewController {
     private func loadLocalSubtitle(url: URL) {
         if let prepared = try? core.prepareLocalSubtitle(path: url.path) {
             try? session?.addSubtitle(path: prepared.localPath, title: url.lastPathComponent, lang: nil, select: true)
+            activeSubtitleFilePath = prepared.localPath
             subtitlesEnabled = true
             sessionSubEnabled = true
             tracks = (try? session?.tracks()) ?? []
@@ -1940,7 +1984,29 @@ final class PlayerViewController: NSViewController {
         stereoItem.state = (prefs?.downmixStereo ?? false) ? .on : .off
         menu.addItem(stereoItem)
 
+        if let devices = try? session?.audioDevices(), !devices.isEmpty {
+            let currentDev = (try? session?.currentAudioDevice()) ?? "auto"
+            let devMenu = NSMenu()
+            for dev in devices {
+                let item = NSMenuItem(title: dev.description, action: #selector(selectAudioDeviceItem(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = dev.name
+                item.state = currentDev == dev.name ? .on : .off
+                devMenu.addItem(item)
+            }
+            let devHolder = NSMenuItem(title: String(localized: "Audio Output Device"), action: nil, keyEquivalent: "")
+            devHolder.submenu = devMenu
+            menu.addItem(.separator())
+            menu.addItem(devHolder)
+        }
+
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc private func selectAudioDeviceItem(_ sender: NSMenuItem) {
+        guard let devName = sender.representedObject as? String else { return }
+        try? session?.setAudioDevice(name: devName)
+        showStatus("\(String(localized: "Audio Output")): \(sender.title)")
     }
 
     @objc private func toggleAudioNormalize() {
@@ -2053,11 +2119,57 @@ final class PlayerViewController: NSViewController {
         eqItem.target = self
         menu.addItem(eqItem)
 
+        let searchItem = NSMenuItem(title: String(localized: "Search Dialogue… (⌘F)"), action: #selector(showDialogueSearchPopover), keyEquivalent: "")
+        searchItem.target = self
+        menu.addItem(searchItem)
+
+        let liveTextItem = NSMenuItem(title: String(localized: "Scan Frame Text (Live Text · T)"), action: #selector(toggleLiveTextOverlay), keyEquivalent: "")
+        liveTextItem.target = self
+        liveTextItem.state = liveTextOverlay != nil ? .on : .off
+        menu.addItem(liveTextItem)
+
+        if let meta = metadata {
+            let skipMenu = NSMenu()
+            let curPos = Self.format(position)
+            skipMenu.addItem(ClosureMenuProxy.item(title: String(localized: "Mark Intro End Here (\(curPos))"), systemSymbol: "forward.frame") { [weak self] in
+                guard let self else { return }
+                self.manualSkipMarkers.introEndS = max(5, self.position)
+                try? self.core.setManualSkipMarkers(metaId: meta.metaId, markers: self.manualSkipMarkers)
+                self.loadSkipSegmentsIfEnabled()
+                self.showStatus(String(localized: "Saved manual intro end: \(Self.format(self.position))"))
+            })
+            skipMenu.addItem(ClosureMenuProxy.item(title: String(localized: "Mark Outro Start Here (\(curPos))"), systemSymbol: "forward.end") { [weak self] in
+                guard let self, self.duration > self.position + 5 else { return }
+                self.manualSkipMarkers.outroLastS = max(10, self.duration - self.position)
+                try? self.core.setManualSkipMarkers(metaId: meta.metaId, markers: self.manualSkipMarkers)
+                self.updateSkipSegmentVisibility()
+                self.showStatus(String(localized: "Saved manual outro offset"))
+            })
+            if manualSkipMarkers.introEndS != nil || manualSkipMarkers.outroLastS != nil {
+                skipMenu.addItem(.separator())
+                skipMenu.addItem(ClosureMenuProxy.item(title: String(localized: "Clear Manual Skip Markers"), systemSymbol: "trash") { [weak self] in
+                    guard let self else { return }
+                    self.manualSkipMarkers = ManualSkipMarkersFfi(introEndS: nil, outroLastS: nil)
+                    try? self.core.setManualSkipMarkers(metaId: meta.metaId, markers: self.manualSkipMarkers)
+                    self.loadSkipSegmentsIfEnabled()
+                    self.showStatus(String(localized: "Manual skip markers cleared"))
+                })
+            }
+            let skipHolder = NSMenuItem(title: String(localized: "Skip Markers (Series)"), action: nil, keyEquivalent: "")
+            skipHolder.submenu = skipMenu
+            menu.addItem(skipHolder)
+        }
+
         let prefs = try? core.playerPreferences()
         let onTopItem = NSMenuItem(title: String(localized: "Always on Top"), action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
         onTopItem.target = self
         onTopItem.state = (prefs?.playerAlwaysOnTop ?? false) ? .on : .off
         menu.addItem(onTopItem)
+
+        let blackoutItem = NSMenuItem(title: String(localized: "Black Out Other Monitors (Fullscreen)"), action: #selector(toggleBlackoutOtherScreens), keyEquivalent: "")
+        blackoutItem.target = self
+        blackoutItem.state = (prefs?.blackoutOtherScreens ?? false) ? .on : .off
+        menu.addItem(blackoutItem)
 
         // Aspect / Crop submenu
         let currentCrop = prefs?.cropMode ?? "fit"
@@ -2428,6 +2540,10 @@ final class PlayerViewController: NSViewController {
         case "player.speed_down": setSpeed(speed - 0.25)
         case "player.frame_step": try? session?.frameStep(forward: true)
         case "player.frame_back_step": try? session?.frameStep(forward: false)
+        case "player.sub_seek_prev": try? session?.subSeek(offset: -1)
+        case "player.sub_seek_next": try? session?.subSeek(offset: 1)
+        case "player.search_dialogue": showDialogueSearchPopover()
+        case "player.live_text": toggleLiveTextOverlay()
         case "player.volume_up": adjustVolume(by: 10)
         case "player.volume_down": adjustVolume(by: -10)
         case "player.mute": toggleMute()
@@ -2579,6 +2695,181 @@ final class PlayerViewController: NSViewController {
         NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .default)
     }
 
+    @objc private func showDialogueSearchPopover() {
+        guard let anchor = moreButton else { return }
+        let root = DialogueSearchPopoverView(
+            core: core,
+            subtitlePath: activeSubtitleFilePath,
+            onSeek: { [weak self] secs in
+                self?.seekAbsolute(secs)
+            },
+            onSubSeek: { [weak self] offset in
+                try? self?.session?.subSeek(offset: offset)
+            },
+            onDismiss: { [weak self] in
+                self?.dismissFloatingPopover()
+            }
+        )
+        presentFloatingPopover(root, relativeTo: anchor)
+    }
+
+    @objc private func toggleBlackoutOtherScreens() {
+        guard var prefs = try? core.playerPreferences() else { return }
+        prefs.blackoutOtherScreens.toggle()
+        try? core.setPlayerPreferences(prefs: prefs)
+        syncMonitorBlackout()
+        showStatus(prefs.blackoutOtherScreens
+            ? String(localized: "Other monitors dimmed in fullscreen")
+            : String(localized: "Monitor blackout off"))
+    }
+
+    private func syncMonitorBlackout() {
+        clearBlackoutWindows()
+        guard !closing,
+              let window = view.window,
+              window.styleMask.contains(.fullScreen),
+              (try? core.playerPreferences())?.blackoutOtherScreens == true
+        else { return }
+        for screen in NSScreen.screens where screen != window.screen {
+            let win = NSWindow(
+                contentRect: screen.frame,
+                styleMask: .borderless,
+                backing: .buffered,
+                defer: false
+            )
+            win.backgroundColor = .black
+            win.isOpaque = true
+            win.ignoresMouseEvents = true
+            win.level = .floating
+            win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            win.orderFront(nil)
+            blackoutWindows.append(win)
+        }
+    }
+
+    private func clearBlackoutWindows() {
+        for win in blackoutWindows {
+            win.orderOut(nil)
+        }
+        blackoutWindows.removeAll()
+    }
+
+    private func handleWindowOcclusionChanged() {
+        guard !closing, !paused, !isInPiP,
+              let window = view.window,
+              !window.isMiniaturized,
+              !window.occlusionState.contains(.visible),
+              (try? core.playerPreferences())?.autoPipOnOcclusion == true
+        else { return }
+        clearBlackoutWindows()
+        enterPiPClicked()
+    }
+
+    private func installAudioRouteObserver() {
+        guard audioRouteListener == nil else { return }
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self, !self.closing, !self.paused,
+                      (try? self.core.playerPreferences())?.pauseOnAudioOutputChange ?? true
+                else { return }
+                try? self.session?.togglePause()
+                self.showStatus(String(localized: "Paused — audio output changed"))
+            }
+        }
+        audioRouteListener = block
+        AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &audioRouteAddress,
+            DispatchQueue.main,
+            block
+        )
+    }
+
+    private func removeAudioRouteObserver() {
+        guard let block = audioRouteListener else { return }
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &audioRouteAddress,
+            DispatchQueue.main,
+            block
+        )
+        audioRouteListener = nil
+    }
+
+    @objc private func toggleLiveTextOverlay() {
+        if liveTextOverlay != nil {
+            removeLiveTextOverlay()
+            return
+        }
+        guard !closing, !isScreenLocked, ImageAnalyzer.isSupported else {
+            showStatus(String(localized: "Live Text unavailable on this frame"))
+            return
+        }
+        if !paused {
+            try? session?.togglePause()
+        }
+        guard let frame = try? session?.captureRawFrame(),
+              let cgImage = Self.makeCGImage(from: frame)
+        else {
+            showStatus(String(localized: "Could not capture paused frame for Live Text"))
+            return
+        }
+        liveTextTask?.cancel()
+        showStatus(String(localized: "Scanning text in frame…"), autoHideAfter: 0)
+        liveTextTask = Task { [weak self] in
+            let analyzer = ImageAnalyzer()
+            let analysis = try? await analyzer.analyze(
+                cgImage,
+                orientation: .up,
+                configuration: ImageAnalyzer.Configuration([.text])
+            )
+            guard let self, !Task.isCancelled, !self.closing else { return }
+            guard let analysis, analysis.hasResults(for: .text) else {
+                self.showStatus(String(localized: "No text detected in paused frame"))
+                return
+            }
+            let overlay = ImageAnalysisOverlayView(frame: self.videoView.bounds)
+            overlay.autoresizingMask = [.width, .height]
+            overlay.analysis = analysis
+            overlay.preferredInteractionTypes = .textSelection
+            self.videoView.addSubview(overlay)
+            self.liveTextOverlay = overlay
+            self.showStatus(String(localized: "Live Text ready — drag to select text (Press T to clear)"))
+        }
+    }
+
+    private func removeLiveTextOverlay() {
+        liveTextTask?.cancel()
+        liveTextTask = nil
+        liveTextOverlay?.removeFromSuperview()
+        liveTextOverlay = nil
+    }
+
+    private static func makeCGImage(from frame: RawFrameFfi) -> CGImage? {
+        let w = Int(frame.width)
+        let h = Int(frame.height)
+        let stride = Int(frame.stride)
+        guard w > 0, h > 0, stride >= w * 4, frame.bgr0.count >= h * stride else { return nil }
+        let cfData = Data(frame.bgr0) as CFData
+        guard let provider = CGDataProvider(data: cfData) else { return nil }
+        let bitmapInfo = CGBitmapInfo(
+            rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.noneSkipFirst.rawValue
+        )
+        return CGImage(
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: stride,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+
     @objc private func toggleScreenLock() {
         isScreenLocked.toggle()
         lockButton.image = NSImage(
@@ -2667,11 +2958,13 @@ final class PlayerViewController: NSViewController {
     }
 
     func detachVideoViewForPiP() -> NSView {
+        isInPiP = true
         hudHideTask?.cancel()
         return videoView
     }
 
     func reattachVideoViewFromPiP() {
+        isInPiP = false
         videoView.removeFromSuperview()
         videoView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(videoView, positioned: .below, relativeTo: titlePill)
@@ -2918,6 +3211,9 @@ final class PlayerViewController: NSViewController {
         sleepEndOfEpisode = false
         nextCountdownTask?.cancel()
         cancelStallWatchdog()
+        removeLiveTextOverlay()
+        removeAudioRouteObserver()
+        clearBlackoutWindows()
         view.window?.level = .normal
         for obs in focusObservers { NotificationCenter.default.removeObserver(obs) }
         focusObservers.removeAll()

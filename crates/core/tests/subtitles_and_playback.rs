@@ -489,3 +489,87 @@ fn surpass_wave1_preferences_and_commands_persist() {
         Some("player.frame_back_step")
     );
 }
+
+#[test]
+fn surpass_wave2_manual_skip_dialogue_search_batch_watched_and_prefs() {
+    let dir = tempfile::tempdir().unwrap();
+    let core: Arc<Core> = Core::open(dir.path()).unwrap();
+
+    // 1. Wave 2 PlayerPreferences persistence
+    let prefs = PlayerPreferences {
+        pause_on_audio_output_change: false,
+        clipboard_catcher_enabled: true,
+        blackout_other_screens: true,
+        auto_pip_on_occlusion: true,
+        notify_on_download_complete: false,
+        quick_play_enabled: false,
+        ..Default::default()
+    };
+    core.set_player_preferences(&prefs).unwrap();
+    assert_eq!(core.player_preferences().unwrap(), prefs);
+
+    // 2. Manual intro/outro skip markers synthesize Intro segment even without remote lookup
+    core.set_manual_skip_markers(
+        "tt999888",
+        &cinma_core::ManualSkipMarkers {
+            intro_end_s: Some(88.5),
+            outro_last_s: Some(95.0),
+        },
+    )
+    .unwrap();
+    let loaded = core.manual_skip_markers("tt999888:1:2").unwrap();
+    assert_eq!(loaded.intro_end_s, Some(88.5));
+    assert_eq!(loaded.outro_last_s, Some(95.0));
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let segs = rt
+        .block_on(core.skip_segments("series".into(), "tt999888:1:2".into(), Some(1), Some(2)))
+        .unwrap();
+    assert_eq!(segs.len(), 1);
+    assert_eq!(segs[0].kind, cinma_core::SkipKind::Intro);
+    assert!((segs[0].end_s - 88.5).abs() < 0.01);
+
+    // 3. Subtitle cue search
+    let srt_path = dir.path().join("sample.srt");
+    std::fs::write(
+        &srt_path,
+        "1\n00:00:04,000 --> 00:00:06,000\nWelcome to Cinma\n\n2\n00:01:12,000 --> 00:01:15,000\nSecret clue appears here\n",
+    )
+    .unwrap();
+    let hits = core
+        .search_subtitle_cues(&srt_path, "secret CLUE", 20)
+        .unwrap();
+    assert_eq!(hits.len(), 1);
+    assert!((hits[0].start_s - 72.0).abs() < 0.01);
+
+    // 4. Batch mark episodes watched
+    core.mark_episodes_watched(
+        "tt999888",
+        "series",
+        &[
+            ("tt999888:1:1".into(), "Pilot".into(), 1, 1),
+            ("tt999888:1:2".into(), "Second".into(), 1, 2),
+        ],
+        true,
+    )
+    .unwrap();
+    let rows = core.progress_for_meta("tt999888").unwrap();
+    assert_eq!(rows.iter().filter(|r| r.watched).count(), 2);
+
+    // 5. Keybindings
+    assert_eq!(
+        core.resolve_key(cinma_core::CommandContext::Player, "cmd+f")
+            .unwrap(),
+        Some("player.search_dialogue")
+    );
+    assert_eq!(
+        core.resolve_key(cinma_core::CommandContext::Player, "t")
+            .unwrap(),
+        Some("player.live_text")
+    );
+    assert_eq!(
+        core.resolve_key(cinma_core::CommandContext::Global, "cmd+u")
+            .unwrap(),
+        Some("file.open_url")
+    );
+}

@@ -615,7 +615,13 @@ struct SettingsView: View {
         trackpadGesturesEnabled: true,
         hapticFeedbackEnabled: true,
         externalPlayerPreset: "auto",
-        splitContinueWatching: false
+        splitContinueWatching: false,
+        pauseOnAudioOutputChange: true,
+        clipboardCatcherEnabled: false,
+        blackoutOtherScreens: false,
+        autoPipOnOcclusion: false,
+        notifyOnDownloadComplete: true,
+        quickPlayEnabled: true
     )
     @State private var subLangsText = "tur, eng"
     @State private var audioLangsText = "eng, jpn, tur"
@@ -831,6 +837,8 @@ struct SettingsView: View {
             Section(String(localized: "Catalog & Episode Browsing")) {
                 Toggle(String(localized: "Hide Episode Spoilers (Blur Unwatched)"), isOn: $playerPrefs.hideSpoilers)
                     .onChange(of: playerPrefs.hideSpoilers) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Enable One-Click Quick Play (Hero & Context Menu)"), isOn: $playerPrefs.quickPlayEnabled)
+                    .onChange(of: playerPrefs.quickPlayEnabled) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Hide Watched Titles in Catalogs"), isOn: $playerPrefs.hideWatchedInCatalogs)
                     .onChange(of: playerPrefs.hideWatchedInCatalogs) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Hide Unreleased Titles"), isOn: $playerPrefs.hideUnreleased)
@@ -1181,6 +1189,12 @@ struct SettingsView: View {
                     .onChange(of: playerPrefs.hapticFeedbackEnabled) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Include Subtitles in Screenshots"), isOn: $playerPrefs.screenshotIncludeSubtitles)
                     .onChange(of: playerPrefs.screenshotIncludeSubtitles) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Pause When Audio Output Changes (Headphone Disconnect)"), isOn: $playerPrefs.pauseOnAudioOutputChange)
+                    .onChange(of: playerPrefs.pauseOnAudioOutputChange) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Black Out Other Monitors in Fullscreen"), isOn: $playerPrefs.blackoutOtherScreens)
+                    .onChange(of: playerPrefs.blackoutOtherScreens) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Auto Mini Player (PiP) When Space/Window Hidden"), isOn: $playerPrefs.autoPipOnOcclusion)
+                    .onChange(of: playerPrefs.autoPipOnOcclusion) { _, _ in savePlayerPrefs() }
             }
 
             Section(String(localized: "Video & Audio")) {
@@ -1308,6 +1322,10 @@ struct SettingsView: View {
                     .onChange(of: menubarEnabled) { _, val in
                         try? core.setMenubarEnabled(enabled: val)
                     }
+                Toggle(String(localized: "Notify When Download Completes"), isOn: $playerPrefs.notifyOnDownloadComplete)
+                    .onChange(of: playerPrefs.notifyOnDownloadComplete) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Detect Magnet Links in Clipboard on App Focus"), isOn: $playerPrefs.clipboardCatcherEnabled)
+                    .onChange(of: playerPrefs.clipboardCatcherEnabled) { _, _ in savePlayerPrefs() }
                 folderRow(String(localized: "Video Downloads"), path: diskPolicy.videoFolder) { picked in
                     diskPolicy.videoFolder = picked
                     saveDiskPolicy()
@@ -1702,10 +1720,14 @@ struct SettingsView: View {
             SettingsSearchItem(id: "cw_split", title: String(localized: "Split Continue Watching into Movies & Series"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "continue watching movies series split home"),
             SettingsSearchItem(id: "cw_top", title: String(localized: "Show Continue Watching Above Trending"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "continue watching home order"),
             SettingsSearchItem(id: "spoilers", title: String(localized: "Hide Episode Spoilers (Blur Unwatched)"), section: String(localized: "Catalog & Episode Browsing"), tab: .general, keywords: "spoiler blur unwatched episode"),
+            SettingsSearchItem(id: "quick_play", title: String(localized: "Enable One-Click Quick Play (Hero & Context Menu)"), section: String(localized: "Catalog & Episode Browsing"), tab: .general, keywords: "quick play hero one click best stream"),
             SettingsSearchItem(id: "theme", title: String(localized: "Accent Color"), section: String(localized: "Theme, Glass & Navigation"), tab: .general, keywords: "theme accent amber crimson cyan glass"),
             SettingsSearchItem(id: "hold_boost", title: String(localized: "Hold Space / Mouse for Speed Boost"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "hold 2x speed boost space mouse"),
             SettingsSearchItem(id: "trackpad", title: String(localized: "Trackpad Two-Finger Seek & Volume Gestures"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "trackpad scroll swipe gesture volume seek"),
             SettingsSearchItem(id: "haptic", title: String(localized: "Force Touch Haptic Feedback"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "haptic vibrate force touch feedback"),
+            SettingsSearchItem(id: "audio_route_pause", title: String(localized: "Pause When Audio Output Changes (Headphone Disconnect)"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "audio headphone airpods disconnect pause output device"),
+            SettingsSearchItem(id: "blackout", title: String(localized: "Black Out Other Monitors in Fullscreen"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "blackout dim other monitors displays fullscreen"),
+            SettingsSearchItem(id: "auto_pip", title: String(localized: "Auto Mini Player (PiP) When Space/Window Hidden"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "auto pip picture in picture space hidden occlusion"),
             SettingsSearchItem(id: "screenshot_sub", title: String(localized: "Include Subtitles in Screenshots"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "screenshot png subtitle include"),
             SettingsSearchItem(id: "ext_player", title: String(localized: "External Player Mode"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "external player iina infuse vlc mpv url scheme"),
             SettingsSearchItem(id: "hdr", title: String(localized: "Enable macOS EDR HDR Output"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "hdr edr tone mapping bt.2390 peak"),
@@ -1717,6 +1739,8 @@ struct SettingsView: View {
             SettingsSearchItem(id: "sub_hdr_peak", title: String(localized: "HDR Subtitle Peak"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "hdr subtitle brightness nits peak"),
             SettingsSearchItem(id: "sub_margins", title: String(localized: "Place Subtitles in Black Bars (Margins)"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "letterbox margin black bar subtitle placement"),
             SettingsSearchItem(id: "vpn", title: String(localized: "VPN Interface Binding"), section: String(localized: "Torrent & VPN"), tab: .downloads, keywords: "vpn interface utun kill switch torrent speed cache"),
+            SettingsSearchItem(id: "dl_notify", title: String(localized: "Notify When Download Completes"), section: String(localized: "Folders & Menu Bar"), tab: .downloads, keywords: "download complete notification alert"),
+            SettingsSearchItem(id: "clip_magnet", title: String(localized: "Detect Magnet Links in Clipboard on App Focus"), section: String(localized: "Folders & Menu Bar"), tab: .downloads, keywords: "clipboard magnet torrent url catcher"),
             SettingsSearchItem(id: "shortcuts", title: String(localized: "Keyboard Shortcuts"), section: String(localized: "Shortcuts"), tab: .shortcuts, keywords: "keyboard shortcut keybinding hotkey frame step"),
             SettingsSearchItem(id: "backup", title: String(localized: "Backup & Sync"), section: String(localized: "Backup"), tab: .backup, keywords: "export import json backup restore"),
         ]

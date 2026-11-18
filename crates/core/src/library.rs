@@ -302,4 +302,48 @@ impl Core {
         self.emit(CoreEvent::LibraryChanged);
         Ok(())
     }
+
+    /// Marks multiple episodes of a series watched (e.g., "Mark Previous Episodes as Watched").
+    pub fn mark_episodes_watched(
+        &self,
+        meta_id: &str,
+        media_type: &str,
+        items: &[(String, String, i64, i64)],
+        watched: bool,
+    ) -> Result<(), CoreError> {
+        let profile = self.active_profile()?;
+        {
+            let db = self.db.lock().map_err(|_| CoreError::Poisoned)?;
+            for (video_id, ep_title, season, episode) in items {
+                db.upsert_watch_progress(
+                    profile,
+                    video_id,
+                    meta_id,
+                    media_type,
+                    ep_title,
+                    None,
+                    Some(*season),
+                    Some(*episode),
+                    0.0,
+                    0.0,
+                    watched,
+                )?;
+            }
+        }
+        if watched {
+            for (_, ep_title, season, episode) in items {
+                let _ = self.enqueue_watch_sync(
+                    profile,
+                    meta_id,
+                    media_type,
+                    ep_title,
+                    u32::try_from(*season).ok(),
+                    u32::try_from(*episode).ok(),
+                    100.0,
+                );
+            }
+        }
+        self.emit(CoreEvent::LibraryChanged);
+        Ok(())
+    }
 }

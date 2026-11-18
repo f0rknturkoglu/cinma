@@ -14,8 +14,8 @@ pub use fanart::{FanartArt, FanartClient};
 pub use kitsu::KitsuClient;
 pub use skip_segments::{SkipKind, SkipSegment, SkipSegmentClient};
 pub use tmdb::{
-    ResolvedIds, RichMeta, TmdbClient, UpcomingEpisode, WatchProvider, format_episode_id,
-    parse_tmdb_prefixed_id,
+    MovieCollection, PersonProfile, ResolvedIds, RichMeta, TmdbClient, UpcomingEpisode,
+    WatchProvider, format_episode_id, parse_tmdb_prefixed_id,
 };
 
 #[derive(Debug, thiserror::Error)]

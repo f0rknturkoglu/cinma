@@ -507,7 +507,7 @@ impl Core {
         .await
     }
 
-    async fn resolve_tmdb_and_base(
+    pub(crate) async fn resolve_tmdb_and_base(
         self: &Arc<Self>,
         api_key: &str,
         media_type: &str,

@@ -294,9 +294,202 @@ fn detect_format_ext<'a>(text: &str, hint: Option<&'a str>) -> &'a str {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubtitleCue {
+    pub start_s: f64,
+    pub end_s: f64,
+    pub text: String,
+}
+
+/// Parses `.srt`, `.vtt`, `.ass`, or `.ssa` dialogue cues (decoding legacy Windows-1254/UTF-16 encodings automatically).
+pub fn parse_subtitle_cues(path: &std::path::Path) -> Result<Vec<SubtitleCue>, SubtitleError> {
+    let bytes = std::fs::read(path)?;
+    let decoded = encoding::decode_subtitle_bytes(&bytes, None, None);
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    if matches!(ext.as_str(), "ass" | "ssa") || decoded.text.contains("[Events]") {
+        Ok(parse_ass_cues(&decoded.text))
+    } else {
+        Ok(parse_srt_vtt_cues(&decoded.text))
+    }
+}
+
+/// Case-insensitive substring dialogue search across parsed subtitle cues (`limit` capped cleanly).
+pub fn search_subtitle_cues(
+    path: &std::path::Path,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SubtitleCue>, SubtitleError> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let cues = parse_subtitle_cues(path)?;
+    Ok(cues
+        .into_iter()
+        .filter(|c| c.text.to_lowercase().contains(&q))
+        .take(limit.clamp(1, 200))
+        .collect())
+}
+
+fn parse_srt_vtt_cues(text: &str) -> Vec<SubtitleCue> {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut cues = Vec::new();
+    for block in normalized.split("\n\n") {
+        let lines: Vec<&str> = block
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
+        let Some(ts_pos) = lines.iter().position(|l| l.contains("-->")) else {
+            continue;
+        };
+        let Some((start_s, end_s)) = parse_srt_range(lines[ts_pos]) else {
+            continue;
+        };
+        let body: Vec<String> = lines[(ts_pos + 1)..]
+            .iter()
+            .map(|l| strip_subtitle_markup(l))
+            .filter(|l| !l.is_empty())
+            .collect();
+        if body.is_empty() {
+            continue;
+        }
+        cues.push(SubtitleCue {
+            start_s,
+            end_s,
+            text: body.join(" "),
+        });
+    }
+    cues
+}
+
+fn parse_ass_cues(text: &str) -> Vec<SubtitleCue> {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let mut cues = Vec::new();
+    let mut start_idx = 1usize;
+    let mut end_idx = 2usize;
+    let mut text_idx = 9usize;
+    let mut in_events = false;
+
+    for raw_line in normalized.lines() {
+        let line = raw_line.trim();
+        if line.starts_with('[') {
+            in_events = line.eq_ignore_ascii_case("[Events]");
+            continue;
+        }
+        if !in_events {
+            continue;
+        }
+        if let Some(fmt) = line.strip_prefix("Format:") {
+            for (i, col) in fmt.split(',').enumerate() {
+                match col.trim().to_ascii_lowercase().as_str() {
+                    "start" => start_idx = i,
+                    "end" => end_idx = i,
+                    "text" => text_idx = i,
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        let Some(payload) = line.strip_prefix("Dialogue:") else {
+            continue;
+        };
+        let max_fields = text_idx + 1;
+        let parts: Vec<&str> = payload.splitn(max_fields, ',').collect();
+        if parts.len() <= text_idx {
+            continue;
+        }
+        let Some(start_s) = parse_timestamp_seconds(parts[start_idx].trim()) else {
+            continue;
+        };
+        let Some(end_s) = parse_timestamp_seconds(parts[end_idx].trim()) else {
+            continue;
+        };
+        let clean = strip_subtitle_markup(parts[text_idx]);
+        if !clean.is_empty() {
+            cues.push(SubtitleCue {
+                start_s,
+                end_s,
+                text: clean,
+            });
+        }
+    }
+    cues
+}
+
+fn parse_srt_range(line: &str) -> Option<(f64, f64)> {
+    let (lhs, rhs) = line.split_once("-->")?;
+    let end_token = rhs.split_whitespace().next()?;
+    Some((
+        parse_timestamp_seconds(lhs.trim())?,
+        parse_timestamp_seconds(end_token.trim())?,
+    ))
+}
+
+fn parse_timestamp_seconds(raw: &str) -> Option<f64> {
+    let normalized = raw.trim().replace(',', ".");
+    let mut parts = normalized.split(':');
+    let a = parts.next()?;
+    let b = parts.next()?;
+    let c = parts.next();
+    match c {
+        Some(sec) => {
+            let h: f64 = a.parse().ok()?;
+            let m: f64 = b.parse().ok()?;
+            let s: f64 = sec.parse().ok()?;
+            Some(h * 3600.0 + m * 60.0 + s)
+        }
+        None => {
+            let m: f64 = a.parse().ok()?;
+            let s: f64 = b.parse().ok()?;
+            Some(m * 60.0 + s)
+        }
+    }
+}
+
+fn strip_subtitle_markup(raw: &str) -> String {
+    let replaced = raw
+        .replace("\\N", " ")
+        .replace("\\n", " ")
+        .replace("\\h", " ");
+    let mut out = String::with_capacity(replaced.len());
+    let mut in_curly = false;
+    let mut in_angle = false;
+    for ch in replaced.chars() {
+        match ch {
+            '{' => in_curly = true,
+            '}' => in_curly = false,
+            '<' if !in_curly => in_angle = true,
+            '>' if in_angle => in_angle = false,
+            _ if !in_curly && !in_angle => out.push(ch),
+            _ => {}
+        }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::strip_sdh_cues_srt;
+    use super::{parse_ass_cues, parse_srt_vtt_cues, strip_sdh_cues_srt};
+
+    #[test]
+    fn parses_srt_and_ass_dialogue_cues() {
+        let srt = "1\n00:01:02,500 --> 00:01:05,000\n<i>Merhaba</i> dünya!\n\n2\n00:02:00.000 --> 00:02:02.500\nİkinci satır\n";
+        let cues = parse_srt_vtt_cues(srt);
+        assert_eq!(cues.len(), 2);
+        assert!((cues[0].start_s - 62.5).abs() < 0.01);
+        assert_eq!(cues[0].text, "Merhaba dünya!");
+
+        let ass = "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:10.50,0:00:13.00,Default,,0,0,0,,{\\an8}Selam\\NTest\n";
+        let ass_cues = parse_ass_cues(ass);
+        assert_eq!(ass_cues.len(), 1);
+        assert!((ass_cues[0].start_s - 10.5).abs() < 0.01);
+        assert_eq!(ass_cues[0].text, "Selam Test");
+    }
 
     #[test]
     fn strips_sdh_cues_and_renumbers_srt() {

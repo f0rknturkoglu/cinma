@@ -45,17 +45,21 @@ pub use cinma_db::{
     DownloadKind, DownloadRow, DownloadState, IptvChannelRow, IptvEpgRow, IptvSourceRow,
     LibraryItemRow, ProfileRow, WatchProgressRow,
 };
-pub use cinma_metadata::{SkipKind, SkipSegment, UpcomingEpisode, WatchProvider};
+pub use cinma_metadata::{
+    MovieCollection, PersonProfile, SkipKind, SkipSegment, UpcomingEpisode, WatchProvider,
+};
 pub use cinma_player::{
-    Chapter, EndReason, MediaTrack, PlayerConfig, PlayerEvent, PlayerEvents, PlayerStats,
-    ThumbnailImage, UpdateCallback,
+    AudioDeviceEntry, Chapter, EndReason, MediaTrack, PlayerConfig, PlayerEvent, PlayerEvents,
+    PlayerStats, RawFrame, ThumbnailImage, UpdateCallback,
 };
 pub use cinma_ranker::{
     FilterReason, FilteredOutStream, MachineCapabilities, ParsedStream, RankResult, RankedStream,
     RankerPreferences, Resolution, SafetyLevel, ScoreReason, StreamTier,
 };
 pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo, Stream};
-pub use cinma_subtitles::{OsUserQuota, PreparedSubtitle, SubtitleCandidate, normalize_lang_code};
+pub use cinma_subtitles::{
+    OsUserQuota, PreparedSubtitle, SubtitleCandidate, SubtitleCue, normalize_lang_code,
+};
 pub use cinma_tracking::{TraktDeviceCode, TraktRecommendation, letterboxd::LetterboxdEntry};
 pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
@@ -67,7 +71,8 @@ pub use integrations::{AdapterStatus, StremioImportResult};
 pub use library::WatchProgressInput;
 pub use metadata::RichMetaResult;
 pub use phase9::{
-    DebridProviderStatus, DiscordPresenceInput, OAuthStartResult, TitleExtras, TraktPullSummary,
+    DebridProviderStatus, DiscordPresenceInput, ManualSkipMarkers, OAuthStartResult, TitleExtras,
+    TraktPullSummary,
 };
 pub use playback::{NextEpisodePrefetch, Playback, StreamStats, VideoFileIdentity};
 pub use settings::Feature;

@@ -553,6 +553,126 @@ impl TmdbClient {
             .filter_map(|r| r.into_preview_with_opts(fallback_type, prefer_original))
             .collect())
     }
+
+    /// Fetches the TMDB collection (`belongs_to_collection`) a movie belongs to, if any.
+    pub async fn movie_collection(
+        &self,
+        api_key: &str,
+        tmdb_movie_id: i64,
+        language: &str,
+        prefer_original: bool,
+    ) -> Result<Option<MovieCollection>, MetadataError> {
+        let id_str = tmdb_movie_id.to_string();
+        let movie_url = self.endpoint(
+            &["movie", &id_str],
+            &[("api_key", api_key), ("language", language)],
+        )?;
+        let raw: TmdbMovieCollectionHolder = self.get_json(movie_url).await?;
+        let Some(col_ref) = raw.belongs_to_collection else {
+            return Ok(None);
+        };
+        let cid_str = col_ref.id.to_string();
+        let col_url = self.endpoint(
+            &["collection", &cid_str],
+            &[("api_key", api_key), ("language", language)],
+        )?;
+        let col: TmdbCollectionDetails = self.get_json(col_url).await?;
+        let mut parts: Vec<MetaPreview> = col
+            .parts
+            .into_iter()
+            .filter_map(|p| p.into_preview_with_opts("movie", prefer_original))
+            .collect();
+        parts.sort_by(|a, b| a.release_info.cmp(&b.release_info));
+        Ok(Some(MovieCollection {
+            id: col.id,
+            name: col.name,
+            overview: col.overview.filter(|s| !s.trim().is_empty()),
+            parts,
+        }))
+    }
+
+    /// Looks up an actor/director by name and returns their TMDB biography and combined filmography.
+    pub async fn person_credits(
+        &self,
+        api_key: &str,
+        person_name: &str,
+        language: &str,
+        prefer_original: bool,
+    ) -> Result<Option<PersonProfile>, MetadataError> {
+        let query = person_name.trim();
+        if query.is_empty() {
+            return Ok(None);
+        }
+        let search_url = self.endpoint(
+            &["search", "person"],
+            &[
+                ("api_key", api_key),
+                ("query", query),
+                ("language", language),
+                ("include_adult", "false"),
+            ],
+        )?;
+        let found: TmdbPersonSearchResp = self.get_json(search_url).await?;
+        let Some(first) = found.results.into_iter().next() else {
+            return Ok(None);
+        };
+        let pid_str = first.id.to_string();
+        let detail_url = self.endpoint(
+            &["person", &pid_str],
+            &[
+                ("api_key", api_key),
+                ("language", language),
+                ("append_to_response", "combined_credits"),
+            ],
+        )?;
+        let raw: TmdbPersonDetails = self.get_json(detail_url).await?;
+
+        let mut combined: Vec<(f64, MetaPreview)> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        if let Some(credits) = raw.combined_credits {
+            for item in credits.cast.into_iter().chain(credits.crew) {
+                let pop = item.popularity.unwrap_or(0.0);
+                if let Some(preview) = item.into_preview_with_opts("movie", prefer_original) {
+                    let key = format!("{}:{}", preview.media_type, preview.id);
+                    if seen.insert(key) {
+                        combined.push((pop, preview));
+                    }
+                }
+            }
+        }
+        combined.sort_by(|a, b| b.0.total_cmp(&a.0));
+        let credits = combined.into_iter().take(48).map(|(_, p)| p).collect();
+        Ok(Some(PersonProfile {
+            id: raw.id,
+            name: raw.name,
+            biography: raw.biography.filter(|s| !s.trim().is_empty()),
+            birthday: raw.birthday.filter(|s| !s.trim().is_empty()),
+            place_of_birth: raw.place_of_birth.filter(|s| !s.trim().is_empty()),
+            profile_image: image_url("w342", raw.profile_path.as_deref()),
+            known_for: raw.known_for_department.filter(|s| !s.trim().is_empty()),
+            credits,
+        }))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MovieCollection {
+    pub id: i64,
+    pub name: String,
+    pub overview: Option<String>,
+    pub parts: Vec<MetaPreview>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PersonProfile {
+    pub id: i64,
+    pub name: String,
+    pub biography: Option<String>,
+    pub birthday: Option<String>,
+    pub place_of_birth: Option<String>,
+    pub profile_image: Option<String>,
+    pub known_for: Option<String>,
+    pub credits: Vec<MetaPreview>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -660,6 +780,8 @@ struct TmdbListItem {
     first_air_date: Option<String>,
     #[serde(default)]
     vote_average: Option<f64>,
+    #[serde(default)]
+    popularity: Option<f64>,
 }
 
 impl TmdbListItem {
@@ -895,4 +1017,57 @@ struct TmdbWatchItem {
     provider_name: String,
     #[serde(default)]
     logo_path: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TmdbMovieCollectionHolder {
+    #[serde(default)]
+    belongs_to_collection: Option<TmdbCollectionRef>,
+}
+
+#[derive(Deserialize)]
+struct TmdbCollectionRef {
+    id: i64,
+}
+
+#[derive(Deserialize)]
+struct TmdbCollectionDetails {
+    id: i64,
+    name: String,
+    #[serde(default)]
+    overview: Option<String>,
+    #[serde(default)]
+    parts: Vec<TmdbListItem>,
+}
+
+#[derive(Deserialize)]
+struct TmdbPersonSearchResp {
+    #[serde(default)]
+    results: Vec<TmdbIdOnly>,
+}
+
+#[derive(Deserialize)]
+struct TmdbPersonDetails {
+    id: i64,
+    name: String,
+    #[serde(default)]
+    biography: Option<String>,
+    #[serde(default)]
+    birthday: Option<String>,
+    #[serde(default)]
+    place_of_birth: Option<String>,
+    #[serde(default)]
+    profile_path: Option<String>,
+    #[serde(default)]
+    known_for_department: Option<String>,
+    #[serde(default)]
+    combined_credits: Option<TmdbPersonCredits>,
+}
+
+#[derive(Deserialize)]
+struct TmdbPersonCredits {
+    #[serde(default)]
+    cast: Vec<TmdbListItem>,
+    #[serde(default)]
+    crew: Vec<TmdbListItem>,
 }

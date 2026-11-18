@@ -1,4 +1,5 @@
 import AppKit
+import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -11,6 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var pipPlayerVC: PlayerViewController?
     private var savedBrowseState: MainShellViewController.BrowseState?
     private var pendingLinks: [URL] = []
+    private var knownIncompleteDownloads: Set<Int64> = []
+    private var lastClipboardChangeCount: Int = NSPasteboard.general.changeCount
+    private var clipboardPromptOpen = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         LaunchMetrics.report("DID_FINISH_LAUNCHING")
@@ -113,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             )
             bar.syncEnabledState()
             self.menuBar = bar
+            for row in ((try? core.downloads()) ?? []) where row.state != "completed" && row.state != "failed" {
+                knownIncompleteDownloads.insert(row.id)
+            }
             rebuildMenu()
             showBrowse()
             NotificationCenter.default.addObserver(
@@ -175,6 +182,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .downloadsChanged:
             menuBar?.syncEnabledState()
             shell?.handleDownloadsChanged()
+            if let core {
+                let rows = (try? core.downloads()) ?? []
+                let notify = (try? core.playerPreferences())?.notifyOnDownloadComplete ?? true
+                for row in rows {
+                    if row.state == "completed" {
+                        if knownIncompleteDownloads.remove(row.id) != nil && notify {
+                            postDownloadCompletedNotification(title: row.title)
+                        }
+                    } else if row.state != "failed" {
+                        knownIncompleteDownloads.insert(row.id)
+                    }
+                }
+            }
         case .castChanged, .trackingChanged:
             break
         }
@@ -184,6 +204,93 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func openFile(_ sender: Any?) {
         shell?.openFile()
+    }
+
+    @objc func openMagnetOrUrl(_ sender: Any?) {
+        let clip = NSPasteboard.general.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let prefill = (clip.hasPrefix("magnet:?") || clip.hasPrefix("http://") || clip.hasPrefix("https://")) ? clip : ""
+        promptMagnetOrUrl(prefill: prefill)
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard let core, !clipboardPromptOpen,
+              (try? core.playerPreferences())?.clipboardCatcherEnabled == true
+        else { return }
+        let pb = NSPasteboard.general
+        guard pb.changeCount != lastClipboardChangeCount else { return }
+        lastClipboardChangeCount = pb.changeCount
+        guard let text = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              text.hasPrefix("magnet:?xt=")
+        else { return }
+        promptMagnetOrUrl(prefill: text)
+    }
+
+    private func promptMagnetOrUrl(prefill: String) {
+        guard let core else { return }
+        reopenMainWindow()
+        clipboardPromptOpen = true
+        defer { clipboardPromptOpen = false }
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = String(localized: "Open Magnet or Stream URL")
+        alert.informativeText = String(localized: "Paste a magnet:? link or direct HTTP/HTTPS media URL to stream immediately or queue for download.")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 420, height: 24))
+        field.stringValue = prefill
+        field.placeholderString = "magnet:?xt=urn:btih:... or https://..."
+        alert.accessoryView = field
+        alert.addButton(withTitle: String(localized: "Stream Now"))
+        alert.addButton(withTitle: String(localized: "Download"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
+        let resp = alert.runModal()
+        let raw = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, resp != .alertThirdButtonReturn else { return }
+
+        if raw.hasPrefix("magnet:") {
+            do {
+                let stream = try core.parseMagnetStream(uri: raw)
+                if resp == .alertFirstButtonReturn {
+                    showPlayer(.stream(stream, metadata: nil))
+                } else {
+                    let title = stream.name ?? String(localized: "Magnet Download")
+                    _ = try core.addTorrentDownload(title: title, stream: stream, metaId: nil, mediaType: nil, priority: 10)
+                    shell?.showStatus(String(localized: "Queued magnet download: \(title)"))
+                }
+            } catch {
+                shell?.showStatus(FriendlyError.explain(error))
+            }
+        } else if let url = URL(string: raw), url.scheme?.hasPrefix("http") == true {
+            let name = url.lastPathComponent.isEmpty ? "Stream" : url.lastPathComponent
+            if resp == .alertFirstButtonReturn {
+                showPlayer(.trailer(url: raw, title: name))
+            } else {
+                do {
+                    _ = try core.addHttpDownload(title: name, url: raw, metaId: nil, mediaType: nil, priority: 10)
+                    shell?.showStatus(String(localized: "Queued download: \(name)"))
+                } catch {
+                    shell?.showStatus(FriendlyError.explain(error))
+                }
+            }
+        }
+    }
+
+    private func postDownloadCompletedNotification(title: String) {
+        let center = UNUserNotificationCenter.current()
+        Task {
+            let settings = await center.notificationSettings()
+            if settings.authorizationStatus == .notDetermined {
+                let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+                guard granted else { return }
+            } else if settings.authorizationStatus != .authorized && settings.authorizationStatus != .provisional {
+                return
+            }
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Download Complete")
+            content.body = title
+            content.sound = .default
+            let req = UNNotificationRequest(identifier: "dl-\(UUID().uuidString)", content: content, trigger: nil)
+            try? await center.add(req)
+        }
     }
 
     @objc func showAbout(_ sender: Any?) {
@@ -202,6 +309,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func handleLink(_ url: URL) {
         guard let core else { return }
+        if url.isFileURL {
+            let ext = url.pathExtension.lowercased()
+            if ext == "torrent" {
+                reopenMainWindow()
+                do {
+                    let stream = try core.parseTorrentFileStream(path: url.path)
+                    let title = stream.name ?? url.deletingPathExtension().lastPathComponent
+                    let alert = NSAlert()
+                    alert.messageText = String(localized: "Open Torrent File")
+                    alert.informativeText = title
+                    alert.addButton(withTitle: String(localized: "Stream Now"))
+                    alert.addButton(withTitle: String(localized: "Download"))
+                    alert.addButton(withTitle: String(localized: "Cancel"))
+                    let resp = alert.runModal()
+                    if resp == .alertFirstButtonReturn {
+                        showPlayer(.stream(stream, metadata: nil))
+                    } else if resp == .alertSecondButtonReturn {
+                        _ = try core.addTorrentDownload(title: title, stream: stream, metaId: nil, mediaType: nil, priority: 10)
+                        shell?.showStatus(String(localized: "Queued torrent download: \(title)"))
+                    }
+                } catch {
+                    shell?.showStatus(FriendlyError.explain(error))
+                }
+                return
+            }
+            let videoExts: Set<String> = ["mkv", "mp4", "m4v", "mov", "avi", "webm", "ts", "m2ts", "wmv", "flv"]
+            if videoExts.contains(ext) {
+                reopenMainWindow()
+                showPlayer(.file(url))
+                return
+            }
+        }
         if url.scheme?.lowercased() == "cinma" {
             let host = url.host?.lowercased() ?? ""
             if host == "oauth" {

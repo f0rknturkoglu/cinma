@@ -119,6 +119,20 @@ pub struct Chapter {
     pub start_s: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioDeviceEntry {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RawFrame {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub bgr0: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlayerStats {
     pub video_codec: String,
@@ -868,6 +882,66 @@ impl Player {
         self.command(&["screenshot-to-file", s, flags])
     }
 
+    pub fn sub_seek(&self, offset: i32) -> Result<(), PlayerError> {
+        let dir = if offset < 0 { "-1" } else { "1" };
+        self.command(&["sub-seek", dir])
+    }
+
+    pub fn audio_devices(&self) -> Result<Vec<AudioDeviceEntry>, PlayerError> {
+        let MpvNode::Array(items) = self.get_property_node("audio-device-list")? else {
+            return Ok(Vec::new());
+        };
+        let mut out = Vec::new();
+        for item in items {
+            if let MpvNode::Map(fields) = item
+                && let Some(name) = map_str(&fields, "name")
+            {
+                let description = map_str(&fields, "description").unwrap_or(name);
+                out.push(AudioDeviceEntry {
+                    name: name.to_owned(),
+                    description: description.to_owned(),
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn current_audio_device(&self) -> Result<String, PlayerError> {
+        Ok(self
+            .get_property_string_opt("audio-device")
+            .unwrap_or_else(|| "auto".to_owned()))
+    }
+
+    pub fn set_audio_device(&self, name: &str) -> Result<(), PlayerError> {
+        let trimmed = name.trim();
+        self.set_property_str(
+            "audio-device",
+            if trimmed.is_empty() { "auto" } else { trimmed },
+        )
+    }
+
+    /// Captures the currently displayed video frame in memory (`bgr0` / BGRA 32-bit)
+    /// via `screenshot-raw video` with zero disk writes (for VisionKit Live Text OCR).
+    pub fn capture_raw_frame(&self) -> Result<RawFrame, PlayerError> {
+        let c_args = [c"screenshot-raw", c"video"];
+        let mut ptrs: [*const c_char; 3] =
+            [c_args[0].as_ptr(), c_args[1].as_ptr(), std::ptr::null()];
+        let mut result = sys::mpv_node {
+            u: sys::mpv_node_union { int64: 0 },
+            format: sys::FORMAT_NONE,
+        };
+        // SAFETY: `self.handle.0` is valid and `ptrs` is NULL-terminated; `result`
+        // is always freed via `free_node_contents`.
+        let status =
+            unsafe { (self.api.command_ret)(self.handle.0, ptrs.as_mut_ptr(), &mut result) };
+        let parsed = self
+            .check(status)
+            .and_then(|()| unsafe { extract_bgr0_frame(&result) });
+        // SAFETY: `result` was initialized by `mpv_command_ret` (or stayed FORMAT_NONE).
+        unsafe { (self.api.free_node_contents)(&mut result) };
+        parsed
+    }
+
     fn mark_seek(&self) {
         if let Ok(mut t) = self.timing.lock() {
             t.seek_started = Some(Instant::now());
@@ -1242,6 +1316,7 @@ enum MpvNode {
     Bool(bool),
     Int(i64),
     Double(f64),
+    ByteArray(Vec<u8>),
     Array(Vec<MpvNode>),
     Map(Vec<(String, MpvNode)>),
 }
@@ -1260,6 +1335,20 @@ impl MpvNode {
                 sys::FORMAT_FLAG => Self::Bool(node.u.flag != 0),
                 sys::FORMAT_INT64 => Self::Int(node.u.int64),
                 sys::FORMAT_DOUBLE => Self::Double(node.u.double_),
+                sys::FORMAT_BYTE_ARRAY => {
+                    let ba_ptr = node.u.ba as *const sys::mpv_byte_array;
+                    if ba_ptr.is_null() {
+                        Self::ByteArray(Vec::new())
+                    } else {
+                        let ba = &*ba_ptr;
+                        if ba.data.is_null() || ba.size == 0 {
+                            Self::ByteArray(Vec::new())
+                        } else {
+                            let bytes = std::slice::from_raw_parts(ba.data.cast::<u8>(), ba.size);
+                            Self::ByteArray(bytes.to_vec())
+                        }
+                    }
+                }
                 sys::FORMAT_NODE_ARRAY => {
                     if node.u.list.is_null() {
                         Self::Array(Vec::new())
@@ -1350,6 +1439,35 @@ fn apply_hex_alpha(hex: &str, opacity_pct: u32) -> String {
     };
     let alpha = ((opacity_pct.min(100) * 255 + 50) / 100) as u8;
     format!("#{alpha:02X}{}", rgb.to_ascii_uppercase())
+}
+
+unsafe fn extract_bgr0_frame(node: &sys::mpv_node) -> Result<RawFrame, PlayerError> {
+    let parsed = unsafe { MpvNode::from_raw(node) };
+    let MpvNode::Map(fields) = parsed else {
+        return Err(PlayerError::Mpv("screenshot-raw returned non-map".into()));
+    };
+    let width = map_i64(&fields, "w").unwrap_or(0);
+    let height = map_i64(&fields, "h").unwrap_or(0);
+    let stride = map_i64(&fields, "stride").unwrap_or(0);
+    let fmt = map_str(&fields, "format").unwrap_or_default();
+    if width <= 0 || height <= 0 || stride <= 0 || fmt != "bgr0" {
+        return Err(PlayerError::Mpv(format!(
+            "unsupported raw frame format: {fmt} ({width}x{height})"
+        )));
+    }
+    let data = fields
+        .into_iter()
+        .find_map(|(k, v)| match (k.as_str(), v) {
+            ("data", MpvNode::ByteArray(bytes)) => Some(bytes),
+            _ => None,
+        })
+        .ok_or_else(|| PlayerError::Mpv("screenshot-raw missing pixel data".into()))?;
+    Ok(RawFrame {
+        width: width as u32,
+        height: height as u32,
+        stride: stride as u32,
+        bgr0: data,
+    })
 }
 
 #[cfg(all(test, target_os = "macos"))]

@@ -17,6 +17,7 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
 
     var onSelectPoster: ((MetaPreviewInfo) -> Void)?
     var onSelectContinue: ((WatchProgressInfo) -> Void)?
+    var onBuildContextMenu: ((MetaPreviewInfo) -> NSMenu?)?
 
     init(title: String, source: String = "") {
         super.init(frame: .zero)
@@ -118,6 +119,7 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
             )
             if let card = item as? PosterCardItem, items.indices.contains(indexPath.item) {
                 card.configure(with: items[indexPath.item], style: posterStyle)
+                card.onContextMenu = onBuildContextMenu
             }
             return item
         }
@@ -150,6 +152,8 @@ final class HomeBrowserViewController: NSViewController {
     private let core: CinmaCore
     private let onOpenDetail: (MetaPreviewInfo) -> Void
     private let onContinue: (WatchProgressInfo) -> Void
+    var onQuickPlay: ((MetaPreviewInfo) -> Void)?
+    var onBuildContextMenu: ((MetaPreviewInfo) -> NSMenu?)?
 
     private let scrollView = NSScrollView()
     private let contentStack = NSStackView()
@@ -388,7 +392,7 @@ final class HomeBrowserViewController: NSViewController {
             symbol: "play.fill",
             primary: true,
             target: self,
-            action: #selector(openHeroDetail)
+            action: #selector(playHeroClicked)
         )
         let detailsButton = CinemaTheme.makePillButton(
             title: String(localized: "View Sources"),
@@ -502,6 +506,7 @@ final class HomeBrowserViewController: NSViewController {
             h.isActive = true
             if idx == 0 { moviesRailHeight = h } else { seriesRailHeight = h }
             rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
+            rail.onBuildContextMenu = { [weak self] item in self?.onBuildContextMenu?(item) }
             contentStack.addArrangedSubview(rail)
             rail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
         }
@@ -652,6 +657,7 @@ final class HomeBrowserViewController: NSViewController {
         rail.translatesAutoresizingMaskIntoConstraints = false
         rail.heightAnchor.constraint(equalToConstant: style.itemSize.height + 42).isActive = true
         rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
+        rail.onBuildContextMenu = { [weak self] item in self?.onBuildContextMenu?(item) }
         rail.update(content: .posters(visItems), style: style)
         dynamicRailsStack.addArrangedSubview(rail)
         rail.widthAnchor.constraint(equalTo: dynamicRailsStack.widthAnchor).isActive = true
@@ -738,6 +744,17 @@ final class HomeBrowserViewController: NSViewController {
     @objc private func openHeroDetail() {
         guard heroItems.indices.contains(heroIndex) else { return }
         onOpenDetail(heroItems[heroIndex])
+    }
+
+    @objc private func playHeroClicked() {
+        guard heroItems.indices.contains(heroIndex) else { return }
+        let item = heroItems[heroIndex]
+        let quickPlay = (try? core.playerPreferences())?.quickPlayEnabled ?? true
+        if quickPlay && !NSEvent.modifierFlags.contains(.option), let onQuickPlay {
+            onQuickPlay(item)
+        } else {
+            onOpenDetail(item)
+        }
     }
 
     @objc private func toggleHeroLibrary() {

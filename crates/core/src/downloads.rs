@@ -682,6 +682,27 @@ impl Core {
         Ok(id)
     }
 
+    /// Parses a `magnet:?xt=...` URI into a playable Stremio-compatible `Stream`.
+    pub fn parse_magnet_stream(&self, uri: &str) -> Result<cinma_stremio::Stream, CoreError> {
+        let meta = cinma_torrent::parse_magnet_uri_meta(uri)
+            .map_err(|e| CoreError::Invalid(e.to_string()))?;
+        Ok(stream_from_torrent_input(meta))
+    }
+
+    /// Reads and parses a local `.torrent` file into a playable Stremio-compatible `Stream`.
+    pub fn parse_torrent_file_stream(
+        &self,
+        path: &Path,
+    ) -> Result<cinma_stremio::Stream, CoreError> {
+        let bytes = std::fs::read(path)?;
+        let mut meta = cinma_torrent::parse_torrent_file_meta(&bytes)
+            .map_err(|e| CoreError::Invalid(e.to_string()))?;
+        if meta.name.is_none() {
+            meta.name = path.file_stem().and_then(|s| s.to_str()).map(str::to_owned);
+        }
+        Ok(stream_from_torrent_input(meta))
+    }
+
     pub fn add_ytdlp_download(
         self: &Arc<Self>,
         title: String,
@@ -918,5 +939,24 @@ impl Core {
             .set_app_setting(MENUBAR_ENABLED_KEY, if enabled { "1" } else { "0" })?;
         self.emit(CoreEvent::DownloadsChanged);
         Ok(())
+    }
+}
+
+fn stream_from_torrent_input(meta: cinma_torrent::ParsedTorrentInput) -> cinma_stremio::Stream {
+    let sources: Vec<String> = meta
+        .trackers
+        .into_iter()
+        .map(|t| format!("tracker:{t}"))
+        .collect();
+    let display = meta.name.clone().unwrap_or_else(|| meta.info_hash.clone());
+    cinma_stremio::Stream {
+        name: Some(display.clone()),
+        title: Some(display),
+        description: None,
+        url: None,
+        info_hash: Some(meta.info_hash),
+        file_idx: None,
+        sources: (!sources.is_empty()).then_some(sources),
+        behavior_hints: None,
     }
 }

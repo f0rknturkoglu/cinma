@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Title detail + ranked stream picker (`Başlık detayı ve stream seçici` mockup M1).
 @MainActor
@@ -16,6 +17,7 @@ final class TitleDetailViewController: NSViewController {
     private let onBack: () -> Void
     private let onPlay: (PlayRequest) -> Void
     var onOpenAddons: (() -> Void)?
+    var onOpenRelated: ((MetaPreviewInfo) -> Void)?
 
     private let scrollView = NSScrollView()
     private let backdropView = AspectFillImageView()
@@ -25,6 +27,10 @@ final class TitleDetailViewController: NSViewController {
     private let metaLabel = NSTextField(labelWithString: "")
     private let overviewLabel = NSTextField(wrappingLabelWithString: "")
     private let castLabel = NSTextField(wrappingLabelWithString: "")
+    private let castChipsStack = NSStackView()
+    private let collectionRail = CatalogRailView(title: String(localized: "Collection"))
+    private var collectionRailHeight: NSLayoutConstraint?
+    private var quickPlayButton: NSButton?
     private var libraryButton: NSButton?
     private var trailerButton: NSButton?
 
@@ -141,6 +147,13 @@ final class TitleDetailViewController: NSViewController {
             target: self,
             action: #selector(goBack)
         )
+        let playBtn = CinemaTheme.makePillButton(
+            title: String(localized: "Quick Play"),
+            symbol: "play.fill",
+            primary: true,
+            target: self,
+            action: #selector(quickPlayClicked)
+        )
         let libBtn = CinemaTheme.makePillButton(
             title: String(localized: "Add to Library"),
             symbol: "plus",
@@ -156,14 +169,15 @@ final class TitleDetailViewController: NSViewController {
             action: #selector(playTrailer)
         )
         trBtn.isHidden = true
+        quickPlayButton = playBtn
         libraryButton = libBtn
         trailerButton = trBtn
-        for b in [backBtn, libBtn, trBtn] {
+        for b in [backBtn, playBtn, libBtn, trBtn] {
             b.translatesAutoresizingMaskIntoConstraints = false
             b.heightAnchor.constraint(equalToConstant: 36).isActive = true
             b.widthAnchor.constraint(greaterThanOrEqualToConstant: 100).isActive = true
         }
-        let topBar = NSStackView(views: [backBtn, libBtn, trBtn])
+        let topBar = NSStackView(views: [backBtn, playBtn, libBtn, trBtn])
         topBar.spacing = 10
         topBar.translatesAutoresizingMaskIntoConstraints = false
 
@@ -187,7 +201,12 @@ final class TitleDetailViewController: NSViewController {
         castLabel.font = .systemFont(ofSize: 13, weight: .regular)
         castLabel.textColor = CinemaTheme.textMuted
 
-        let headerStack = NSStackView(views: [topBar, logoView, titleLabel, metaLabel, overviewLabel, castLabel])
+        castChipsStack.orientation = .horizontal
+        castChipsStack.alignment = .centerY
+        castChipsStack.spacing = 6
+        castChipsStack.isHidden = true
+
+        let headerStack = NSStackView(views: [topBar, logoView, titleLabel, metaLabel, overviewLabel, castChipsStack, castLabel])
         headerStack.orientation = .vertical
         headerStack.alignment = .leading
         headerStack.spacing = 12
@@ -252,9 +271,38 @@ final class TitleDetailViewController: NSViewController {
         columns.spacing = 28
         columns.translatesAutoresizingMaskIntoConstraints = false
 
+        collectionRail.translatesAutoresizingMaskIntoConstraints = false
+        collectionRail.isHidden = true
+        collectionRail.onSelectPoster = { [weak self] item in
+            self?.onOpenRelated?(item)
+        }
+        collectionRail.onBuildContextMenu = { [weak self] item in
+            guard let self else { return nil }
+            return QuickPlayHelper.makePosterMenu(
+                core: self.core,
+                item: item,
+                onOpenDetail: { [weak self] target in self?.onOpenRelated?(target) },
+                onQuickPlay: { [weak self] target in
+                    guard let self else { return }
+                    QuickPlayHelper.launchBest(
+                        core: self.core,
+                        item: target,
+                        onPlay: self.onPlay,
+                        onStatus: { [weak self] msg in self?.streamStatusLabel.stringValue = msg },
+                        onFallbackOpenDetail: { [weak self] in self?.onOpenRelated?(target) }
+                    )
+                },
+                onStatus: { [weak self] msg in self?.streamStatusLabel.stringValue = msg }
+            )
+        }
+        let colRailH = collectionRail.heightAnchor.constraint(equalToConstant: 0)
+        colRailH.isActive = true
+        collectionRailHeight = colRailH
+
         doc.addSubview(heroBox)
         doc.addSubview(headerStack)
         doc.addSubview(columns)
+        doc.addSubview(collectionRail)
         scrollView.documentView = doc
         root.addSubview(scrollView)
 
@@ -296,7 +344,11 @@ final class TitleDetailViewController: NSViewController {
             columns.topAnchor.constraint(equalTo: headerStack.bottomAnchor, constant: 32),
             columns.leadingAnchor.constraint(equalTo: doc.leadingAnchor, constant: 64),
             columns.trailingAnchor.constraint(equalTo: doc.trailingAnchor, constant: -64),
-            columns.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: -48),
+
+            collectionRail.topAnchor.constraint(equalTo: columns.bottomAnchor, constant: 28),
+            collectionRail.leadingAnchor.constraint(equalTo: doc.leadingAnchor),
+            collectionRail.trailingAnchor.constraint(equalTo: doc.trailingAnchor),
+            collectionRail.bottomAnchor.constraint(equalTo: doc.bottomAnchor, constant: -48),
 
             episodesSection.widthAnchor.constraint(greaterThanOrEqualToConstant: 420),
             pickerPanel.widthAnchor.constraint(greaterThanOrEqualToConstant: 460),
@@ -375,10 +427,7 @@ final class TitleDetailViewController: NSViewController {
         .compactMap { $0 }
         .joined(separator: " · ")
         overviewLabel.stringValue = m.description ?? ""
-        if !m.cast.isEmpty {
-            let names = m.cast.prefix(5).joined(separator: ", ")
-            castLabel.stringValue = String(localized: "Cast: \(names)")
-        }
+        rebuildCastChips(cast: m.cast, directors: m.director)
         trailerButton?.isHidden = m.trailers.isEmpty
         refreshLibraryButton()
         loadProgress()
@@ -429,6 +478,18 @@ final class TitleDetailViewController: NSViewController {
                 } else {
                     self.castLabel.stringValue += "\n\(suffix)"
                 }
+            }
+        }
+        if mediaType == "movie" {
+            Task { [weak self] in
+                guard let self,
+                      let col = try? await core.titleCollection(mediaType: mediaType, id: id),
+                      col.parts.count > 1
+                else { return }
+                let style = PosterStyleContext.load(from: core)
+                self.collectionRailHeight?.constant = style.itemSize.height + 42
+                self.collectionRail.update(title: col.name, source: "TMDB", content: .posters(col.parts), style: style)
+                self.collectionRail.isHidden = false
             }
         }
     }
@@ -518,6 +579,7 @@ final class TitleDetailViewController: NSViewController {
             let isSelected = ep.id == selectedEpisode?.id
             let row = NSButton(title: "", target: self, action: #selector(episodeClicked(_:)))
             row.identifier = NSUserInterfaceItemIdentifier(ep.id)
+            row.menu = makeEpisodeMenu(ep)
             row.isBordered = false
             row.wantsLayer = true
             row.layer?.cornerRadius = 14
@@ -1074,6 +1136,156 @@ final class TitleDetailViewController: NSViewController {
 
     @objc private func goBack() { onBack() }
 
+    @objc private func quickPlayClicked() {
+        if NSEvent.modifierFlags.contains(.option) {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: max(0, episodesSection.frame.minY - 90)))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            return
+        }
+        if let top = (rankedWithDebrid ?? (try? core.rankStreams(streams: accumulatedStreams, preferences: nil)))?.ranked.first {
+            let trigger = NSButton()
+            trigger.identifier = NSUserInterfaceItemIdentifier(top.stream.raw)
+            playStreamClicked(trigger)
+            return
+        }
+        let targetItem = MetaPreviewInfo(
+            id: richMeta?.meta.id ?? preview.id,
+            mediaType: richMeta?.meta.mediaType ?? preview.mediaType,
+            name: richMeta?.meta.name ?? preview.name,
+            poster: richMeta?.meta.poster ?? preview.poster,
+            posterShape: preview.posterShape,
+            background: richMeta?.meta.background ?? preview.background,
+            logo: richMeta?.meta.logo,
+            description: richMeta?.meta.description ?? preview.description,
+            releaseInfo: richMeta?.meta.releaseInfo ?? preview.releaseInfo,
+            imdbRating: richMeta?.meta.imdbRating ?? preview.imdbRating,
+            genres: richMeta?.meta.genres ?? preview.genres,
+            runtime: richMeta?.meta.runtime ?? preview.runtime
+        )
+        QuickPlayHelper.launchBest(
+            core: core,
+            item: targetItem,
+            episode: selectedEpisode,
+            seasonOverride: selectedSeason,
+            onPlay: onPlay,
+            onStatus: { [weak self] msg in self?.streamStatusLabel.stringValue = msg }
+        )
+    }
+
+    private func rebuildCastChips(cast: [String], directors: [String]) {
+        for v in castChipsStack.arrangedSubviews {
+            castChipsStack.removeArrangedSubview(v)
+            v.removeFromSuperview()
+        }
+        var names: [(String, Bool)] = directors.prefix(1).map { ($0, true) }
+        for actor in cast.prefix(5) where !names.contains(where: { $0.0 == actor }) {
+            names.append((actor, false))
+        }
+        castChipsStack.isHidden = names.isEmpty
+        for (name, isDirector) in names {
+            let title = isDirector ? "\(name) (\(String(localized: "Director")))" : name
+            let chip = CinemaTheme.makePillButton(
+                title: title,
+                symbol: isDirector ? "film.stack" : "person.fill",
+                primary: false,
+                target: self,
+                action: #selector(personChipClicked(_:))
+            )
+            chip.identifier = NSUserInterfaceItemIdentifier(name)
+            chip.heightAnchor.constraint(equalToConstant: 26).isActive = true
+            castChipsStack.addArrangedSubview(chip)
+        }
+    }
+
+    @objc private func personChipClicked(_ sender: NSButton) {
+        guard let name = sender.identifier?.rawValue, !name.isEmpty else { return }
+        let hosting = NSHostingController(
+            rootView: PersonCreditsSheetView(
+                core: core,
+                personName: name,
+                onSelectTitle: { [weak self] item in
+                    self?.onOpenRelated?(item)
+                },
+                onDismiss: { [weak self] in
+                    self?.dismiss(nil)
+                }
+            )
+        )
+        presentAsSheet(hosting)
+    }
+
+    private func makeEpisodeMenu(_ ep: MetaVideoInfo) -> NSMenu {
+        let menu = NSMenu()
+        let metaId = richMeta?.meta.id ?? preview.id
+        let showTitle = richMeta?.meta.name ?? preview.name
+        let epTitle = ep.title ?? showTitle
+        let isWatched = progressByVideo[ep.id]?.watched == true
+
+        menu.addItem(ClosureMenuProxy.item(title: String(localized: "Quick Play Episode"), systemSymbol: "play.fill") { [weak self] in
+            guard let self else { return }
+            QuickPlayHelper.launchBest(
+                core: self.core,
+                item: self.preview,
+                episode: ep,
+                seasonOverride: self.selectedSeason,
+                onPlay: self.onPlay,
+                onStatus: { [weak self] msg in self?.streamStatusLabel.stringValue = msg }
+            )
+        })
+        menu.addItem(ClosureMenuProxy.item(
+            title: isWatched ? String(localized: "Mark Episode as Unwatched") : String(localized: "Mark Episode as Watched"),
+            systemSymbol: isWatched ? "eye.slash" : "checkmark.circle"
+        ) { [weak self] in
+            guard let self else { return }
+            try? self.core.setWatched(
+                videoId: ep.id,
+                metaId: metaId,
+                mediaType: "series",
+                title: epTitle,
+                watched: !isWatched
+            )
+            self.loadProgress()
+            self.renderEpisodes()
+        })
+        if let targetIdx = episodes.firstIndex(where: { $0.id == ep.id }) {
+            let preceding = Array(episodes.prefix(targetIdx + 1))
+            if preceding.count > 1 {
+                menu.addItem(ClosureMenuProxy.item(
+                    title: String(localized: "Mark This & Previous Episodes as Watched"),
+                    systemSymbol: "checkmark.circle.badge.plus"
+                ) { [weak self] in
+                    guard let self else { return }
+                    let batch = preceding.map { item in
+                        BatchEpisodeMarkFfi(
+                            videoId: item.id,
+                            title: item.title ?? showTitle,
+                            season: Int64(item.season ?? self.selectedSeason),
+                            episode: Int64(item.episode ?? item.number ?? 0)
+                        )
+                    }
+                    try? self.core.markEpisodesWatched(
+                        metaId: metaId,
+                        mediaType: "series",
+                        items: batch,
+                        watched: true
+                    )
+                    self.loadProgress()
+                    self.renderEpisodes()
+                })
+            }
+        }
+        menu.addItem(.separator())
+        menu.addItem(ClosureMenuProxy.item(
+            title: String(localized: "Reset Remembered Source"),
+            systemSymbol: "arrow.counterclockwise"
+        ) { [weak self] in
+            guard let self else { return }
+            try? self.core.clearSeriesSource(metaId: metaId)
+            self.streamStatusLabel.stringValue = String(localized: "Series source preference cleared")
+        })
+        return menu
+    }
+
     @objc private func toggleLibrary() {
         let meta = richMeta?.meta
         let metaId = meta?.id ?? preview.id
@@ -1168,20 +1380,11 @@ final class TitleDetailViewController: NSViewController {
     }
 
     private static func extractBingeGroup(_ raw: String) -> String? {
-        guard let data = raw.data(using: .utf8),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hints = obj["behaviorHints"] as? [String: Any]
-        else { return nil }
-        return hints["bingeGroup"] as? String
+        QuickPlayHelper.extractBingeGroup(raw)
     }
 
     private static func matchesSavedSource(_ item: RankedStreamInfo, saved: PreferredSeriesSourceFfi) -> Bool {
-        if let bg = saved.bingeGroup, extractBingeGroup(item.stream.raw) == bg { return true }
-        if let addon = saved.addonName, item.stream.addonName == addon {
-            if let res = saved.resolution { return item.parsed.resolution == res }
-            return true
-        }
-        return false
+        QuickPlayHelper.matchesSavedSource(item, saved: saved)
     }
 
     private static func formatTime(_ seconds: Double) -> String {

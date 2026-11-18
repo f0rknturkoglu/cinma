@@ -64,6 +64,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     global("app.show_all", None),
     global("app.quit", Some("cmd+q")),
     global("file.open", Some("cmd+o")),
+    global("file.open_url", Some("cmd+u")),
     global("edit.undo", Some("cmd+z")),
     global("edit.redo", Some("cmd+shift+z")),
     global("edit.cut", Some("cmd+x")),
@@ -91,6 +92,10 @@ pub const COMMANDS: &[CommandSpec] = &[
     player("player.volume_down", "down"),
     player("player.mute", "m"),
     player("player.next_episode", "n"),
+    player("player.sub_seek_prev", "alt+left"),
+    player("player.sub_seek_next", "alt+right"),
+    player("player.search_dialogue", "cmd+f"),
+    player("player.live_text", "t"),
     // Reached through deep links only.
     global("addon.install", None),
 ];

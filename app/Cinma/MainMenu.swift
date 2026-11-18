@@ -19,6 +19,7 @@ enum MainMenu {
         case "app.show_all": Item(title: String(localized: "Show All"), action: #selector(NSApplication.unhideAllApplications(_:)), targetsDelegate: false)
         case "app.quit": Item(title: String(localized: "Quit Cinma"), action: #selector(NSApplication.terminate(_:)), targetsDelegate: false)
         case "file.open": Item(title: String(localized: "Open File…"), action: #selector(AppDelegate.openFile(_:)), targetsDelegate: true)
+        case "file.open_url": Item(title: String(localized: "Open Magnet / URL…"), action: #selector(AppDelegate.openMagnetOrUrl(_:)), targetsDelegate: true)
         case "edit.undo": Item(title: String(localized: "Undo"), action: Selector(("undo:")), targetsDelegate: false)
         case "edit.redo": Item(title: String(localized: "Redo"), action: Selector(("redo:")), targetsDelegate: false)
         case "edit.cut": Item(title: String(localized: "Cut"), action: #selector(NSText.cut(_:)), targetsDelegate: false)
@@ -33,7 +34,7 @@ enum MainMenu {
 
     private static let layout: [(title: String?, ids: [String?])] = [
         (nil, ["app.about", nil, "app.hide", "app.hide_others", "app.show_all", nil, "app.quit"]),
-        (String(localized: "File"), ["file.open"]),
+        (String(localized: "File"), ["file.open", "file.open_url"]),
         (String(localized: "Edit"), ["edit.undo", "edit.redo", nil, "edit.cut", "edit.copy", "edit.paste", "edit.select_all"]),
         (String(localized: "Window"), ["window.minimize", "window.close"]),
     ]

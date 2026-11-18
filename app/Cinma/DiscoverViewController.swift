@@ -7,6 +7,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     private let core: CinmaCore
     private let onOpenDetail: (MetaPreviewInfo) -> Void
     var onOpenAddons: (() -> Void)?
+    var onBuildContextMenu: ((MetaPreviewInfo) -> NSMenu?)?
 
     private let titleLabel = NSTextField(labelWithString: String(localized: "Discover"))
     private let subtitleLabel = NSTextField(labelWithString: "")
@@ -584,6 +585,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         let cell = collectionView.makeItem(withIdentifier: PosterCardItem.identifier, for: indexPath)
         if let card = cell as? PosterCardItem, items.indices.contains(indexPath.item) {
             card.configure(with: items[indexPath.item], style: posterStyle)
+            card.onContextMenu = onBuildContextMenu
         }
         return cell
     }

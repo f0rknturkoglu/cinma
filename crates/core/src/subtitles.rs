@@ -281,6 +281,18 @@ pub struct PlayerPreferences {
     pub external_player_preset: String,
     /// Split Home Continue Watching into separate Movies and Series rails.
     pub split_continue_watching: bool,
+    /// Automatically pause playback when CoreAudio default output switches (e.g. headphone disconnect).
+    pub pause_on_audio_output_change: bool,
+    /// Prompt to open/download when focusing Cinma with a magnet or media URL in clipboard.
+    pub clipboard_catcher_enabled: bool,
+    /// Black out secondary monitors during fullscreen playback.
+    pub blackout_other_screens: bool,
+    /// Automatically collapse player to floating PiP mini-player when occluded by another Space/app.
+    pub auto_pip_on_occlusion: bool,
+    /// Send a local macOS notification when a download finishes.
+    pub notify_on_download_complete: bool,
+    /// Allow single-click Quick Play of the top-ranked stream directly from cards & title headers.
+    pub quick_play_enabled: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -376,6 +388,12 @@ impl Default for PlayerPreferences {
             haptic_feedback_enabled: true,
             external_player_preset: "auto".to_owned(),
             split_continue_watching: false,
+            pause_on_audio_output_change: true,
+            clipboard_catcher_enabled: false,
+            blackout_other_screens: false,
+            auto_pip_on_occlusion: false,
+            notify_on_download_complete: true,
+            quick_play_enabled: true,
         }
     }
 }
@@ -469,7 +487,24 @@ impl Core {
         self.save_profile_json(&format!("series_source.{meta_id}"), source)
     }
 
-    fn load_profile_json<T: serde::de::DeserializeOwned + Default>(
+    pub fn clear_series_source(&self, meta_id: &str) -> Result<(), CoreError> {
+        self.save_profile_json(
+            &format!("series_source.{meta_id}"),
+            &PreferredSeriesSource::default(),
+        )
+    }
+
+    pub fn search_subtitle_cues(
+        &self,
+        path: &Path,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<cinma_subtitles::SubtitleCue>, CoreError> {
+        cinma_subtitles::search_subtitle_cues(path, query, limit)
+            .map_err(|e| CoreError::Invalid(e.to_string()))
+    }
+
+    pub(crate) fn load_profile_json<T: serde::de::DeserializeOwned + Default>(
         &self,
         key: &str,
     ) -> Result<T, CoreError> {
@@ -485,7 +520,11 @@ impl Core {
         }
     }
 
-    fn save_profile_json<T: Serialize>(&self, key: &str, value: &T) -> Result<(), CoreError> {
+    pub(crate) fn save_profile_json<T: Serialize>(
+        &self,
+        key: &str,
+        value: &T,
+    ) -> Result<(), CoreError> {
         let json = serde_json::to_string(value).map_err(|e| CoreError::Invalid(e.to_string()))?;
         let profile = self.active_profile()?;
         self.db

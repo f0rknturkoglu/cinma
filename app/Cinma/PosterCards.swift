@@ -34,11 +34,22 @@ struct PosterStyleContext {
     }
 }
 
+private final class PosterContextView: NSView {
+    var menuProvider: (() -> NSMenu?)?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        menuProvider?() ?? super.menu(for: event)
+    }
+}
+
 /// Portrait poster card (`168×252` artwork + metadata line, matching mockup M0).
 @MainActor
 final class PosterCardItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("PosterCardItem")
     static let itemSize = NSSize(width: 168, height: 302)
+
+    var onContextMenu: ((MetaPreviewInfo) -> NSMenu?)?
+    private var representedPreview: MetaPreviewInfo?
 
     private let cardBox = NSView()
     private let gradientLayer = CAGradientLayer()
@@ -54,7 +65,11 @@ final class PosterCardItem: NSCollectionViewItem {
     private var loadTask: Task<Void, Never>?
 
     override func loadView() {
-        let root = NSView(frame: NSRect(origin: .zero, size: Self.itemSize))
+        let root = PosterContextView(frame: NSRect(origin: .zero, size: Self.itemSize))
+        root.menuProvider = { [weak self] in
+            guard let self, let preview = self.representedPreview else { return nil }
+            return self.onContextMenu?(preview)
+        }
 
         cardBox.wantsLayer = true
         cardBox.layer?.cornerRadius = 12
@@ -197,10 +212,13 @@ final class PosterCardItem: NSCollectionViewItem {
         loadTask?.cancel()
         loadTask = nil
         artworkView.image = nil
+        representedPreview = nil
+        onContextMenu = nil
         updateSelectionRing()
     }
 
     func configure(with item: MetaPreviewInfo, style: PosterStyleContext = PosterStyleContext()) {
+        representedPreview = item
         cardBox.layer?.cornerRadius = style.cornerRadius
         cardHeightConstraint?.constant = style.artworkHeight
         gradientLayer.colors = ArtworkPlaceholder.gradient(for: item.id)
