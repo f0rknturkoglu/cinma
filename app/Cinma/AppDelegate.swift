@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var knownIncompleteDownloads: Set<Int64> = []
     private var lastClipboardChangeCount: Int = NSPasteboard.general.changeCount
     private var clipboardPromptOpen = false
+    private var downloadScheduleTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         LaunchMetrics.report("DID_FINISH_LAUNCHING")
@@ -120,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             for row in ((try? core.downloads()) ?? []) where row.state != "completed" && row.state != "failed" {
                 knownIncompleteDownloads.insert(row.id)
             }
+            syncDownloadScheduleEnforcement(core: core)
             rebuildMenu()
             showBrowse()
             NotificationCenter.default.addObserver(
@@ -194,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         knownIncompleteDownloads.insert(row.id)
                     }
                 }
+                syncDownloadScheduleEnforcement(core: core)
             }
         case .castChanged, .trackingChanged:
             break
@@ -484,6 +487,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 player.reattachVideoViewFromPiP()
                 player.closeFromPiP()
             }
+        }
+    }
+
+    private func syncDownloadScheduleEnforcement(core: CinmaCore) {
+        let enabled = (try? core.playerPreferences())?.downloadScheduleEnabled ?? false
+        let hour = UInt8(Calendar.current.component(.hour, from: Date()))
+        try? core.enforceDownloadSchedule(currentHour: hour)
+        if enabled && !knownIncompleteDownloads.isEmpty {
+            if downloadScheduleTimer == nil {
+                downloadScheduleTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, let core = self.core else { return }
+                        let h = UInt8(Calendar.current.component(.hour, from: Date()))
+                        try? core.enforceDownloadSchedule(currentHour: h)
+                    }
+                }
+            }
+        } else {
+            downloadScheduleTimer?.invalidate()
+            downloadScheduleTimer = nil
         }
     }
 

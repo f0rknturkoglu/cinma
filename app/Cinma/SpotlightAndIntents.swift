@@ -90,4 +90,5 @@ extension Notification.Name {
     static let cinmaExternalRoute = Notification.Name("cinmaExternalRoute")
     static let cinmaIptvVisibilityChanged = Notification.Name("cinmaIptvVisibilityChanged")
     static let cinmaNavTabsChanged = Notification.Name("cinmaNavTabsChanged")
+    static let cinmaPinnedShelvesChanged = Notification.Name("cinmaPinnedShelvesChanged")
 }

@@ -1,12 +1,30 @@
 import AppKit
+import SwiftUI
 
-/// Library grid (`Kütüphane`) scoped to the active profile.
+/// Library grid (`Kütüphane`) + Local Files Scanner (#N23) + WebDAV Browser (#N24).
 @MainActor
 final class LibraryViewController: NSViewController, NSCollectionViewDataSource, NSCollectionViewDelegate, NSSearchFieldDelegate {
     private let core: CinmaCore
     private let onOpenDetail: (MetaPreviewInfo) -> Void
     var onOpenHome: (() -> Void)?
+    var onPlay: ((PlayRequest) -> Void)?
+    var onOpenSettings: (() -> Void)?
     var onBuildContextMenu: ((MetaPreviewInfo) -> NSMenu?)?
+
+    private let sourceSegment = NSSegmentedControl(labels: [
+        String(localized: "Library"),
+        String(localized: "Local Files"),
+    ], trackingMode: .selectOne, target: nil, action: nil)
+    private lazy var webdavButton = CinemaTheme.makePillButton(
+        title: "WebDAV…",
+        symbol: "externaldrive.connected.to.line.below",
+        primary: false,
+        target: self,
+        action: #selector(openWebDavBrowser)
+    )
+    private let localFilterModel = LocalFilesFilterModel()
+    private var localFilesHostView: NSHostingView<LocalFilesLibraryView>?
+    private var libraryScroll = NSScrollView()
 
     private let filterField = NSSearchField()
     private let typeSegment = NSSegmentedControl(labels: [
@@ -54,6 +72,10 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
         filterField.translatesAutoresizingMaskIntoConstraints = false
         filterField.widthAnchor.constraint(equalToConstant: 210).isActive = true
 
+        sourceSegment.selectedSegment = 0
+        sourceSegment.target = self
+        sourceSegment.action = #selector(sourceSegmentChanged)
+
         typeSegment.selectedSegment = 0
         typeSegment.target = self
         typeSegment.action = #selector(libraryFilterChanged)
@@ -66,7 +88,9 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
             String(localized: "Title Z → A"),
         ])
 
-        let headerRow = NSStackView(views: [titleLabel, NSView(), typeSegment, sortPopup, filterField])
+        webdavButton.heightAnchor.constraint(equalToConstant: 30).isActive = true
+
+        let headerRow = NSStackView(views: [titleLabel, sourceSegment, webdavButton, NSView(), typeSegment, sortPopup, filterField])
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.spacing = 12
@@ -94,6 +118,18 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
+        self.libraryScroll = scroll
+
+        let localView = LocalFilesLibraryView(
+            core: core,
+            model: localFilterModel,
+            onPlayFile: { [weak self] url in self?.onPlay?(.file(url)) },
+            onOpenSettings: { [weak self] in self?.onOpenSettings?() }
+        )
+        let host = NSHostingView(rootView: localView)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        host.isHidden = true
+        self.localFilesHostView = host
 
         emptyLabel.font = .systemFont(ofSize: 15, weight: .regular)
         emptyLabel.textColor = CinemaTheme.textMuted
@@ -107,6 +143,7 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
 
         root.addSubview(headerRow)
         root.addSubview(scroll)
+        root.addSubview(host)
         root.addSubview(emptyStack)
 
         NSLayoutConstraint.activate([
@@ -118,6 +155,11 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+
+            host.topAnchor.constraint(equalTo: headerRow.bottomAnchor, constant: 14),
+            host.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            host.bottomAnchor.constraint(equalTo: root.bottomAnchor),
 
             emptyStack.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             emptyStack.centerYAnchor.constraint(equalTo: root.centerYAnchor),
@@ -154,10 +196,38 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
             )
         }
         applyLibraryFilterAndSort()
+        localFilterModel.refreshToken += 1
     }
 
     func controlTextDidChange(_ obj: Notification) {
         applyLibraryFilterAndSort()
+    }
+
+    @objc private func sourceSegmentChanged() {
+        let localMode = sourceSegment.selectedSegment == 1
+        sortPopup.isHidden = localMode
+        libraryScroll.isHidden = localMode
+        localFilesHostView?.isHidden = !localMode
+        emptyStack.isHidden = localMode || !items.isEmpty
+        if localMode {
+            localFilterModel.refreshToken += 1
+        }
+    }
+
+    @objc private func openWebDavBrowser() {
+        var sheetVC: NSViewController?
+        let sheet = WebDavBrowserSheetView(
+            core: core,
+            onPlayUrl: { [weak self] url, title in
+                self?.onPlay?(.trailer(url: url, title: title))
+            },
+            onDismiss: { [weak self] in
+                if let vc = sheetVC { self?.dismiss(vc) }
+            }
+        )
+        let host = NSHostingController(rootView: sheet)
+        sheetVC = host
+        presentAsSheet(host)
     }
 
     @objc private func libraryFilterChanged() {
@@ -165,6 +235,8 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
     }
 
     private func applyLibraryFilterAndSort() {
+        localFilterModel.filterQuery = filterField.stringValue
+        localFilterModel.mediaFilter = typeSegment.selectedSegment
         let query = filterField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let selectedType = typeSegment.selectedSegment
         var filtered = allItems.filter { item in
@@ -182,7 +254,8 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
             break
         }
         items = filtered
-        emptyStack.isHidden = !items.isEmpty
+        let localMode = sourceSegment.selectedSegment == 1
+        emptyStack.isHidden = localMode || !items.isEmpty
         if !allItems.isEmpty && items.isEmpty {
             emptyLabel.stringValue = String(localized: "No matching titles in your library.")
             exploreButton.isHidden = true

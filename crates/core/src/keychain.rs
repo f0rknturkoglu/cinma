@@ -117,3 +117,11 @@ pub fn set_debrid_key(profile_id: i64, provider: &str, key: Option<&str>) -> Res
     let account = format!("debrid.p{profile_id}.{provider}");
     write_secret(&account, key)
 }
+
+pub fn get_webdav_password(source_id: &str) -> Result<Option<String>, CoreError> {
+    read_secret(&format!("webdav.{source_id}.password"), None)
+}
+
+pub fn set_webdav_password(source_id: &str, password: Option<&str>) -> Result<(), CoreError> {
+    write_secret(&format!("webdav.{source_id}.password"), password)
+}

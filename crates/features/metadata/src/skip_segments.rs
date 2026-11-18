@@ -29,6 +29,7 @@ pub struct SkipSegmentClient {
     http: reqwest::Client,
     aniskip_base: String,
     introdb_base: String,
+    jikan_base: String,
 }
 
 impl SkipSegmentClient {
@@ -41,6 +42,7 @@ impl SkipSegmentClient {
             http,
             aniskip_base: "https://api.aniskip.com/v2".to_owned(),
             introdb_base: "https://api.introdb.app".to_owned(),
+            jikan_base: "https://api.jikan.moe/v4".to_owned(),
         })
     }
 
@@ -52,6 +54,11 @@ impl SkipSegmentClient {
         c.aniskip_base = aniskip_base.trim_end_matches('/').to_owned();
         c.introdb_base = introdb_base.trim_end_matches('/').to_owned();
         Ok(c)
+    }
+
+    pub fn with_jikan_base_url(mut self, jikan_base: String) -> Self {
+        self.jikan_base = jikan_base.trim_end_matches('/').to_owned();
+        self
     }
 
     pub async fn fetch_aniskip(
@@ -145,6 +152,63 @@ impl SkipSegmentClient {
         }
         Ok(out)
     }
+
+    /// Fetches episode numbers flagged as filler on MyAnimeList via Jikan v4 (`/anime/{mal_id}/episodes`).
+    pub async fn fetch_anime_filler_episodes(
+        &self,
+        mal_id: i64,
+    ) -> Result<Vec<u32>, MetadataError> {
+        let mut fillers = Vec::new();
+        for page in 1u32..=5 {
+            let url = format!("{}/anime/{mal_id}/episodes?page={page}", self.jikan_base);
+            let resp = self.http.get(&url).send().await?;
+            let status = resp.status();
+            if status.as_u16() == 404 {
+                break;
+            }
+            if !status.is_success() {
+                return Err(MetadataError::Status(status.as_u16()));
+            }
+            let body = resp.bytes().await?;
+            let parsed: JikanEpisodesResp = serde_json::from_slice(&body)?;
+            for ep in parsed.data {
+                if ep.filler
+                    && let Ok(num) = u32::try_from(ep.mal_id)
+                {
+                    fillers.push(num);
+                }
+            }
+            if !parsed
+                .pagination
+                .and_then(|p| p.has_next_page)
+                .unwrap_or(false)
+            {
+                break;
+            }
+        }
+        fillers.sort_unstable();
+        fillers.dedup();
+        Ok(fillers)
+    }
+}
+
+#[derive(Deserialize)]
+struct JikanEpisodesResp {
+    #[serde(default)]
+    data: Vec<JikanEpisodeItem>,
+    pagination: Option<JikanPagination>,
+}
+
+#[derive(Deserialize)]
+struct JikanEpisodeItem {
+    mal_id: i64,
+    #[serde(default)]
+    filler: bool,
+}
+
+#[derive(Deserialize)]
+struct JikanPagination {
+    has_next_page: Option<bool>,
 }
 
 #[derive(Deserialize)]

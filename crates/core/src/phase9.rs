@@ -1045,4 +1045,98 @@ impl Core {
             &caps,
         )
     }
+
+    // =========================================================================
+    // 12. Dalga 3 — Pinned Catalog Shelves (#N20) & Anime Filler Detection (#N22)
+    // =========================================================================
+
+    pub fn pinned_shelves(&self) -> Result<Vec<PinnedShelf>, CoreError> {
+        self.load_profile_json(KEY_PINNED_SHELVES)
+    }
+
+    pub fn pin_shelf(
+        &self,
+        title: String,
+        addon_id: String,
+        media_type: String,
+        catalog_id: String,
+        genre: Option<String>,
+    ) -> Result<PinnedShelf, CoreError> {
+        let clean_genre = genre.map(|g| g.trim().to_owned()).filter(|g| !g.is_empty());
+        let id = format!(
+            "shelf:{addon_id}:{media_type}:{catalog_id}:{}",
+            clean_genre.as_deref().unwrap_or("")
+        );
+        let shelf = PinnedShelf {
+            id: id.clone(),
+            title: title.trim().to_owned(),
+            addon_id,
+            media_type,
+            catalog_id,
+            genre: clean_genre,
+        };
+        let mut all = self.pinned_shelves()?;
+        all.retain(|s| s.id != id);
+        all.push(shelf.clone());
+        self.save_profile_json(KEY_PINNED_SHELVES, &all)?;
+        Ok(shelf)
+    }
+
+    pub fn unpin_shelf(&self, id: &str) -> Result<(), CoreError> {
+        let mut all = self.pinned_shelves()?;
+        all.retain(|s| s.id != id);
+        self.save_profile_json(KEY_PINNED_SHELVES, &all)
+    }
+
+    /// Returns MAL episode numbers marked as filler via Jikan v4 (7-day SQLite TTL).
+    pub async fn anime_filler_episodes(
+        self: &Arc<Self>,
+        meta_id: String,
+    ) -> Result<Vec<u32>, CoreError> {
+        let (_, mal_opt) = self.resolve_skip_ids("series", &meta_id)?;
+        let Some(mal_id) = mal_opt else {
+            return Ok(Vec::new());
+        };
+        let key = format!("filler:{mal_id}");
+        let min_ts = now_unix() - SKIP_TTL_SECS;
+        if let Some(row) = self
+            .db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .get_skip_segment_cache(&key, min_ts)?
+            && let Ok(fillers) = serde_json::from_str::<Vec<u32>>(&row.segments_json)
+        {
+            return Ok(fillers);
+        }
+        let client = SkipSegmentClient::new().map_err(CoreError::from)?;
+        let fillers = self
+            .spawn(async move {
+                client
+                    .fetch_anime_filler_episodes(mal_id)
+                    .await
+                    .map_err(CoreError::from)
+            })
+            .await?;
+        if let Ok(json) = serde_json::to_string(&fillers) {
+            let _ = self
+                .db
+                .lock()
+                .map_err(|_| CoreError::Poisoned)?
+                .set_skip_segment_cache(&key, &json, now_unix());
+        }
+        Ok(fillers)
+    }
+}
+
+const KEY_PINNED_SHELVES: &str = "pinned_shelves";
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct PinnedShelf {
+    pub id: String,
+    pub title: String,
+    pub addon_id: String,
+    pub media_type: String,
+    pub catalog_id: String,
+    pub genre: Option<String>,
 }

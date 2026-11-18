@@ -165,6 +165,8 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         libraryVC.onBuildContextMenu = posterMenu
         discoverVC.onOpenAddons = { [weak self] in self?.openAddons() }
         libraryVC.onOpenHome = { [weak self] in self?.switchToTab(.home) }
+        libraryVC.onPlay = { [weak self] req in self?.onPlay(req) }
+        libraryVC.onOpenSettings = { [weak self] in self?.openSettings() }
         calendarVC.onOpenSettings = { [weak self] in self?.openSettings() }
         NotificationCenter.default.addObserver(
             forName: .cinmaIptvVisibilityChanged,

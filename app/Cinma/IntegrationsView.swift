@@ -197,6 +197,8 @@ struct IntegrationsSheetView: View {
                         Text("AllDebrid").tag("alldebrid")
                         Text("Premiumize").tag("premiumize")
                         Text("TorBox").tag("torbox")
+                        Text("EasyDebrid").tag("easydebrid")
+                        Text("Debrid-Link").tag("debridlink")
                     }
                     HStack {
                         SecureField(String(localized: "API Key / Token"), text: $debridApiKey)

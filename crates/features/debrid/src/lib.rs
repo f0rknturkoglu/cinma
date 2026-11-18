@@ -19,14 +19,18 @@ pub enum DebridProvider {
     AllDebrid,
     Premiumize,
     TorBox,
+    EasyDebrid,
+    DebridLink,
 }
 
 impl DebridProvider {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 6] = [
         Self::RealDebrid,
         Self::AllDebrid,
         Self::Premiumize,
         Self::TorBox,
+        Self::EasyDebrid,
+        Self::DebridLink,
     ];
 
     pub fn id(self) -> &'static str {
@@ -35,6 +39,8 @@ impl DebridProvider {
             Self::AllDebrid => "alldebrid",
             Self::Premiumize => "premiumize",
             Self::TorBox => "torbox",
+            Self::EasyDebrid => "easydebrid",
+            Self::DebridLink => "debridlink",
         }
     }
 
@@ -44,6 +50,8 @@ impl DebridProvider {
             Self::AllDebrid => "AllDebrid",
             Self::Premiumize => "Premiumize",
             Self::TorBox => "TorBox",
+            Self::EasyDebrid => "EasyDebrid",
+            Self::DebridLink => "Debrid-Link",
         }
     }
 
@@ -53,6 +61,8 @@ impl DebridProvider {
             "alldebrid" | "all-debrid" | "ad" => Some(Self::AllDebrid),
             "premiumize" | "pm" => Some(Self::Premiumize),
             "torbox" | "tb" => Some(Self::TorBox),
+            "easydebrid" | "easy-debrid" | "ed" => Some(Self::EasyDebrid),
+            "debridlink" | "debrid-link" | "dl" => Some(Self::DebridLink),
             _ => None,
         }
     }
@@ -63,6 +73,8 @@ impl DebridProvider {
             Self::AllDebrid => "https://api.alldebrid.com/v4",
             Self::Premiumize => "https://www.premiumize.me/api",
             Self::TorBox => "https://api.torbox.app/v1/api",
+            Self::EasyDebrid => "https://easydebrid.com/api/v1",
+            Self::DebridLink => "https://debrid-link.com/api/v2",
         }
     }
 }
@@ -97,6 +109,8 @@ pub struct DebridClient {
     ad_base: String,
     pm_base: String,
     tb_base: String,
+    ed_base: String,
+    dl_base: String,
 }
 
 impl DebridClient {
@@ -111,6 +125,8 @@ impl DebridClient {
             ad_base: DebridProvider::AllDebrid.default_base().to_owned(),
             pm_base: DebridProvider::Premiumize.default_base().to_owned(),
             tb_base: DebridProvider::TorBox.default_base().to_owned(),
+            ed_base: DebridProvider::EasyDebrid.default_base().to_owned(),
+            dl_base: DebridProvider::DebridLink.default_base().to_owned(),
         })
     }
 
@@ -128,12 +144,20 @@ impl DebridClient {
         Ok(c)
     }
 
+    pub fn with_extra_base_urls(mut self, ed_base: String, dl_base: String) -> Self {
+        self.ed_base = ed_base.trim_end_matches('/').to_owned();
+        self.dl_base = dl_base.trim_end_matches('/').to_owned();
+        self
+    }
+
     fn base_for(&self, provider: DebridProvider) -> &str {
         match provider {
             DebridProvider::RealDebrid => &self.rd_base,
             DebridProvider::AllDebrid => &self.ad_base,
             DebridProvider::Premiumize => &self.pm_base,
             DebridProvider::TorBox => &self.tb_base,
+            DebridProvider::EasyDebrid => &self.ed_base,
+            DebridProvider::DebridLink => &self.dl_base,
         }
     }
 
@@ -162,6 +186,8 @@ impl DebridClient {
             DebridProvider::AllDebrid => self.ad_check_cache(key, &clean).await,
             DebridProvider::Premiumize => self.pm_check_cache(key, &clean).await,
             DebridProvider::TorBox => self.tb_check_cache(key, &clean).await,
+            DebridProvider::EasyDebrid => self.ed_check_cache(key, &clean).await,
+            DebridProvider::DebridLink => self.dl_check_cache(key, &clean).await,
         }
     }
 
@@ -185,6 +211,8 @@ impl DebridClient {
             DebridProvider::AllDebrid => self.ad_resolve(key, &hash, file_idx).await,
             DebridProvider::Premiumize => self.pm_resolve(key, &hash, file_idx).await,
             DebridProvider::TorBox => self.tb_resolve(key, &hash, file_idx).await,
+            DebridProvider::EasyDebrid => self.ed_resolve(key, &hash, file_idx).await,
+            DebridProvider::DebridLink => self.dl_resolve(key, &hash, file_idx).await,
         }
     }
 
@@ -509,6 +537,129 @@ impl DebridClient {
         })
     }
 
+    // ---- EasyDebrid ----
+
+    async fn ed_check_cache(
+        &self,
+        key: &str,
+        hashes: &[String],
+    ) -> Result<HashSet<String>, DebridError> {
+        let magnets: Vec<String> = hashes
+            .iter()
+            .map(|h| format!("magnet:?xt=urn:btih:{h}"))
+            .collect();
+        let body = serde_json::json!({ "urls": magnets });
+        let resp = self
+            .http
+            .post(format!("{}/link/lookup", self.ed_base))
+            .bearer_auth(key)
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_vec(&body)?)
+            .send()
+            .await?;
+        let parsed: EdLookupResp =
+            serde_json::from_slice(&read_ok(DebridProvider::EasyDebrid, resp).await?)?;
+        let mut out = HashSet::new();
+        for (h, ok) in hashes.iter().zip(parsed.cached) {
+            if ok {
+                out.insert(h.to_ascii_lowercase());
+            }
+        }
+        Ok(out)
+    }
+
+    async fn ed_resolve(
+        &self,
+        key: &str,
+        hash: &str,
+        file_idx: Option<usize>,
+    ) -> Result<DebridResolvedStream, DebridError> {
+        let body = serde_json::json!({ "url": format!("magnet:?xt=urn:btih:{hash}") });
+        let resp = self
+            .http
+            .post(format!("{}/link/generate", self.ed_base))
+            .bearer_auth(key)
+            .header("Content-Type", "application/json")
+            .body(serde_json::to_vec(&body)?)
+            .send()
+            .await?;
+        let parsed: EdGenerateResp =
+            serde_json::from_slice(&read_ok(DebridProvider::EasyDebrid, resp).await?)?;
+        if let Some(chosen) = pick_ed_file(&parsed.files, file_idx) {
+            return Ok(DebridResolvedStream {
+                provider: DebridProvider::EasyDebrid,
+                url: chosen.url,
+                filename: chosen.filename,
+            });
+        }
+        let url = parsed
+            .url
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| DebridError::Invalid("EasyDebrid returned no playable file".into()))?;
+        Ok(DebridResolvedStream {
+            provider: DebridProvider::EasyDebrid,
+            url,
+            filename: parsed.filename,
+        })
+    }
+
+    // ---- Debrid-Link ----
+
+    async fn dl_check_cache(
+        &self,
+        key: &str,
+        hashes: &[String],
+    ) -> Result<HashSet<String>, DebridError> {
+        let joined = hashes.join(",");
+        let resp = self
+            .http
+            .get(format!("{}/seedbox/cached?url={joined}", self.dl_base))
+            .bearer_auth(key)
+            .send()
+            .await?;
+        let parsed: DlCachedResp =
+            serde_json::from_slice(&read_ok(DebridProvider::DebridLink, resp).await?)?;
+        Ok(parsed
+            .value
+            .into_keys()
+            .map(|k| k.to_ascii_lowercase())
+            .collect())
+    }
+
+    async fn dl_resolve(
+        &self,
+        key: &str,
+        hash: &str,
+        file_idx: Option<usize>,
+    ) -> Result<DebridResolvedStream, DebridError> {
+        let magnet = format!("magnet:?xt=urn:btih:{hash}");
+        let body = form_urlencoded::Serializer::new(String::new())
+            .append_pair("url", &magnet)
+            .append_pair("async", "true")
+            .finish();
+        let resp = self
+            .http
+            .post(format!("{}/seedbox/add", self.dl_base))
+            .bearer_auth(key)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await?;
+        let parsed: DlAddResp =
+            serde_json::from_slice(&read_ok(DebridProvider::DebridLink, resp).await?)?;
+        let files = parsed.value.map(|v| v.files).unwrap_or_default();
+        let file = pick_dl_file(&files, file_idx)
+            .ok_or_else(|| DebridError::Invalid("Debrid-Link returned no playable file".into()))?;
+        let url = file.download_url.filter(|s| !s.is_empty()).ok_or_else(|| {
+            DebridError::Invalid("Debrid-Link file has no downloadUrl yet".into())
+        })?;
+        Ok(DebridResolvedStream {
+            provider: DebridProvider::DebridLink,
+            url,
+            filename: Some(file.name),
+        })
+    }
+
     /// Reads the configured base URL for logging/diagnostics without exposing API keys.
     pub fn endpoint_for(&self, provider: DebridProvider) -> &str {
         self.base_for(provider)
@@ -712,6 +863,82 @@ struct TbFile {
 }
 
 fn pick_tb_file(files: &[TbFile], idx: Option<usize>) -> Option<TbFile> {
+    if let Some(i) = idx
+        && let Some(f) = files.get(i)
+    {
+        return Some(f.clone());
+    }
+    files
+        .iter()
+        .filter(|f| is_video(&f.name))
+        .max_by_key(|f| f.size)
+        .cloned()
+        .or_else(|| files.iter().max_by_key(|f| f.size).cloned())
+}
+
+#[derive(Deserialize)]
+struct EdLookupResp {
+    #[serde(default)]
+    cached: Vec<bool>,
+}
+
+#[derive(Deserialize)]
+struct EdGenerateResp {
+    url: Option<String>,
+    filename: Option<String>,
+    #[serde(default)]
+    files: Vec<EdFileItem>,
+}
+
+#[derive(Clone, Deserialize)]
+struct EdFileItem {
+    url: String,
+    filename: Option<String>,
+    #[serde(default)]
+    size: u64,
+}
+
+fn pick_ed_file(files: &[EdFileItem], idx: Option<usize>) -> Option<EdFileItem> {
+    if let Some(i) = idx
+        && let Some(f) = files.get(i)
+    {
+        return Some(f.clone());
+    }
+    files
+        .iter()
+        .filter(|f| f.filename.as_deref().is_some_and(is_video))
+        .max_by_key(|f| f.size)
+        .cloned()
+        .or_else(|| files.iter().max_by_key(|f| f.size).cloned())
+}
+
+#[derive(Deserialize)]
+struct DlCachedResp {
+    #[serde(default)]
+    value: std::collections::HashMap<String, serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct DlAddResp {
+    value: Option<DlTorrentValue>,
+}
+
+#[derive(Deserialize)]
+struct DlTorrentValue {
+    #[serde(default)]
+    files: Vec<DlFileItem>,
+}
+
+#[derive(Clone, Deserialize)]
+struct DlFileItem {
+    name: String,
+    #[serde(default)]
+    size: u64,
+    #[serde(rename = "downloadUrl")]
+    download_url: Option<String>,
+}
+
+fn pick_dl_file(files: &[DlFileItem], idx: Option<usize>) -> Option<DlFileItem> {
     if let Some(i) = idx
         && let Some(f) = files.get(i)
     {

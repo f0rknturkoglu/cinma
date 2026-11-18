@@ -621,7 +621,13 @@ struct SettingsView: View {
         blackoutOtherScreens: false,
         autoPipOnOcclusion: false,
         notifyOnDownloadComplete: true,
-        quickPlayEnabled: true
+        quickPlayEnabled: true,
+        autoSkipAnimeFillers: false,
+        localMediaFolders: [],
+        downloadScheduleEnabled: false,
+        downloadScheduleStartHour: 1,
+        downloadScheduleEndHour: 7,
+        localApiSocketEnabled: false
     )
     @State private var subLangsText = "tur, eng"
     @State private var audioLangsText = "eng, jpn, tur"
@@ -1283,6 +1289,8 @@ struct SettingsView: View {
                     .onChange(of: playerPrefs.autoSkipRecap) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Auto-Skip Outro / Credits"), isOn: $playerPrefs.autoSkipOutro)
                     .onChange(of: playerPrefs.autoSkipOutro) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Auto-Skip Anime Filler Episodes (MyAnimeList)"), isOn: $playerPrefs.autoSkipAnimeFillers)
+                    .onChange(of: playerPrefs.autoSkipAnimeFillers) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Auto-Play Next Episode"), isOn: $playerPrefs.autoplayNext)
                     .onChange(of: playerPrefs.autoplayNext) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Keep Same Source for Next Episode"), isOn: $playerPrefs.keepSourceNextEpisode)
@@ -1356,6 +1364,101 @@ struct SettingsView: View {
                     .onChange(of: diskPolicy.uploadLimitKbps) { _, _ in saveDiskPolicy() }
                 Stepper("\(String(localized: "Download Limit")): \(diskPolicy.downloadLimitKbps == 0 ? String(localized: "Unlimited") : "\(diskPolicy.downloadLimitKbps) KB/s")", value: $diskPolicy.downloadLimitKbps, in: 0...100_000, step: 1024)
                     .onChange(of: diskPolicy.downloadLimitKbps) { _, _ in saveDiskPolicy() }
+            }
+
+            Section(String(localized: "Download Schedule (Hour Window)")) {
+                Toggle(String(localized: "Only Download During Allowed Hours"), isOn: $playerPrefs.downloadScheduleEnabled)
+                    .onChange(of: playerPrefs.downloadScheduleEnabled) { _, _ in
+                        savePlayerPrefs()
+                        let hour = UInt8(Calendar.current.component(.hour, from: Date()))
+                        try? core.enforceDownloadSchedule(currentHour: hour)
+                    }
+                if playerPrefs.downloadScheduleEnabled {
+                    Picker(String(localized: "Start Hour"), selection: $playerPrefs.downloadScheduleStartHour) {
+                        ForEach(0..<24, id: \.self) { h in
+                            Text(String(format: "%02d:00", h)).tag(UInt8(h))
+                        }
+                    }
+                    .onChange(of: playerPrefs.downloadScheduleStartHour) { _, _ in
+                        savePlayerPrefs()
+                        let hour = UInt8(Calendar.current.component(.hour, from: Date()))
+                        try? core.enforceDownloadSchedule(currentHour: hour)
+                    }
+                    Picker(String(localized: "End Hour"), selection: $playerPrefs.downloadScheduleEndHour) {
+                        ForEach(0..<24, id: \.self) { h in
+                            Text(String(format: "%02d:00", h)).tag(UInt8(h))
+                        }
+                    }
+                    .onChange(of: playerPrefs.downloadScheduleEndHour) { _, _ in
+                        savePlayerPrefs()
+                        let hour = UInt8(Calendar.current.component(.hour, from: Date()))
+                        try? core.enforceDownloadSchedule(currentHour: hour)
+                    }
+                }
+            }
+
+            Section(String(localized: "Local Media Folders")) {
+                if playerPrefs.localMediaFolders.isEmpty {
+                    Text(String(localized: "No folders added. Add folders to browse local MKV/MP4 files in Library."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(playerPrefs.localMediaFolders, id: \.self) { folder in
+                        HStack {
+                            Text((folder as NSString).abbreviatingWithTildeInPath)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Button(role: .destructive) {
+                                playerPrefs.localMediaFolders.removeAll { $0 == folder }
+                                savePlayerPrefs()
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                HStack {
+                    Button(String(localized: "Add Folder…")) {
+                        let panel = NSOpenPanel()
+                        panel.canChooseDirectories = true
+                        panel.canChooseFiles = false
+                        panel.allowsMultipleSelection = true
+                        if panel.runModal() == .OK {
+                            for url in panel.urls where !playerPrefs.localMediaFolders.contains(url.path) {
+                                playerPrefs.localMediaFolders.append(url.path)
+                            }
+                            savePlayerPrefs()
+                        }
+                    }
+                    if !playerPrefs.localMediaFolders.isEmpty {
+                        Button(String(localized: "Scan Now")) {
+                            let found = (try? core.scanLocalFolders()) ?? []
+                            status = String(localized: "Scanned \(found.count) local videos.")
+                        }
+                    }
+                }
+            }
+
+            Section(String(localized: "Local Control Socket (Opt-In)")) {
+                Toggle(String(localized: "Enable Local Unix Socket (`cinma.sock`)"), isOn: $playerPrefs.localApiSocketEnabled)
+                    .onChange(of: playerPrefs.localApiSocketEnabled) { _, _ in savePlayerPrefs() }
+                if playerPrefs.localApiSocketEnabled {
+                    HStack {
+                        Text(core.localApiSocketPath())
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                        Button(String(localized: "Copy Path")) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(core.localApiSocketPath(), forType: .string)
+                            status = String(localized: "Socket path copied")
+                        }
+                    }
+                }
             }
 
             Section(String(localized: "VPN Interface Binding & Kill Switch")) {
@@ -1741,6 +1844,10 @@ struct SettingsView: View {
             SettingsSearchItem(id: "vpn", title: String(localized: "VPN Interface Binding"), section: String(localized: "Torrent & VPN"), tab: .downloads, keywords: "vpn interface utun kill switch torrent speed cache"),
             SettingsSearchItem(id: "dl_notify", title: String(localized: "Notify When Download Completes"), section: String(localized: "Folders & Menu Bar"), tab: .downloads, keywords: "download complete notification alert"),
             SettingsSearchItem(id: "clip_magnet", title: String(localized: "Detect Magnet Links in Clipboard on App Focus"), section: String(localized: "Folders & Menu Bar"), tab: .downloads, keywords: "clipboard magnet torrent url catcher"),
+            SettingsSearchItem(id: "dl_schedule", title: String(localized: "Download Schedule (Hour Window)"), section: String(localized: "Download Schedule (Hour Window)"), tab: .downloads, keywords: "schedule night download hours pause resume"),
+            SettingsSearchItem(id: "local_folders", title: String(localized: "Local Media Folders"), section: String(localized: "Local Media Folders"), tab: .downloads, keywords: "local folder scanner library mkv mp4 nas"),
+            SettingsSearchItem(id: "local_socket", title: String(localized: "Local Control Socket (Opt-In)"), section: String(localized: "Local Control Socket (Opt-In)"), tab: .downloads, keywords: "unix socket cinma.sock mcp json rpc api"),
+            SettingsSearchItem(id: "anime_filler", title: String(localized: "Auto-Skip Anime Filler Episodes (MyAnimeList)"), section: String(localized: "Automation & Streams"), tab: .playback, keywords: "anime filler mal jikan auto skip"),
             SettingsSearchItem(id: "shortcuts", title: String(localized: "Keyboard Shortcuts"), section: String(localized: "Shortcuts"), tab: .shortcuts, keywords: "keyboard shortcut keybinding hotkey frame step"),
             SettingsSearchItem(id: "backup", title: String(localized: "Backup & Sync"), section: String(localized: "Backup"), tab: .backup, keywords: "export import json backup restore"),
         ]

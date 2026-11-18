@@ -12,6 +12,13 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     private let titleLabel = NSTextField(labelWithString: String(localized: "Discover"))
     private let subtitleLabel = NSTextField(labelWithString: "")
     private let catalogPopup = NSPopUpButton()
+    private let pinCatalogButton = CinemaTheme.makePillButton(
+        title: String(localized: "Pin to Home"),
+        symbol: "pin",
+        primary: false,
+        target: nil,
+        action: #selector(togglePinCatalog)
+    )
     private let platformStack = NSStackView()
     private var platformScroll = NSScrollView()
     private let genreStack = NSStackView()
@@ -141,7 +148,10 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         titleCol.alignment = .leading
         titleCol.spacing = 4
 
-        let headerRow = NSStackView(views: [titleCol, NSView(), catalogPopup])
+        let headerRow = NSStackView(views: [titleCol, NSView(), pinCatalogButton, catalogPopup])
+        pinCatalogButton.target = self
+        pinCatalogButton.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        pinCatalogButton.isHidden = true
         headerRow.orientation = .horizontal
         headerRow.alignment = .centerY
         headerRow.spacing = 16
@@ -251,6 +261,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             catalogPopup.addItem(withTitle: "\(c.name) · \(typeLabel) (\(c.addonName))")
         }
         catalogPopup.isHidden = catalogs.isEmpty || searchModeQuery != nil || selectedProviderId != nil
+        updatePinButtonState()
         if searchModeQuery == nil {
             if let pid = selectedProviderId {
                 loadProviderCatalog(providerId: pid, reset: true)
@@ -268,6 +279,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         }
         searchModeQuery = trimmed
         catalogPopup.isHidden = true
+        pinCatalogButton.isHidden = true
         platformScroll.isHidden = true
         genreStack.isHidden = true
         loadMoreButton.isHidden = true
@@ -470,6 +482,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
 
     private func loadProviderCatalog(providerId: UInt32, reset: Bool) {
         catalogPopup.isHidden = true
+        pinCatalogButton.isHidden = true
         emptyStack.isHidden = true
         let platformName = Self.streamingPlatforms.first(where: { $0.id == providerId })?.name ?? "TMDB"
         if reset {
@@ -534,6 +547,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             loadProviderCatalog(providerId: pid, reset: true)
         } else {
             catalogPopup.isHidden = catalogs.isEmpty || searchModeQuery != nil
+            updatePinButtonState()
             loadSelectedCatalog(reset: true)
         }
     }
@@ -546,12 +560,54 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
 
     @objc private func catalogChanged() {
         selectedGenre = nil
+        updatePinButtonState()
         loadSelectedCatalog(reset: true)
     }
 
     @objc private func selectGenre(_ sender: NSButton) {
         selectedGenre = sender.identifier?.rawValue
+        updatePinButtonState()
         loadSelectedCatalog(reset: true)
+    }
+
+    private func currentShelfId() -> String? {
+        let idx = catalogPopup.indexOfSelectedItem
+        guard catalogs.indices.contains(idx) else { return nil }
+        let cat = catalogs[idx]
+        return "shelf:\(cat.addonId):\(cat.mediaType):\(cat.id):\(selectedGenre ?? "")"
+    }
+
+    private func updatePinButtonState() {
+        let visible = !catalogs.isEmpty && searchModeQuery == nil && selectedProviderId == nil
+        pinCatalogButton.isHidden = !visible
+        guard visible, let sid = currentShelfId() else { return }
+        let pinned = (try? core.pinnedShelves())?.contains(where: { $0.id == sid }) ?? false
+        pinCatalogButton.title = pinned ? String(localized: "Pinned") : String(localized: "Pin to Home")
+        pinCatalogButton.image = NSImage(
+            systemSymbolName: pinned ? "pin.fill" : "pin",
+            accessibilityDescription: pinCatalogButton.title
+        )
+    }
+
+    @objc private func togglePinCatalog() {
+        let idx = catalogPopup.indexOfSelectedItem
+        guard catalogs.indices.contains(idx), let sid = currentShelfId() else { return }
+        let cat = catalogs[idx]
+        let existing = (try? core.pinnedShelves())?.contains(where: { $0.id == sid }) ?? false
+        if existing {
+            try? core.unpinShelf(id: sid)
+        } else {
+            let label = selectedGenre.map { "\(cat.name) · \($0)" } ?? cat.name
+            _ = try? core.pinShelf(
+                title: label,
+                addonId: cat.addonId,
+                mediaType: cat.mediaType,
+                catalogId: cat.id,
+                genre: selectedGenre
+            )
+        }
+        updatePinButtonState()
+        NotificationCenter.default.post(name: .cinmaPinnedShelvesChanged, object: nil)
     }
 
     @objc private func emptyActionClicked() {

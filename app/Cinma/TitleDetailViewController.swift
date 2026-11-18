@@ -56,6 +56,7 @@ final class TitleDetailViewController: NSViewController {
     private var episodes: [MetaVideoInfo] = []
     private var selectedEpisode: MetaVideoInfo?
     private var progressByVideo: [String: WatchProgressInfo] = [:]
+    private var fillerEpisodeNumbers: Set<UInt32> = []
 
     private var accumulatedStreams: [StreamInfo] = []
     private var rankedWithDebrid: RankResultInfo?
@@ -432,6 +433,9 @@ final class TitleDetailViewController: NSViewController {
         refreshLibraryButton()
         loadProgress()
         loadTitleExtras(mediaType: m.mediaType, id: m.id, hasLogo: m.logo != nil)
+        if m.mediaType == "series" {
+            loadAnimeFillers(metaId: m.id)
+        }
 
         if m.mediaType == "series" {
             let seasons = rich.seasonNumbers.isEmpty
@@ -588,6 +592,7 @@ final class TitleDetailViewController: NSViewController {
             row.layer?.borderColor = (isSelected ? CinemaTheme.highlightBorder : CinemaTheme.cardBorder).cgColor
 
             let num = ep.episode ?? ep.number ?? 0
+            let isFiller = fillerEpisodeNumbers.contains(num)
             let prog = progressByVideo[ep.id]
             let isWatched = prog?.watched == true
             let hideSpoiler = hideSpoilers && !isWatched
@@ -619,7 +624,12 @@ final class TitleDetailViewController: NSViewController {
                 let spacer = NSView()
                 spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-                let hStack = NSStackView(views: [compactTitle, spacer, dateLabel, statusLabel])
+                var rowViews: [NSView] = [compactTitle]
+                if isFiller {
+                    rowViews.append(CinemaTheme.makeChip(String(localized: "Filler"), highlighted: false))
+                }
+                rowViews.append(contentsOf: [spacer, dateLabel, statusLabel])
+                let hStack = NSStackView(views: rowViews)
                 hStack.orientation = .horizontal
                 hStack.alignment = .centerY
                 hStack.spacing = 10
@@ -668,7 +678,7 @@ final class TitleDetailViewController: NSViewController {
                 ])
             }
 
-            let title = NSTextField(labelWithString: "\(num). \(ep.title ?? "")")
+            let title = NSTextField(labelWithString: isFiller ? "\(num). \(ep.title ?? "") · Filler" : "\(num). \(ep.title ?? "")")
             title.font = .systemFont(ofSize: 14.5, weight: .semibold)
             title.textColor = CinemaTheme.textPrimary
             title.lineBreakMode = .byTruncatingTail
@@ -946,6 +956,19 @@ final class TitleDetailViewController: NSViewController {
         let actionsRow = NSStackView(views: [playBtn, dlBtn])
         actionsRow.orientation = .horizontal
         actionsRow.spacing = 8
+
+        if Dalga3StreamHelpers.isBatchTorrent(item.stream) {
+            let batchBtn = CinemaTheme.makePillButton(
+                title: String(localized: "Batch Files"),
+                symbol: "tray.full",
+                primary: false,
+                target: self,
+                action: #selector(inspectBatchClicked(_:))
+            )
+            batchBtn.identifier = NSUserInterfaceItemIdentifier(item.stream.raw)
+            batchBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
+            actionsRow.addArrangedSubview(batchBtn)
+        }
 
         let detailPrefs = try? core.playerPreferences()
         if detailPrefs?.externalPlayerEnabled == true,
@@ -1336,6 +1359,49 @@ final class TitleDetailViewController: NSViewController {
               let ep = episodes.first(where: { $0.id == id })
         else { return }
         selectEpisode(ep)
+    }
+
+    private func loadAnimeFillers(metaId: String) {
+        let core = core
+        Task { [weak self] in
+            let fillers = (try? await core.animeFillerEpisodes(metaId: metaId)) ?? []
+            guard !fillers.isEmpty, let self else { return }
+            self.fillerEpisodeNumbers = Set(fillers)
+            self.renderEpisodes()
+            if (try? core.playerPreferences())?.autoSkipAnimeFillers == true,
+               let cur = self.selectedEpisode,
+               self.fillerEpisodeNumbers.contains(cur.episode ?? cur.number ?? 0),
+               let firstCanon = self.episodes.first(where: { !self.fillerEpisodeNumbers.contains($0.episode ?? $0.number ?? 0) })
+            {
+                self.selectEpisode(firstCanon)
+            }
+        }
+    }
+
+    @objc private func inspectBatchClicked(_ sender: NSButton) {
+        guard let raw = sender.identifier?.rawValue,
+              let stream = accumulatedStreams.first(where: { $0.raw == raw }),
+              let meta = Dalga3StreamHelpers.extractTorrentMeta(from: stream)
+        else { return }
+        let title = richMeta?.meta.name ?? preview.name
+        var sheetVC: NSViewController?
+        let view = BatchTorrentSheetView(
+            core: core,
+            infoHash: meta.infoHash,
+            trackers: meta.trackers,
+            title: stream.filename ?? stream.title ?? title,
+            metaId: richMeta?.meta.id ?? preview.id,
+            mediaType: richMeta?.meta.mediaType ?? preview.mediaType,
+            onDismiss: { [weak self] in
+                if let vc = sheetVC { self?.dismiss(vc) }
+            },
+            onQueued: { [weak self] count in
+                self?.streamStatusLabel.stringValue = String(localized: "Queued \(count) episode downloads.")
+            }
+        )
+        let host = NSHostingController(rootView: view)
+        sheetVC = host
+        presentAsSheet(host)
     }
 
     @objc private func selectStreamFilter(_ sender: NSButton) {

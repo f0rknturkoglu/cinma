@@ -306,12 +306,44 @@
         }
       }
     },
+    "%lld / %lld": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld / %2$lld"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld"
+          }
+        }
+      }
+    },
     "%lld channels": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld kanal"
+          }
+        }
+      }
+    },
+    "%lld folders · %lld videos": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$lld folders · %2$lld videos"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld klasör · %lld video"
           }
         }
       }
@@ -458,6 +490,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "-0,1 sn"
+          }
+        }
+      }
+    },
+    "/": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/"
+          }
+        }
+      }
+    },
+    "/%@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/%@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/%@"
           }
         }
       }
@@ -996,6 +1060,22 @@
         }
       }
     },
+    "Add Folder…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Folder…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klasör Ekle…"
+          }
+        }
+      }
+    },
     "Add IPTV Source": {
       "localizations": {
         "tr": {
@@ -1006,12 +1086,44 @@
         }
       }
     },
+    "Add Media Folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Media Folder"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Medya Klasörü Ekle"
+          }
+        }
+      }
+    },
     "Add Playlist…": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Liste Ekle…"
+          }
+        }
+      }
+    },
+    "Add Source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Source"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kaynak Ekle"
           }
         }
       }
@@ -1090,6 +1202,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kütüphaneye Ekle"
+          }
+        }
+      }
+    },
+    "Add your Movies, Shows, or mounted NAS folders to browse and play offline files directly.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add your Movies, Shows, or mounted NAS folders to browse and play offline files directly."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Çevrimdışı dosyaları doğrudan göz atıp oynatmak için Film, Dizi veya bağlı NAS klasörlerinizi ekleyin."
           }
         }
       }
@@ -1696,6 +1824,22 @@
         }
       }
     },
+    "Auto-Skip Anime Filler Episodes (MyAnimeList)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-Skip Anime Filler Episodes (MyAnimeList)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anime Filler Bölümleri Otomatik Atla (MyAnimeList)"
+          }
+        }
+      }
+    },
     "Auto-Skip Intro": {
       "localizations": {
         "tr": {
@@ -1922,6 +2066,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dengeli (Spline36)"
+          }
+        }
+      }
+    },
+    "Batch / Season Pack Inspector": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batch / Season Pack Inspector"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toplu / Sezon Paketi İnceleyici"
+          }
+        }
+      }
+    },
+    "Batch Files": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batch Files"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paket Dosyaları"
           }
         }
       }
@@ -2758,6 +2934,22 @@
         }
       }
     },
+    "Copy Path": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Path"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yolu Kopyala"
+          }
+        }
+      }
+    },
     "Core failed to start: %@": {
       "localizations": {
         "en": {
@@ -2938,6 +3130,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Debrid Çözümleyiciler"
+          }
+        }
+      }
+    },
+    "Debrid-Link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debrid-Link"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debrid-Link"
           }
         }
       }
@@ -3130,6 +3338,22 @@
         }
       }
     },
+    "Download Schedule (Hour Window)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download Schedule (Hour Window)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İndirme Zamanlaması (Saat Aralığı)"
+          }
+        }
+      }
+    },
     "Download queue": {
       "localizations": {
         "tr": {
@@ -3239,6 +3463,22 @@
         }
       }
     },
+    "EasyDebrid": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EasyDebrid"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EasyDebrid"
+          }
+        }
+      }
+    },
     "Edit": {
       "localizations": {
         "en": {
@@ -3271,6 +3511,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ağda Cihaz Bulmayı ve Yayınlamayı Aç"
+          }
+        }
+      }
+    },
+    "Enable Local Unix Socket (`cinma.sock`)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Local Unix Socket (`cinma.sock`)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yerel Unix Soketini Etkinleştir (`cinma.sock`)"
           }
         }
       }
@@ -3311,6 +3567,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "macOS EDR HDR Çıkışını Etkinleştir"
+          }
+        }
+      }
+    },
+    "End Hour": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End Hour"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitiş Saati"
           }
         }
       }
@@ -3387,6 +3659,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "https:// veya stremio:// ile başlayan tam bir URL girin"
+          }
+        }
+      }
+    },
+    "Episodes Only": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Episodes Only"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yalnızca Bölümler"
           }
         }
       }
@@ -3649,6 +3937,22 @@
         }
       }
     },
+    "Fetching torrent file list from peers…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fetching torrent file list from peers…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eşlerden torrent dosya listesi alınıyor…"
+          }
+        }
+      }
+    },
     "File": {
       "localizations": {
         "en": {
@@ -3671,6 +3975,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ekranı Doldur (Kırp)"
+          }
+        }
+      }
+    },
+    "Filler": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filler"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filler"
           }
         }
       }
@@ -3721,6 +4041,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sığdır (Orijinal)"
+          }
+        }
+      }
+    },
+    "Folder contains no media files.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folder contains no media files."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klasörde medya dosyası bulunamadı."
           }
         }
       }
@@ -4903,6 +5239,22 @@
         }
       }
     },
+    "Local Control Socket (Opt-In)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Control Socket (Opt-In)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yerel Kontrol Soketi (İsteğe Bağlı)"
+          }
+        }
+      }
+    },
     "Local File": {
       "localizations": {
         "en": {
@@ -4915,6 +5267,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yerel Dosya"
+          }
+        }
+      }
+    },
+    "Local Files": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Files"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yerel Dosyalar"
+          }
+        }
+      }
+    },
+    "Local Media Folders": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Media Folders"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yerel Medya Klasörleri"
           }
         }
       }
@@ -4945,6 +5329,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Magnet İndirmesi"
+          }
+        }
+      }
+    },
+    "Manage Folders…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage Folders…"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klasörleri Yönet…"
           }
         }
       }
@@ -5301,6 +5701,22 @@
         }
       }
     },
+    "Name (e.g. Zurg / TorBox / NAS)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name (e.g. Zurg / TorBox / NAS)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ad (örn. Zurg / TorBox / NAS)"
+          }
+        }
+      }
+    },
     "Native Apple Silicon media player, Stremio client & download manager": {
       "localizations": {
         "en": {
@@ -5379,6 +5795,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Yapılandırılmış IPTV kaynağı yok."
+          }
+        }
+      }
+    },
+    "No WebDAV servers configured. Add Zurg, TorBox WebDAV, Nextcloud, or NAS URLs above.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No WebDAV servers configured. Add Zurg, TorBox WebDAV, Nextcloud, or NAS URLs above."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yapılandırılmış WebDAV sunucusu yok. Yukarıdan Zurg, TorBox WebDAV, Nextcloud veya NAS adresi ekleyin."
           }
         }
       }
@@ -5566,6 +5998,38 @@
         }
       }
     },
+    "No folders added. Add folders to browse local MKV/MP4 files in Library.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No folders added. Add folders to browse local MKV/MP4 files in Library."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Henüz klasör eklenmedi. Kütüphanede yerel MKV/MP4 dosyalarına göz atmak için klasör ekleyin."
+          }
+        }
+      }
+    },
+    "No local media folders configured yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No local media folders configured yet."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Henüz yerel medya klasörü yapılandırılmadı."
+          }
+        }
+      }
+    },
     "No matches found for “%@”.": {
       "localizations": {
         "en": {
@@ -5674,6 +6138,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kütüphanenizdeki diziler için planlanmış yaklaşan bölüm yok."
+          }
+        }
+      }
+    },
+    "No video files discovered in this torrent.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No video files discovered in this torrent."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu torrent içinde video dosyası bulunamadı."
+          }
+        }
+      }
+    },
+    "No video files matched in configured folders.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No video files matched in configured folders."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yapılandırılan klasörlerde eşleşen video dosyası yok."
           }
         }
       }
@@ -5822,6 +6318,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Çevrimiçi Sonuçlar"
+          }
+        }
+      }
+    },
+    "Only Download During Allowed Hours": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only Download During Allowed Hours"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yalnızca İzin Verilen Saatlerde İndir"
           }
         }
       }
@@ -6172,6 +6684,22 @@
         }
       }
     },
+    "Password (Keychain)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Password (Keychain)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parola (Anahtar Zinciri)"
+          }
+        }
+      }
+    },
     "Paste": {
       "localizations": {
         "en": {
@@ -6316,6 +6844,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Faz 9 İsteğe Bağlı Modüller (Varsayılan Kapalı)"
+          }
+        }
+      }
+    },
+    "Pin to Home": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pin to Home"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ana Sayfaya Sabitle"
+          }
+        }
+      }
+    },
+    "Pinned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sabitlendi"
+          }
+        }
+      }
+    },
+    "Pinned Shelf": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned Shelf"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sabitlenmiş Raf"
           }
         }
       }
@@ -6707,12 +7283,44 @@
         }
       }
     },
+    "Queue Selected (%lld)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queue Selected (%lld)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seçilenleri Sıraya Al (%lld)"
+          }
+        }
+      }
+    },
     "Queued": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Sırada"
+          }
+        }
+      }
+    },
+    "Queued %lld episode downloads.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued %lld episode downloads."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld bölüm indirme sırasına eklendi."
           }
         }
       }
@@ -6993,6 +7601,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "PIN'i Kaldır"
+          }
+        }
+      }
+    },
+    "Remove WebDAV Source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove WebDAV Source"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebDAV Kaynağını Kaldır"
           }
         }
       }
@@ -7344,6 +7968,22 @@
         }
       }
     },
+    "Save Source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Source"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kaynağı Kaydet"
+          }
+        }
+      }
+    },
     "Save Token": {
       "localizations": {
         "tr": {
@@ -7410,12 +8050,76 @@
         }
       }
     },
+    "Scan Folders": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Folders"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klasörleri Tara"
+          }
+        }
+      }
+    },
+    "Scan Folders Now": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Folders Now"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klasörleri Şimdi Tara"
+          }
+        }
+      }
+    },
     "Scan Frame Text (Live Text · T)": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Karedeki Metni Tara (Canlı Metin · T)"
+          }
+        }
+      }
+    },
+    "Scan Now": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan Now"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Şimdi Tara"
+          }
+        }
+      }
+    },
+    "Scanned %lld local videos.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanned %lld local videos."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld yerel video tarandı."
           }
         }
       }
@@ -8270,6 +8974,22 @@
         }
       }
     },
+    "Socket path copied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Socket path copied"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soket yolu kopyalandı"
+          }
+        }
+      }
+    },
     "Software (Off)": {
       "localizations": {
         "tr": {
@@ -8346,6 +9066,22 @@
         }
       }
     },
+    "Source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kaynak"
+          }
+        }
+      }
+    },
     "Split Continue Watching into Movies & Series": {
       "localizations": {
         "tr": {
@@ -8382,6 +9118,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Takılma Zaman Aşımı"
+          }
+        }
+      }
+    },
+    "Start Hour": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Hour"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Başlangıç Saati"
           }
         }
       }
@@ -9472,6 +10224,38 @@
         }
       }
     },
+    "Unpin": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unpin"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sabitlemeyi Kaldır"
+          }
+        }
+      }
+    },
+    "Up": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yukarı"
+          }
+        }
+      }
+    },
     "Up Next Lead Time": {
       "localizations": {
         "tr": {
@@ -9572,6 +10356,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kullanıcı Adı"
+          }
+        }
+      }
+    },
+    "Username (optional)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Username (optional)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kullanıcı Adı (isteğe bağlı)"
           }
         }
       }
@@ -9806,6 +10606,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "İzlendi"
+          }
+        }
+      }
+    },
+    "WebDAV Network Sources": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebDAV Network Sources"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebDAV Ağ Kaynakları"
+          }
+        }
+      }
+    },
+    "WebDAV URL (https://...)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebDAV URL (https://...)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "WebDAV Adresi (https://...)"
           }
         }
       }

@@ -480,6 +480,77 @@ impl RqbitEngine {
         }
     }
 
+    /// Lists video files inside a torrent (`list_only`, without downloading content) and parses S/E tags.
+    pub async fn list_files(
+        &self,
+        raw_info_hash: &str,
+        extra_trackers: &[String],
+    ) -> Result<Vec<TorrentFileItem>, TorrentError> {
+        let info_hash = normalize_info_hash(raw_info_hash)?;
+        let session = self.session().await?;
+        let mut trackers = extra_trackers.to_vec();
+        if !self.config.local_only {
+            for tr in FALLBACK_TRACKERS {
+                if !trackers.iter().any(|existing| existing == tr) {
+                    trackers.push((*tr).to_owned());
+                }
+            }
+        }
+        let magnet = magnet_uri(&info_hash, &trackers);
+        let initial_peers =
+            (!self.config.extra_peers.is_empty()).then(|| self.config.extra_peers.clone());
+        let response = tokio::time::timeout(
+            METADATA_TIMEOUT,
+            session.add_torrent(
+                AddTorrent::from_url(magnet),
+                Some(AddTorrentOptions {
+                    list_only: true,
+                    initial_peers,
+                    ..Default::default()
+                }),
+            ),
+        )
+        .await
+        .map_err(|_| TorrentError::MetadataTimeout)??;
+        let files: Vec<(String, u64)> = match response {
+            AddTorrentResponse::ListOnly(list) => list
+                .info
+                .iter_file_details()
+                .map(|f| (f.filename.to_string(), f.len))
+                .collect(),
+            AddTorrentResponse::AlreadyManaged(_, handle)
+            | AddTorrentResponse::Added(_, handle) => handle.with_metadata(|m| {
+                m.file_infos
+                    .iter()
+                    .map(|f| (f.relative_filename.to_string_lossy().into_owned(), f.len))
+                    .collect::<Vec<_>>()
+            })?,
+        };
+        let mut items: Vec<TorrentFileItem> = files
+            .into_iter()
+            .enumerate()
+            .filter(|(_, (name, _))| is_video_filename(name))
+            .map(|(index, (name, size_bytes))| {
+                let (season, episode) = parse_episode_from_filename(&name);
+                TorrentFileItem {
+                    index,
+                    name,
+                    size_bytes,
+                    season,
+                    episode,
+                }
+            })
+            .collect();
+        items.sort_by_key(|it| {
+            (
+                it.season.unwrap_or(u32::MAX),
+                it.episode.unwrap_or(u32::MAX),
+                it.index,
+            )
+        });
+        Ok(items)
+    }
+
     pub(crate) async fn open_with_handle(
         &self,
         request: TorrentFileRequest,
@@ -737,19 +808,81 @@ fn percent_encode(input: &str) -> String {
 
 /// Largest file with a video extension; falls back to the largest file.
 pub fn pick_video_file(files: &[(String, u64)]) -> Option<usize> {
-    let is_video = |name: &str| {
-        name.rsplit_once('.')
-            .is_some_and(|(_, ext)| VIDEO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
-    };
     let largest = |videos_only: bool| {
         files
             .iter()
             .enumerate()
-            .filter(|(_, (name, _))| !videos_only || is_video(name))
+            .filter(|(_, (name, _))| !videos_only || is_video_filename(name))
             .max_by_key(|(_, (_, len))| *len)
             .map(|(i, _)| i)
     };
     largest(true).or_else(|| largest(false))
+}
+
+fn is_video_filename(name: &str) -> bool {
+    name.rsplit_once('.')
+        .is_some_and(|(_, ext)| VIDEO_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TorrentFileItem {
+    pub index: usize,
+    pub name: String,
+    pub size_bytes: u64,
+    pub season: Option<u32>,
+    pub episode: Option<u32>,
+}
+
+/// Extracts `(season, episode)` from typical scene/anime filenames (`S01E02`, `1x02`, `- 05`).
+pub fn parse_episode_from_filename(name: &str) -> (Option<u32>, Option<u32>) {
+    let lower = name.to_ascii_lowercase();
+    let bytes = lower.as_bytes();
+    for i in 0..bytes.len() {
+        if bytes[i] == b's'
+            && let Some((s, s_len)) = read_digits(&bytes[i + 1..], 2)
+            && bytes.get(i + 1 + s_len) == Some(&b'e')
+            && let Some((e, _)) = read_digits(&bytes[i + 2 + s_len..], 3)
+        {
+            return (Some(s), Some(e));
+        }
+    }
+    for i in 1..bytes.len() {
+        if bytes[i] == b'x'
+            && bytes[i - 1].is_ascii_digit()
+            && let Some((e, _)) = read_digits(&bytes[i + 1..], 3)
+        {
+            let mut start = i;
+            while start > 0 && bytes[start - 1].is_ascii_digit() {
+                start -= 1;
+            }
+            if let Ok(s) = lower[start..i].parse::<u32>()
+                && s <= 99
+            {
+                return (Some(s), Some(e));
+            }
+        }
+    }
+    if let Some(pos) = lower.find(" - ")
+        && let Some((e, e_len)) = read_digits(&bytes[pos + 3..], 3)
+        && bytes
+            .get(pos + 3 + e_len)
+            .is_some_and(|b| !b.is_ascii_alphanumeric())
+    {
+        return (Some(1), Some(e));
+    }
+    (None, None)
+}
+
+fn read_digits(slice: &[u8], max_len: usize) -> Option<(u32, usize)> {
+    let mut len = 0usize;
+    while len < slice.len() && len < max_len && slice[len].is_ascii_digit() {
+        len += 1;
+    }
+    if len == 0 {
+        return None;
+    }
+    let val = std::str::from_utf8(&slice[..len]).ok()?.parse().ok()?;
+    Some((val, len))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1082,5 +1215,25 @@ mod tests {
             Some(1)
         );
         assert_eq!(pick_video_file(&[]), None);
+    }
+
+    #[test]
+    fn parses_season_and_episode_from_filenames() {
+        assert_eq!(
+            parse_episode_from_filename("Show.S02E14.1080p.WEB-DL.mkv"),
+            (Some(2), Some(14))
+        );
+        assert_eq!(
+            parse_episode_from_filename("Series 1x05 Finale.mp4"),
+            (Some(1), Some(5))
+        );
+        assert_eq!(
+            parse_episode_from_filename("[Group] Anime - 12 [1080p].mkv"),
+            (Some(1), Some(12))
+        );
+        assert_eq!(
+            parse_episode_from_filename("Standalone.Movie.2024.2160p.mkv"),
+            (None, None)
+        );
     }
 }

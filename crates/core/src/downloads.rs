@@ -940,6 +940,132 @@ impl Core {
         self.emit(CoreEvent::DownloadsChanged);
         Ok(())
     }
+
+    /// Lists files inside a multi-file torrent stream (`#N21` season-pack inspector).
+    pub async fn list_torrent_files(
+        self: &Arc<Self>,
+        info_hash: String,
+        trackers: Vec<String>,
+    ) -> Result<Vec<cinma_torrent::TorrentFileItem>, CoreError> {
+        self.require(Feature::Torrent)?;
+        let engine = self.torrents()?;
+        self.spawn(async move {
+            engine
+                .list_files(&info_hash, &trackers)
+                .await
+                .map_err(CoreError::from)
+        })
+        .await
+    }
+
+    /// Queues one or more selected files from a season-pack torrent into the download queue (#N21).
+    pub fn queue_torrent_batch(
+        self: &Arc<Self>,
+        info_hash: String,
+        trackers: Vec<String>,
+        meta_id: Option<String>,
+        media_type: Option<String>,
+        items: Vec<(usize, String)>,
+        priority: i64,
+    ) -> Result<Vec<i64>, CoreError> {
+        self.require(Feature::Torrent)?;
+        let mut ids = Vec::with_capacity(items.len());
+        for (file_idx, title) in items {
+            let id = self.add_torrent_download(
+                title,
+                info_hash.clone(),
+                Some(file_idx),
+                trackers.clone(),
+                meta_id.clone(),
+                media_type.clone(),
+                priority,
+            )?;
+            ids.push(id);
+        }
+        Ok(ids)
+    }
+
+    /// Pauses active downloads outside the configured hour window or resumes scheduler-paused ones inside (#N25).
+    pub fn enforce_download_schedule(
+        self: &Arc<Self>,
+        current_hour: Option<u8>,
+    ) -> Result<(), CoreError> {
+        const KEY_SCHEDULE_PAUSED: &str = "schedule_paused_ids";
+        let prefs = self.player_preferences().unwrap_or_default();
+        let mut paused_by_sched: Vec<i64> = self
+            .load_profile_json(KEY_SCHEDULE_PAUSED)
+            .unwrap_or_default();
+
+        if !prefs.download_schedule_enabled {
+            if paused_by_sched.is_empty() {
+                return Ok(());
+            }
+            for id in paused_by_sched.drain(..) {
+                let _ = self.resume_download(id);
+            }
+            return self.save_profile_json(KEY_SCHEDULE_PAUSED, &paused_by_sched);
+        }
+
+        let hour = current_hour.unwrap_or_else(|| {
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            ((secs / 3600) % 24) as u8
+        });
+        let allowed = within_download_schedule(
+            hour,
+            prefs.download_schedule_start_hour,
+            prefs.download_schedule_end_hour,
+        );
+        let rows = self.downloads()?;
+
+        if allowed {
+            if paused_by_sched.is_empty() {
+                return Ok(());
+            }
+            let paused_ids: std::collections::HashSet<i64> = rows
+                .into_iter()
+                .filter(|r| r.state == DownloadState::Paused)
+                .map(|r| r.id)
+                .collect();
+            for id in &paused_by_sched {
+                if paused_ids.contains(id) {
+                    let _ = self.resume_download(*id);
+                }
+            }
+            paused_by_sched.clear();
+            self.save_profile_json(KEY_SCHEDULE_PAUSED, &paused_by_sched)
+        } else {
+            let mut changed = false;
+            for row in rows {
+                if matches!(row.state, DownloadState::Queued | DownloadState::Active)
+                    && self.pause_download(row.id).is_ok()
+                    && !paused_by_sched.contains(&row.id)
+                {
+                    paused_by_sched.push(row.id);
+                    changed = true;
+                }
+            }
+            if changed {
+                self.save_profile_json(KEY_SCHEDULE_PAUSED, &paused_by_sched)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Returns true when `hour` (`0..=23`) falls within `[start_hour, end_hour)` with midnight wraparound.
+pub fn within_download_schedule(hour: u8, start_hour: u8, end_hour: u8) -> bool {
+    let h = hour % 24;
+    let s = start_hour % 24;
+    let e = end_hour % 24;
+    if s == e {
+        true
+    } else if s < e {
+        h >= s && h < e
+    } else {
+        h >= s || h < e
+    }
 }
 
 fn stream_from_torrent_input(meta: cinma_torrent::ParsedTorrentInput) -> cinma_stremio::Stream {

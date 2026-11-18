@@ -11,6 +11,8 @@ mod events;
 mod integrations;
 mod keychain;
 mod library;
+mod local_api;
+mod local_library;
 mod metadata;
 mod phase9;
 mod playback;
@@ -18,6 +20,7 @@ mod security_and_backup;
 mod settings;
 mod subtitles;
 mod trailers;
+mod webdav;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -60,19 +63,23 @@ pub use cinma_stremio::{CatalogQuery, Meta, MetaPreview, MetaTrailer, MetaVideo,
 pub use cinma_subtitles::{
     OsUserQuota, PreparedSubtitle, SubtitleCandidate, SubtitleCue, normalize_lang_code,
 };
+pub use cinma_torrent::TorrentFileItem;
 pub use cinma_tracking::{TraktDeviceCode, TraktRecommendation, letterboxd::LetterboxdEntry};
 pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
 };
 pub use disk::{DiskPolicySettings, DiskUsageSummary};
-pub use downloads::{YtdlpSourceSpec, default_audio_folder, default_video_folder};
+pub use downloads::{
+    YtdlpSourceSpec, default_audio_folder, default_video_folder, within_download_schedule,
+};
 pub use events::{CoreEvent, CoreEventListener};
 pub use integrations::{AdapterStatus, StremioImportResult};
 pub use library::WatchProgressInput;
+pub use local_library::LocalMediaEntry;
 pub use metadata::RichMetaResult;
 pub use phase9::{
-    DebridProviderStatus, DiscordPresenceInput, ManualSkipMarkers, OAuthStartResult, TitleExtras,
-    TraktPullSummary,
+    DebridProviderStatus, DiscordPresenceInput, ManualSkipMarkers, OAuthStartResult, PinnedShelf,
+    TitleExtras, TraktPullSummary,
 };
 pub use playback::{NextEpisodePrefetch, Playback, StreamStats, VideoFileIdentity};
 pub use settings::Feature;
@@ -80,6 +87,7 @@ pub use subtitles::{
     PlayerPreferences, PreferredSeriesSource, SubtitleSearchRequest, SubtitleSettings, VideoOffsets,
 };
 pub use trailers::YtdlpStatus;
+pub use webdav::{WebDavEntry, WebDavSource};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -133,6 +141,7 @@ pub struct Core {
     /// Lets `&self` methods start background work that needs an `Arc`.
     me: Weak<Core>,
     tracking_sync: Mutex<integrations::TrackingSyncState>,
+    local_api_cancel: Mutex<Option<cinma_blobstore::CancellationToken>>,
 }
 
 impl Core {
@@ -162,6 +171,7 @@ impl Core {
             listeners: Mutex::new(Vec::new()),
             me: me.clone(),
             tracking_sync: Mutex::new(integrations::TrackingSyncState::default()),
+            local_api_cancel: Mutex::new(None),
         });
         // Deliver watch events queued before the last quit (no-op when the
         // feature is off or the outbox is empty: no runtime is started then).
@@ -169,6 +179,14 @@ impl Core {
         // Downloads interrupted by a quit or crash continue on their own
         // (no runtime is started when nothing is pending).
         core.resume_pending_downloads();
+        // Start opt-in local control socket only if explicitly enabled by user.
+        if core
+            .player_preferences()
+            .map(|p| p.local_api_socket_enabled)
+            .unwrap_or(false)
+        {
+            let _ = core.sync_local_api_socket();
+        }
         Ok(core)
     }
 
@@ -257,6 +275,17 @@ impl Core {
         ));
         *slot = Some(Arc::clone(&engine));
         Ok(engine)
+    }
+}
+
+impl Drop for Core {
+    fn drop(&mut self) {
+        if let Ok(mut slot) = self.local_api_cancel.lock()
+            && let Some(token) = slot.take()
+        {
+            token.cancel();
+            let _ = std::fs::remove_file(self.data_dir.join("cinma.sock"));
+        }
     }
 }
 

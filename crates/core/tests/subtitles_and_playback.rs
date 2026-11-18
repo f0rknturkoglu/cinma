@@ -573,3 +573,141 @@ fn surpass_wave2_manual_skip_dialogue_search_batch_watched_and_prefs() {
         Some("file.open_url")
     );
 }
+
+#[test]
+fn wave3_dalga3_shelves_local_scanner_schedule_and_socket() {
+    let dir = tempfile::tempdir().unwrap();
+    let core: Arc<Core> = Core::open(dir.path()).unwrap();
+
+    // 1. Pinned Shelves (#N20)
+    assert!(core.pinned_shelves().unwrap().is_empty());
+    let shelf = core
+        .pin_shelf(
+            "Top Anime".into(),
+            "kitsu".into(),
+            "series".into(),
+            "top".into(),
+            Some("Action".into()),
+        )
+        .unwrap();
+    // Pinning duplicate replaces cleanly rather than duplicating.
+    core.pin_shelf(
+        "Top Anime".into(),
+        "kitsu".into(),
+        "series".into(),
+        "top".into(),
+        Some("Action".into()),
+    )
+    .unwrap();
+    assert_eq!(core.pinned_shelves().unwrap().len(), 1);
+    core.unpin_shelf(&shelf.id).unwrap();
+    assert!(core.pinned_shelves().unwrap().is_empty());
+
+    // 2. Local Media Library Scanner (#N23)
+    let media_root = dir.path().join("Media");
+    std::fs::create_dir_all(media_root.join("Shows")).unwrap();
+    let dummy_video = vec![0u8; 520 * 1024];
+    std::fs::write(
+        media_root.join("Shows/Severance.S02E03.1080p.WEB-DL.mkv"),
+        &dummy_video,
+    )
+    .unwrap();
+    std::fs::write(
+        media_root.join("Dune.Part.Two.2024.2160p.mp4"),
+        &dummy_video,
+    )
+    .unwrap();
+    std::fs::write(media_root.join("sample.mkv"), b"tiny-sample").unwrap();
+    std::fs::write(media_root.join("notes.txt"), &dummy_video).unwrap();
+
+    let mut prefs_scan = core.player_preferences().unwrap();
+    prefs_scan.local_media_folders = vec![media_root.to_string_lossy().into_owned()];
+    core.set_player_preferences(&prefs_scan).unwrap();
+
+    let entries = core.scan_local_folders().unwrap();
+    assert_eq!(entries.len(), 2);
+    let series_ep = entries
+        .iter()
+        .find(|e| e.media_type == "series")
+        .expect("series entry");
+    assert_eq!(series_ep.title, "Severance");
+    assert_eq!(series_ep.season, Some(2));
+    assert_eq!(series_ep.episode, Some(3));
+    let movie = entries
+        .iter()
+        .find(|e| e.media_type == "movie")
+        .expect("movie entry");
+    assert_eq!(movie.title, "Dune Part Two");
+    assert_eq!(movie.year.as_deref(), Some("2024"));
+    assert_eq!(core.local_media_entries().unwrap().len(), 2);
+
+    // 3. Download Schedule Window (#N25)
+    assert!(cinma_core::within_download_schedule(2, 1, 7));
+    assert!(!cinma_core::within_download_schedule(12, 1, 7));
+    assert!(cinma_core::within_download_schedule(23, 22, 6));
+    assert!(cinma_core::within_download_schedule(3, 22, 6));
+    assert!(!cinma_core::within_download_schedule(14, 22, 6));
+    assert!(cinma_core::within_download_schedule(10, 5, 5));
+
+    let dl_id = core
+        .add_http_download(
+            "Night Job".into(),
+            "https://example.invalid/video.mp4".into(),
+            Default::default(),
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+    let mut prefs = core.player_preferences().unwrap();
+    prefs.download_schedule_enabled = true;
+    prefs.download_schedule_start_hour = 1;
+    prefs.download_schedule_end_hour = 6;
+    prefs.local_api_socket_enabled = true;
+    core.set_player_preferences(&prefs).unwrap();
+
+    // Outside window (hour 12) pauses queued download.
+    core.enforce_download_schedule(Some(12)).unwrap();
+    let paused_row = core
+        .downloads()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.id == dl_id)
+        .unwrap();
+    assert_eq!(paused_row.state, cinma_core::DownloadState::Paused);
+
+    // Inside window (hour 3) resumes it.
+    core.enforce_download_schedule(Some(3)).unwrap();
+    let resumed_row = core
+        .downloads()
+        .unwrap()
+        .into_iter()
+        .find(|r| r.id == dl_id)
+        .unwrap();
+    assert_ne!(resumed_row.state, cinma_core::DownloadState::Paused);
+
+    // 4. Opt-in Local Unix Socket (`cinma.sock`, #N25)
+    let sock_path = core.local_api_socket_path();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        for _ in 0..20 {
+            if std::path::Path::new(&sock_path).exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        let stream = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        let (r, mut w) = stream.into_split();
+        w.write_all(b"{\"id\":1,\"method\":\"status\"}\n")
+            .await
+            .unwrap();
+        let mut reader = BufReader::new(r);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        let val: serde_json::Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(val["id"], 1);
+        assert!(val["result"]["version"].is_string());
+        assert_eq!(val["result"]["downloads"], 1);
+    });
+}

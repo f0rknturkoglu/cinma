@@ -900,7 +900,13 @@ final class PlayerViewController: NSViewController {
                 blackoutOtherScreens: false,
                 autoPipOnOcclusion: false,
                 notifyOnDownloadComplete: true,
-                quickPlayEnabled: true
+                quickPlayEnabled: true,
+                autoSkipAnimeFillers: false,
+                localMediaFolders: [],
+                downloadScheduleEnabled: false,
+                downloadScheduleStartHour: 1,
+                downloadScheduleEndHour: 7,
+                localApiSocketEnabled: false
             )
             let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface, macEdrEnabled: prefs.macEdrEnabled)
             do {

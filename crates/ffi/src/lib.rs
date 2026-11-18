@@ -1178,6 +1178,12 @@ pub struct PlayerPreferencesFfi {
     pub auto_pip_on_occlusion: bool,
     pub notify_on_download_complete: bool,
     pub quick_play_enabled: bool,
+    pub auto_skip_anime_fillers: bool,
+    pub local_media_folders: Vec<String>,
+    pub download_schedule_enabled: bool,
+    pub download_schedule_start_hour: u8,
+    pub download_schedule_end_hour: u8,
+    pub local_api_socket_enabled: bool,
 }
 
 impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
@@ -1279,6 +1285,12 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             auto_pip_on_occlusion: p.auto_pip_on_occlusion,
             notify_on_download_complete: p.notify_on_download_complete,
             quick_play_enabled: p.quick_play_enabled,
+            auto_skip_anime_fillers: p.auto_skip_anime_fillers,
+            local_media_folders: p.local_media_folders,
+            download_schedule_enabled: p.download_schedule_enabled,
+            download_schedule_start_hour: p.download_schedule_start_hour,
+            download_schedule_end_hour: p.download_schedule_end_hour,
+            local_api_socket_enabled: p.local_api_socket_enabled,
         }
     }
 }
@@ -1382,6 +1394,12 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             auto_pip_on_occlusion: p.auto_pip_on_occlusion,
             notify_on_download_complete: p.notify_on_download_complete,
             quick_play_enabled: p.quick_play_enabled,
+            auto_skip_anime_fillers: p.auto_skip_anime_fillers,
+            local_media_folders: p.local_media_folders,
+            download_schedule_enabled: p.download_schedule_enabled,
+            download_schedule_start_hour: p.download_schedule_start_hour,
+            download_schedule_end_hour: p.download_schedule_end_hour,
+            local_api_socket_enabled: p.local_api_socket_enabled,
         }
     }
 }
@@ -2799,6 +2817,252 @@ impl CinmaCore {
             .inner
             .set_vpn_torrent_binding(bind_device_name, vpn_kill_switch)
             .await?)
+    }
+
+    pub fn pinned_shelves(&self) -> Result<Vec<PinnedShelfFfi>, CinmaError> {
+        Ok(self
+            .inner
+            .pinned_shelves()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn pin_shelf(
+        &self,
+        title: String,
+        addon_id: String,
+        media_type: String,
+        catalog_id: String,
+        genre: Option<String>,
+    ) -> Result<PinnedShelfFfi, CinmaError> {
+        Ok(self
+            .inner
+            .pin_shelf(title, addon_id, media_type, catalog_id, genre)?
+            .into())
+    }
+
+    pub fn unpin_shelf(&self, id: String) -> Result<(), CinmaError> {
+        Ok(self.inner.unpin_shelf(&id)?)
+    }
+
+    pub async fn list_torrent_files(
+        &self,
+        info_hash: String,
+        trackers: Vec<String>,
+    ) -> Result<Vec<TorrentFileItemInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .list_torrent_files(info_hash, trackers)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn queue_torrent_batch(
+        &self,
+        info_hash: String,
+        trackers: Vec<String>,
+        meta_id: Option<String>,
+        media_type: Option<String>,
+        items: Vec<TorrentBatchItemInput>,
+        priority: i64,
+    ) -> Result<Vec<i64>, CinmaError> {
+        let pairs = items
+            .into_iter()
+            .map(|i| (i.file_idx as usize, i.title))
+            .collect();
+        Ok(self
+            .inner
+            .queue_torrent_batch(info_hash, trackers, meta_id, media_type, pairs, priority)?)
+    }
+
+    pub async fn anime_filler_episodes(&self, meta_id: String) -> Result<Vec<u32>, CinmaError> {
+        Ok(self.inner.anime_filler_episodes(meta_id).await?)
+    }
+
+    pub fn local_media_entries(&self) -> Result<Vec<LocalMediaEntryInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .local_media_entries()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn scan_local_folders(&self) -> Result<Vec<LocalMediaEntryInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .scan_local_folders()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn webdav_sources(&self) -> Result<Vec<WebDavSourceFfi>, CinmaError> {
+        Ok(self
+            .inner
+            .webdav_sources()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn add_webdav_source(
+        &self,
+        name: String,
+        base_url: String,
+        username: Option<String>,
+        password: Option<String>,
+    ) -> Result<WebDavSourceFfi, CinmaError> {
+        Ok(self
+            .inner
+            .add_webdav_source(name, base_url, username, password)?
+            .into())
+    }
+
+    pub fn remove_webdav_source(&self, id: String) -> Result<(), CinmaError> {
+        Ok(self.inner.remove_webdav_source(&id)?)
+    }
+
+    pub async fn browse_webdav(
+        &self,
+        source_id: String,
+        sub_path: String,
+    ) -> Result<Vec<WebDavEntryInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .browse_webdav(source_id, sub_path)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub fn enforce_download_schedule(&self, current_hour: Option<u8>) -> Result<(), CinmaError> {
+        Ok(self.inner.enforce_download_schedule(current_hour)?)
+    }
+
+    pub fn local_api_socket_path(&self) -> String {
+        self.inner.local_api_socket_path()
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct PinnedShelfFfi {
+    pub id: String,
+    pub title: String,
+    pub addon_id: String,
+    pub media_type: String,
+    pub catalog_id: String,
+    pub genre: Option<String>,
+}
+
+impl From<cinma_core::PinnedShelf> for PinnedShelfFfi {
+    fn from(s: cinma_core::PinnedShelf) -> Self {
+        Self {
+            id: s.id,
+            title: s.title,
+            addon_id: s.addon_id,
+            media_type: s.media_type,
+            catalog_id: s.catalog_id,
+            genre: s.genre,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct TorrentFileItemInfo {
+    pub file_idx: u64,
+    pub name: String,
+    pub size_bytes: u64,
+    pub season: Option<u32>,
+    pub episode: Option<u32>,
+}
+
+impl From<cinma_core::TorrentFileItem> for TorrentFileItemInfo {
+    fn from(f: cinma_core::TorrentFileItem) -> Self {
+        Self {
+            file_idx: f.index as u64,
+            name: f.name,
+            size_bytes: f.size_bytes,
+            season: f.season,
+            episode: f.episode,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct TorrentBatchItemInput {
+    pub file_idx: u64,
+    pub title: String,
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct LocalMediaEntryInfo {
+    pub path: String,
+    pub filename: String,
+    pub title: String,
+    pub year: Option<String>,
+    pub media_type: String,
+    pub season: Option<u32>,
+    pub episode: Option<u32>,
+    pub size_bytes: u64,
+}
+
+impl From<cinma_core::LocalMediaEntry> for LocalMediaEntryInfo {
+    fn from(e: cinma_core::LocalMediaEntry) -> Self {
+        Self {
+            path: e.path,
+            filename: e.filename,
+            title: e.title,
+            year: e.year,
+            media_type: e.media_type,
+            season: e.season,
+            episode: e.episode,
+            size_bytes: e.size_bytes,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct WebDavSourceFfi {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub username: Option<String>,
+}
+
+impl From<cinma_core::WebDavSource> for WebDavSourceFfi {
+    fn from(s: cinma_core::WebDavSource) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            base_url: s.base_url,
+            username: s.username,
+        }
+    }
+}
+
+#[derive(uniffi::Record, Clone)]
+pub struct WebDavEntryInfo {
+    pub name: String,
+    pub sub_path: String,
+    pub stream_url: String,
+    pub is_dir: bool,
+    pub size_bytes: u64,
+}
+
+impl From<cinma_core::WebDavEntry> for WebDavEntryInfo {
+    fn from(e: cinma_core::WebDavEntry) -> Self {
+        Self {
+            name: e.name,
+            sub_path: e.sub_path,
+            stream_url: e.stream_url,
+            is_dir: e.is_dir,
+            size_bytes: e.size_bytes,
+        }
     }
 }
 

@@ -175,3 +175,55 @@ async fn alldebrid_premiumize_and_torbox_roundtrips() {
         .unwrap();
     assert_eq!(tb_res.url, "https://cdn.tb.example/Anime.mkv");
 }
+
+#[tokio::test]
+async fn easydebrid_and_debridlink_roundtrips() {
+    let ed = spawn_mock_debrid(vec![
+        ("/link/lookup", r#"{"cached":[true,false]}"#.into()),
+        (
+            "/link/generate",
+            r#"{"files":[{"url":"https://cdn.ed.example/Show.S01E02.mkv","filename":"Show.S01E02.mkv","size":1200}]}"#.into(),
+        ),
+    ])
+    .await;
+
+    let dl = spawn_mock_debrid(vec![
+        ("/seedbox/cached", r#"{"value":{"deadc0de":{}}}"#.into()),
+        (
+            "/seedbox/add",
+            r#"{"value":{"files":[{"name":"Ep03.mp4","size":950,"downloadUrl":"https://cdn.dl.example/Ep03.mp4"}]}}"#.into(),
+        ),
+    ])
+    .await;
+
+    let client = DebridClient::with_base_urls(ed.clone(), ed.clone(), ed.clone(), ed.clone())
+        .unwrap()
+        .with_extra_base_urls(ed, dl);
+
+    let ed_cached = client
+        .check_instant_cache(
+            DebridProvider::EasyDebrid,
+            "k",
+            &["1111".into(), "2222".into()],
+        )
+        .await
+        .unwrap();
+    assert!(ed_cached.contains("1111"));
+    assert!(!ed_cached.contains("2222"));
+    let ed_res = client
+        .resolve_torrent(DebridProvider::EasyDebrid, "k", "1111", None)
+        .await
+        .unwrap();
+    assert_eq!(ed_res.url, "https://cdn.ed.example/Show.S01E02.mkv");
+
+    let dl_cached = client
+        .check_instant_cache(DebridProvider::DebridLink, "k", &["DEADC0DE".into()])
+        .await
+        .unwrap();
+    assert!(dl_cached.contains("deadc0de"));
+    let dl_res = client
+        .resolve_torrent(DebridProvider::DebridLink, "k", "deadc0de", None)
+        .await
+        .unwrap();
+    assert_eq!(dl_res.url, "https://cdn.dl.example/Ep03.mp4");
+}

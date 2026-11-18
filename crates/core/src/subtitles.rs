@@ -293,6 +293,18 @@ pub struct PlayerPreferences {
     pub notify_on_download_complete: bool,
     /// Allow single-click Quick Play of the top-ranked stream directly from cards & title headers.
     pub quick_play_enabled: bool,
+    /// Auto-skip episodes flagged as anime filler when playing a series.
+    pub auto_skip_anime_fillers: bool,
+    /// User-selected local folders scanned on-demand for video files (#N23).
+    pub local_media_folders: Vec<String>,
+    /// Pause/resume download queue automatically outside the configured hour window (#N25).
+    pub download_schedule_enabled: bool,
+    /// Inclusive local start hour (0–23) for scheduled downloads.
+    pub download_schedule_start_hour: u8,
+    /// Exclusive local end hour (0–23) for scheduled downloads.
+    pub download_schedule_end_hour: u8,
+    /// Opt-in local Unix domain socket JSON-RPC server (`<data_dir>/cinma.sock`, #N25).
+    pub local_api_socket_enabled: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -394,6 +406,12 @@ impl Default for PlayerPreferences {
             auto_pip_on_occlusion: false,
             notify_on_download_complete: true,
             quick_play_enabled: true,
+            auto_skip_anime_fillers: false,
+            local_media_folders: Vec::new(),
+            download_schedule_enabled: false,
+            download_schedule_start_hour: 1,
+            download_schedule_end_hour: 7,
+            local_api_socket_enabled: false,
         }
     }
 }
@@ -459,6 +477,9 @@ impl Core {
         self.save_profile_json(KEY_PLAYER_PREFS, prefs)?;
         if let Ok(mut slot) = self.http.lock() {
             *slot = None;
+        }
+        if let Some(arc) = self.me.upgrade() {
+            let _ = arc.sync_local_api_socket();
         }
         Ok(())
     }

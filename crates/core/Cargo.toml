@@ -27,7 +27,7 @@ security-framework.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "process"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "process", "net", "io-util"] }
 
 [dev-dependencies]
 encoding_rs.workspace = true

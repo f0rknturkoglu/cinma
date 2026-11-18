@@ -10,6 +10,7 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
 
     private let headingLabel = NSTextField(labelWithString: "")
     private let sourceLabel = NSTextField(labelWithString: "")
+    private let unpinButton = NSButton()
     private let collectionView = KeyboardCollectionView()
     private let scrollView = NSScrollView()
     private var content: Content = .posters([])
@@ -18,6 +19,11 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
     var onSelectPoster: ((MetaPreviewInfo) -> Void)?
     var onSelectContinue: ((WatchProgressInfo) -> Void)?
     var onBuildContextMenu: ((MetaPreviewInfo) -> NSMenu?)?
+    var onUnpin: (() -> Void)? {
+        didSet {
+            unpinButton.isHidden = onUnpin == nil
+        }
+    }
 
     init(title: String, source: String = "") {
         super.init(frame: .zero)
@@ -30,6 +36,16 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
         sourceLabel.font = .systemFont(ofSize: 13, weight: .regular)
         sourceLabel.textColor = CinemaTheme.textMuted
         sourceLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        unpinButton.title = String(localized: "Unpin")
+        unpinButton.image = NSImage(systemSymbolName: "pin.slash", accessibilityDescription: String(localized: "Unpin"))
+        unpinButton.imagePosition = .imageLeading
+        unpinButton.bezelStyle = .rounded
+        unpinButton.controlSize = .small
+        unpinButton.target = self
+        unpinButton.action = #selector(unpinClicked)
+        unpinButton.isHidden = true
+        unpinButton.translatesAutoresizingMaskIntoConstraints = false
 
         let layout = NSCollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
@@ -56,14 +72,18 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
 
         addSubview(headingLabel)
         addSubview(sourceLabel)
+        addSubview(unpinButton)
         addSubview(scrollView)
 
         NSLayoutConstraint.activate([
             headingLabel.topAnchor.constraint(equalTo: topAnchor),
             headingLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 64),
 
+            unpinButton.centerYAnchor.constraint(equalTo: headingLabel.centerYAnchor),
+            unpinButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -64),
+
             sourceLabel.centerYAnchor.constraint(equalTo: headingLabel.centerYAnchor),
-            sourceLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -64),
+            sourceLabel.trailingAnchor.constraint(equalTo: unpinButton.leadingAnchor, constant: -10),
 
             scrollView.topAnchor.constraint(equalTo: headingLabel.bottomAnchor, constant: 14),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -74,6 +94,10 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc private func unpinClicked() {
+        onUnpin?()
+    }
 
     func update(title: String? = nil, source: String? = nil, content: Content, style: PosterStyleContext? = nil) {
         if let title { headingLabel.stringValue = title }
@@ -524,6 +548,14 @@ final class HomeBrowserViewController: NSViewController {
         contentStack.addArrangedSubview(emptyHintLabel)
         emptyHintLabel.leadingAnchor.constraint(equalTo: contentStack.leadingAnchor, constant: 64).isActive = true
         emptyHintLabel.trailingAnchor.constraint(equalTo: contentStack.trailingAnchor, constant: -64).isActive = true
+
+        NotificationCenter.default.addObserver(
+            forName: .cinmaPinnedShelvesChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.loadAddonCatalogRails() }
+        }
     }
 
     func reloadLocalState() {
@@ -642,10 +674,42 @@ final class HomeBrowserViewController: NSViewController {
             dynamicRailsStack.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+        let pinned = (try? core.pinnedShelves()) ?? []
         Task {
+            for shelf in pinned {
+                if let page = try? await core.catalog(
+                    addonId: shelf.addonId,
+                    mediaType: shelf.mediaType,
+                    catalogId: shelf.catalogId,
+                    query: CatalogQueryInput(search: nil, genre: shelf.genre, skip: nil)
+                ) {
+                    let visItems = CatalogVisibilityFilter.apply(page.items, core: core)
+                    if !visItems.isEmpty {
+                        await MainActor.run { [weak self] in
+                            self?.appendPinnedShelfRail(shelf, items: visItems)
+                        }
+                    }
+                }
+            }
             _ = try? await core.browseCatalogs(mediaType: nil, observer: collector)
             ImagePipeline.releaseMallocPressure()
         }
+    }
+
+    private func appendPinnedShelfRail(_ shelf: PinnedShelfFfi, items: [MetaPreviewInfo]) {
+        let style = PosterStyleContext.load(from: core)
+        let rail = CatalogRailView(title: "📌 \(shelf.title)", source: String(localized: "Pinned Shelf"))
+        rail.translatesAutoresizingMaskIntoConstraints = false
+        rail.heightAnchor.constraint(equalToConstant: style.itemSize.height + 42).isActive = true
+        rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
+        rail.onBuildContextMenu = { [weak self] item in self?.onBuildContextMenu?(item) }
+        rail.onUnpin = { [weak self] in
+            try? self?.core.unpinShelf(id: shelf.id)
+            self?.loadAddonCatalogRails()
+        }
+        rail.update(content: .posters(items), style: style)
+        dynamicRailsStack.addArrangedSubview(rail)
+        rail.widthAnchor.constraint(equalTo: dynamicRailsStack.widthAnchor).isActive = true
     }
 
     private func appendAddonRail(_ batch: CatalogBatchInfo) {
