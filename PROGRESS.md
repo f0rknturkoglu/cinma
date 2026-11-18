@@ -1,13 +1,32 @@
 # PROGRESS
 
-## Status: Phases 0–9 built (2026-11-17); Phase 9 awaiting owner review before Phase 10. ADRs 0010, 0011, 0012, 0014, 0016 accepted; ADR 0013 §3 accepted (disk quota superseded by 0016); ADR 0015 backup/libmpv lookup accepted (packaging deferred to Phase 10); ADR 0017 Phase 9 integrations proposed; CLAUDE.md §6 targets owner-approved.
+## Status: Phases 0–9 + Harbor Settings Parity (Waves 1–5 Lightweight) complete (2026-11-18). Waiting for owner device tests and Phase 10 hardening.
 
-**Next:** see `docs/ROADMAP.md`:
-- §2: the owner's test checklist;
+**Next:** see [README.md](README.md) and `docs/ROADMAP.md`:
+- §2: the owner's real-network / device test checklist;
 - §3 & §6: recorded owner decisions (2026-11-17);
-- §9: Phase 10 (hardening, bundled `libmpv`+FFmpeg, crash sweep, competitor benchmark).
+- §9: Phase 10 (hardening, bundled `libmpv`+FFmpeg, `mimalloc`/`jemalloc` fragmentation trial, crash sweep, competitor benchmark).
 
 Unmeasured outside local mocks / sandbox: real-swarm torrent TTFF/seek and live external service round trips (Debrid, OAuth, AniSkip/IntroDB, Fanart, Kitsu, IPTV, Discord IPC, Chromecast/DLNA). See `docs/RISKS.md`.
+
+---
+
+## Post-Phase 9 — Player UX, Memory Trim & Harbor Settings Parity Waves 1–5 ✅ (2026-11-17 – 2026-11-18)
+
+### Done after Phase 9 (`bf1dc3a`..`1ef7e4d`)
+- **Playback RAM & UI latency fixes (`bf1dc3a`):** moved HUD controls to bottom glass bar, optimized browse/artwork caching (`ImagePipeline.setPlaybackMode`), lowered live 4K streaming footprint to **~460 MB** and 1080p torrent playback to **~370 MB** (~260 MB browse/idle in real-world sessions), and reduced Cast stop latency.
+- **Toast, Stats & Subtitle Controls (`4bc776d`) + Cross-Episode State (`b1354c5`):** auto-dismissing player toast notifications, fixed wrapping stats overlay, fixed Ep 1 → 2 → 3 auto-advance countdown re-arming bug, and preserved audio/subtitle/video selections cleanly when auto-advancing episodes.
+- **Streaming Details Globe & Fullscreen `Esc` (`87304d9`):** added live `globe` Streaming Details popover (`0.5s` download/upload speed, active/total peers, buffered bytes, infoHash, `hwdec`, cache seconds, dropped frames) and updated `Esc` to dismiss popovers → exit macOS fullscreen → close window cleanly.
+- **Harbor Settings Parity — Wave 1 (`d3b65d2`):** Auto-skip Intro/Recap/Outro, lift subtitles above HUD controls, pause on minimize/unfocus, customizable seek step (`3–60s`), `dynaudnorm` audio normalization & stereo downmix, subtitle opacity/box opacity/alignment, secondary sub placement, aspect/crop modes (`fit`, `fill`, `16:9`, `21:9`, `4:3`), default off / prefer embedded / forced-on-native subtitles, max volume boost (`100/150/200%`), default/custom playback speed, and configurable stall watchdog timeout.
+- **Harbor Settings Parity — Wave 2 (`3653daa`):** Episode Spoiler Protection (blurred unwatched stills + hidden descriptions), per-series source lock/remembering, release-group keyword blocking (`trackBlockWords`), stream sorting (`score`, `seeds`, `size_desc`, `size_asc`), filename toggle, SDH subtitle track/cue stripping, HUD clock + estimated finish time, Up Next lead time + "Still Watching?" threshold, hide watched/unreleased catalog items, ascending/descending & compact episode list, confirm-on-leave, resume prompt modes (`always_resume`, `ask`, `always_start_over`), volume HUD toast, and player screen lock.
+- **Harbor Settings Parity — Wave 3 (`e971a9e`):** HDR-to-SDR tone mapping (`auto`, `bt.2390`, `reinhard`, `hable`, `clip`), macOS EDR toggle, `yuv420p` toggle, mpv scaler preset (`fast`, `balanced`, `high`), `hwdec` mode (`videotoolbox`, `auto-safe`, `no`), `mpv` buffer size (`4–128 MiB`), guarded extra mpv options, Debrid-only mode (hide P2P torrents), configurable addon HTTP timeout (`3–60s`), torrent download limit (`download_bps`), Home CW-at-top & addon rail cap, CW hide nearly-finished (`≥ 85%`), poster scale/radius/hide-title & card badges (IMDb, type, watched, in-library), seek bar chapters, title order swap, calendar Monday start, Discord privacy toggles, custom sleep timer, P2P speed chip next to Globe, player always-on-top, and in-app EN/TR language selector.
+- **Harbor Settings Parity — Waves 4 & 5 Lightweight Only (`1ef7e4d`):** deliberately skipped heavy/GPU-costly features (Anime4K shader packs, auto-playing detail trailers, full-episode pre-downloading, background webhook daemon, gamepad/10-ft TV mode) and added zero-overhead settings: ASS/SSA & subtitle scale (`50–150%`, `sub-ass-scale-with-window`), OpenSubtitles/addon subtitle provider toggles, TMDB original title & image language preferences + expanded metadata languages, on-demand TMDB Streaming Platform filters in Discover (Netflix, Disney+, Apple TV+, Prime Video, Max, Crunchyroll, MUBI), dynamic accent color presets (`amber`, `crimson`, `cyan`, `emerald`, `violet`), GPU-saving Solid Glass (`reduceGlassEffect`) toggle, detail backdrop dim control, top-nav tab visibility toggles, external `mpv`/`IINA` handoff for direct HTTP/Debrid streams, and deep-link confirmation / scrobble toggles.
+
+### Verification (After Latest Wave 4 & 5 Build — `1ef7e4d`)
+- **`cargo fmt --check` & `cargo clippy --all-targets -- -D warnings`:** passed (0 warnings).
+- **`cargo test --workspace --quiet`:** **139 Rust tests pass, 0 failed, 0 ignored** across 56 test suites.
+- **Release `xcodebuild` (`Cinma.app`):** **`** BUILD SUCCEEDED **`**, **0 compiler warnings**.
+- **Localization (`app/Cinma/Localizable.xcstrings`):** **727 translatable keys (`en` + `tr`)**, `MISSING_TR_COUNT=0`.
 
 ---
 
