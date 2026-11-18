@@ -202,6 +202,109 @@ enum CinemaTheme {
         return fx
     }
 
+    /// A format badge styled after what it stands for (resolution, HDR,
+    /// Dolby, DTS, codec). Typographic, no trademarked artwork.
+    static func makeQualityBadge(_ raw: String) -> NSView {
+        enum Style { case gold, plain, dolby, hdr, dts, outline }
+        let key = raw.trimmingCharacters(in: .whitespaces).uppercased()
+        let (text, sub, style): (String, String?, Style) = {
+            switch key {
+            case "4K", "2160P", "UHD": return ("4K", "UHD", .gold)
+            case "1080P": return ("1080p", "FHD", .plain)
+            case "720P": return ("720p", "HD", .plain)
+            case "480P", "SD": return (raw, nil, .outline)
+            case "DV", "DOLBY VISION", "DOVI": return ("DOLBY", "VISION", .dolby)
+            case "ATMOS", "DOLBY ATMOS": return ("DOLBY", "ATMOS", .dolby)
+            case "TRUEHD": return ("DOLBY", "TrueHD", .dolby)
+            case "DD+", "EAC3", "E-AC3", "DDP": return ("DOLBY", "DIGITAL+", .dolby)
+            case "DD", "AC3": return ("DOLBY", "DIGITAL", .dolby)
+            case "HDR", "HDR10", "HDR10+", "HLG": return (raw.uppercased(), nil, .hdr)
+            case let k where k.hasPrefix("DTS"): return ("dts", String(raw.dropFirst(3)).trimmingCharacters(in: CharacterSet(charactersIn: " -:")), .dts)
+            default: return (raw, nil, .outline)
+            }
+        }()
+        let box = NSView()
+        box.wantsLayer = true
+        box.layer?.cornerRadius = 5
+        box.layer?.masksToBounds = true
+        let main = NSTextField(labelWithString: text)
+        main.font = .systemFont(ofSize: 11, weight: .heavy)
+        let detail = NSTextField(labelWithString: sub ?? "")
+        detail.font = .systemFont(ofSize: 8.5, weight: .bold)
+        detail.isHidden = (sub ?? "").isEmpty
+        var background: NSView?
+        switch style {
+        case .gold:
+            background = GradientLayerView(
+                colors: [NSColor(srgbRed: 0.98, green: 0.82, blue: 0.42, alpha: 1),
+                         NSColor(srgbRed: 0.85, green: 0.58, blue: 0.18, alpha: 1)],
+                start: CGPoint(x: 0, y: 1),
+                end: CGPoint(x: 1, y: 0)
+            )
+            main.textColor = NSColor(srgbRed: 0.12, green: 0.08, blue: 0.02, alpha: 1)
+            detail.textColor = main.textColor
+        case .plain:
+            box.layer?.backgroundColor = NSColor(white: 1, alpha: 0.92).cgColor
+            main.textColor = .black
+            detail.textColor = NSColor(white: 0.25, alpha: 1)
+        case .dolby:
+            box.layer?.backgroundColor = NSColor.black.cgColor
+            box.layer?.borderWidth = 1
+            box.layer?.borderColor = NSColor(white: 1, alpha: 0.35).cgColor
+            main.font = .systemFont(ofSize: 9.5, weight: .black)
+            main.textColor = .white
+            detail.font = .systemFont(ofSize: 9.5, weight: .regular)
+            detail.textColor = .white
+        case .hdr:
+            background = GradientLayerView(
+                colors: [NSColor(srgbRed: 1.0, green: 0.55, blue: 0.15, alpha: 1),
+                         NSColor(srgbRed: 0.62, green: 0.25, blue: 0.95, alpha: 1)],
+                start: CGPoint(x: 0, y: 0.5),
+                end: CGPoint(x: 1, y: 0.5)
+            )
+            main.textColor = .white
+        case .dts:
+            box.layer?.backgroundColor = NSColor(white: 0.08, alpha: 1).cgColor
+            box.layer?.borderWidth = 1
+            box.layer?.borderColor = NSColor(srgbRed: 1, green: 0.55, blue: 0.1, alpha: 0.7).cgColor
+            main.font = .systemFont(ofSize: 11.5, weight: .black)
+            main.textColor = NSColor(srgbRed: 1, green: 0.6, blue: 0.15, alpha: 1)
+            detail.textColor = .white
+        case .outline:
+            box.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor
+            box.layer?.borderWidth = 1
+            box.layer?.borderColor = NSColor(white: 1, alpha: 0.22).cgColor
+            main.font = .systemFont(ofSize: 10.5, weight: .bold)
+            main.textColor = textSecondary
+        }
+        if let background {
+            background.translatesAutoresizingMaskIntoConstraints = false
+            box.addSubview(background)
+            NSLayoutConstraint.activate([
+                background.leadingAnchor.constraint(equalTo: box.leadingAnchor),
+                background.trailingAnchor.constraint(equalTo: box.trailingAnchor),
+                background.topAnchor.constraint(equalTo: box.topAnchor),
+                background.bottomAnchor.constraint(equalTo: box.bottomAnchor),
+            ])
+        }
+        let row = NSStackView(views: [main, detail])
+        row.orientation = .horizontal
+        row.spacing = 3
+        row.alignment = .firstBaseline
+        row.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 6),
+            row.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -6),
+            row.topAnchor.constraint(equalTo: box.topAnchor, constant: 3),
+            row.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -3),
+        ])
+        box.toolTip = raw
+        box.setAccessibilityLabel(raw)
+        box.setAccessibilityElement(true)
+        return box
+    }
+
     static func makeChip(_ text: String, highlighted: Bool = false) -> NSView {
         let box = NSView()
         box.wantsLayer = true
@@ -269,8 +372,17 @@ final class PillButton: NSButton {
         return NSSize(width: base.width + 28, height: max(base.height + 14, 32))
     }
 
+    /// Always a true capsule: the radius follows the actual height (a fixed
+    /// 18 pt radius on a 26 pt chip made pointed ends).
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = bounds.height / 2
+        layer?.masksToBounds = true
+    }
+
     override func drawFocusRingMask() {
-        NSBezierPath(roundedRect: bounds, xRadius: 18, yRadius: 18).fill()
+        let r = bounds.height / 2
+        NSBezierPath(roundedRect: bounds, xRadius: r, yRadius: r).fill()
     }
 }
 

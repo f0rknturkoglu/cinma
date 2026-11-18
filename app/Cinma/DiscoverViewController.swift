@@ -252,13 +252,33 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         }
     }
 
+    /// Index into `catalogs` of the selected menu item (headers are skipped).
+    private var selectedCatalogIndex: Int {
+        guard let item = catalogPopup.selectedItem, !item.isSectionHeader else { return -1 }
+        return item.tag
+    }
+
     func reloadCatalogList() {
         refreshPosterStyle()
         catalogs = ((try? core.catalogs()) ?? []).filter(\.isBrowsable)
+        let previous = selectedCatalogIndex
         catalogPopup.removeAllItems()
-        for c in catalogs {
+        // Grouped under one header per addon; each item's tag is its index.
+        var lastAddon: String?
+        for (idx, c) in catalogs.enumerated() {
+            if c.addonId != lastAddon {
+                lastAddon = c.addonId
+                catalogPopup.menu?.addItem(NSMenuItem.sectionHeader(title: c.addonName))
+            }
             let typeLabel = c.mediaType == "series" ? String(localized: "Series") : String(localized: "Movie")
-            catalogPopup.addItem(withTitle: "\(c.name) · \(typeLabel) (\(c.addonName))")
+            let item = NSMenuItem(title: "\(c.name) · \(typeLabel)", action: nil, keyEquivalent: "")
+            item.tag = idx
+            item.indentationLevel = 1
+            catalogPopup.menu?.addItem(item)
+        }
+        let target = catalogs.indices.contains(previous) ? previous : 0
+        if let item = catalogPopup.menu?.items.first(where: { !$0.isSectionHeader && $0.tag == target }) {
+            catalogPopup.select(item)
         }
         catalogPopup.isHidden = catalogs.isEmpty || searchModeQuery != nil || selectedProviderId != nil
         updatePinButtonState()
@@ -337,7 +357,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     }
 
     private func loadSelectedCatalog(reset: Bool) {
-        let idx = catalogPopup.indexOfSelectedItem
+        let idx = selectedCatalogIndex
         guard catalogs.indices.contains(idx) else {
             items = []
             collectionView.reloadData()
@@ -571,7 +591,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     }
 
     private func currentShelfId() -> String? {
-        let idx = catalogPopup.indexOfSelectedItem
+        let idx = selectedCatalogIndex
         guard catalogs.indices.contains(idx) else { return nil }
         let cat = catalogs[idx]
         return "shelf:\(cat.addonId):\(cat.mediaType):\(cat.id):\(selectedGenre ?? "")"
@@ -590,7 +610,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     }
 
     @objc private func togglePinCatalog() {
-        let idx = catalogPopup.indexOfSelectedItem
+        let idx = selectedCatalogIndex
         guard catalogs.indices.contains(idx), let sid = currentShelfId() else { return }
         let cat = catalogs[idx]
         let existing = (try? core.pinnedShelves())?.contains(where: { $0.id == sid }) ?? false

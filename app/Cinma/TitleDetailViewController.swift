@@ -28,6 +28,11 @@ final class TitleDetailViewController: NSViewController {
     private let overviewLabel = NSTextField(wrappingLabelWithString: "")
     private let castLabel = NSTextField(wrappingLabelWithString: "")
     private let castChipsStack = NSStackView()
+    /// "Watch on" provider logos (TMDB watch providers).
+    private let providersStack = NSStackView()
+    private var providerLogoTasks: [Task<Void, Never>?] = []
+    /// Movies have no episode column, so the stream list may use the width.
+    private var pickerMaxWidth: NSLayoutConstraint?
     private let collectionRail = CatalogRailView(title: String(localized: "Collection"))
     private var collectionRailHeight: NSLayoutConstraint?
     private var quickPlayButton: NSButton?
@@ -205,9 +210,18 @@ final class TitleDetailViewController: NSViewController {
         castChipsStack.orientation = .horizontal
         castChipsStack.alignment = .centerY
         castChipsStack.spacing = 6
+        // Let the row be narrower than all chips: it then detaches the
+        // lowest-priority chips instead of squashing one (see rebuildCastChips).
+        castChipsStack.setClippingResistancePriority(.defaultLow, for: .horizontal)
+        castChipsStack.detachesHiddenViews = true
         castChipsStack.isHidden = true
 
-        let headerStack = NSStackView(views: [topBar, logoView, titleLabel, metaLabel, overviewLabel, castChipsStack, castLabel])
+        providersStack.orientation = .horizontal
+        providersStack.alignment = .centerY
+        providersStack.spacing = 8
+        providersStack.isHidden = true
+
+        let headerStack = NSStackView(views: [topBar, logoView, titleLabel, metaLabel, overviewLabel, castChipsStack, providersStack, castLabel])
         headerStack.orientation = .vertical
         headerStack.alignment = .leading
         headerStack.spacing = 12
@@ -353,7 +367,6 @@ final class TitleDetailViewController: NSViewController {
 
             episodesSection.widthAnchor.constraint(greaterThanOrEqualToConstant: 420),
             pickerPanel.widthAnchor.constraint(greaterThanOrEqualToConstant: 460),
-            pickerPanel.widthAnchor.constraint(lessThanOrEqualToConstant: 580),
 
             pickerContent.topAnchor.constraint(equalTo: pickerPanel.topAnchor, constant: 20),
             pickerContent.leadingAnchor.constraint(equalTo: pickerPanel.leadingAnchor, constant: 20),
@@ -362,6 +375,13 @@ final class TitleDetailViewController: NSViewController {
             streamsListStack.widthAnchor.constraint(equalTo: pickerContent.widthAnchor),
             episodesStack.widthAnchor.constraint(equalTo: episodesSection.widthAnchor),
         ])
+        let maxWidth = pickerPanel.widthAnchor.constraint(lessThanOrEqualToConstant: 580)
+        maxWidth.isActive = true
+        pickerMaxWidth = maxWidth
+        // Stretch toward the available width (up to the cap) instead of hugging.
+        let fill = pickerPanel.widthAnchor.constraint(equalTo: columns.widthAnchor)
+        fill.priority = .defaultLow
+        fill.isActive = true
         view = root
     }
 
@@ -410,8 +430,7 @@ final class TitleDetailViewController: NSViewController {
         let m = rich.meta
         titleLabel.stringValue = m.name.uppercased()
         if let logo = m.logo {
-            logoView.isHidden = false
-            logoView.setRemoteImage(logo, pointSize: NSSize(width: 420, height: 90), taskStorage: &logoTask)
+            showTitleLogo(logo)
         }
         backdropView.setRemoteImage(
             m.background ?? m.poster ?? preview.poster,
@@ -437,6 +456,7 @@ final class TitleDetailViewController: NSViewController {
             loadAnimeFillers(metaId: m.id)
         }
 
+        pickerMaxWidth?.constant = m.mediaType == "series" ? 580 : 1100
         if m.mediaType == "series" {
             let seasons = rich.seasonNumbers.isEmpty
                 ? Array(Set(m.videos.compactMap(\.season))).sorted()
@@ -471,18 +491,9 @@ final class TitleDetailViewController: NSViewController {
                   let self
             else { return }
             if !hasLogo, let logo = extras.clearlogo {
-                self.logoView.isHidden = false
-                self.logoView.setRemoteImage(logo, pointSize: NSSize(width: 420, height: 90), taskStorage: &self.logoTask)
+                self.showTitleLogo(logo)
             }
-            if !extras.watchProviders.isEmpty {
-                let unique = Array(Set(extras.watchProviders.map(\.name))).sorted().prefix(5).joined(separator: ", ")
-                let suffix = String(localized: "Watch on: \(unique)")
-                if self.castLabel.stringValue.isEmpty {
-                    self.castLabel.stringValue = suffix
-                } else {
-                    self.castLabel.stringValue += "\n\(suffix)"
-                }
-            }
+            self.renderProviders(extras.watchProviders)
         }
         if mediaType == "movie" {
             Task { [weak self] in
@@ -548,6 +559,65 @@ final class TitleDetailViewController: NSViewController {
         )
     }
 
+    /// Shows the title's logo in place of the text title, but only once the
+    /// image has loaded (a failed logo must not leave the page untitled).
+    private func showTitleLogo(_ url: String) {
+        logoTask?.cancel()
+        let scale = view.window?.backingScaleFactor ?? 2.0
+        logoTask = Task { [weak self] in
+            let image = await ImagePipeline.shared.load(urlString: url, pointSize: NSSize(width: 420, height: 90), scale: scale)
+            guard !Task.isCancelled, let self, let image else { return }
+            self.logoView.image = image
+            self.logoView.isHidden = false
+            self.logoView.setAccessibilityLabel(self.titleLabel.stringValue)
+            self.titleLabel.isHidden = true
+        }
+    }
+
+    /// Provider logos with their names as tooltips; subscription first.
+    private func renderProviders(_ providers: [WatchProviderInfo]) {
+        for v in providersStack.arrangedSubviews {
+            providersStack.removeArrangedSubview(v)
+            v.removeFromSuperview()
+        }
+        providerLogoTasks.forEach { $0?.cancel() }
+        providerLogoTasks = []
+        let rank = ["flatrate": 0, "free": 1, "ads": 2, "rent": 3, "buy": 4]
+        var seen = Set<String>()
+        let unique = providers
+            .sorted { (rank[$0.kind] ?? 9, $0.name) < (rank[$1.kind] ?? 9, $1.name) }
+            .filter { seen.insert($0.name).inserted }
+            .prefix(8)
+        guard !unique.isEmpty else {
+            providersStack.isHidden = true
+            return
+        }
+        let caption = NSTextField(labelWithString: String(localized: "Watch on"))
+        caption.font = .systemFont(ofSize: 12, weight: .semibold)
+        caption.textColor = CinemaTheme.textMuted
+        providersStack.addArrangedSubview(caption)
+        for p in unique {
+            let logo = NSImageView()
+            logo.translatesAutoresizingMaskIntoConstraints = false
+            logo.imageScaling = .scaleProportionallyUpOrDown
+            logo.wantsLayer = true
+            logo.layer?.cornerRadius = 8
+            logo.layer?.masksToBounds = true
+            logo.layer?.backgroundColor = NSColor(white: 1, alpha: 0.08).cgColor
+            logo.toolTip = p.name
+            logo.setAccessibilityLabel(p.name)
+            NSLayoutConstraint.activate([
+                logo.widthAnchor.constraint(equalToConstant: 34),
+                logo.heightAnchor.constraint(equalToConstant: 34),
+            ])
+            var task: Task<Void, Never>?
+            logo.setRemoteImage(p.logoUrl, pointSize: NSSize(width: 34, height: 34), taskStorage: &task)
+            providerLogoTasks.append(task)
+            providersStack.addArrangedSubview(logo)
+        }
+        providersStack.isHidden = false
+    }
+
     private func rebuildCastChips(cast: [String], directors: [String]) {
         for v in castChipsStack.arrangedSubviews {
             castChipsStack.removeArrangedSubview(v)
@@ -569,7 +639,15 @@ final class TitleDetailViewController: NSViewController {
             )
             chip.identifier = NSUserInterfaceItemIdentifier(name)
             chip.heightAnchor.constraint(equalToConstant: 26).isActive = true
+            chip.setContentCompressionResistancePriority(.required, for: .horizontal)
             castChipsStack.addArrangedSubview(chip)
+            // When the row is too narrow, drop trailing names instead of
+            // squashing a chip to a sliver (the director stays).
+            let order = castChipsStack.arrangedSubviews.count
+            castChipsStack.setVisibilityPriority(
+                isDirector ? .mustHold : NSStackView.VisibilityPriority(rawValue: Float(900 - order * 10)),
+                for: chip
+            )
         }
     }
 

@@ -400,17 +400,16 @@ extension TitleDetailViewController {
         let tierText = Self.tierTitle(item.tier)
         let tierChip = CinemaTheme.makeChip(tierText, highlighted: isTop)
 
-        let resLabel = NSTextField(labelWithString: item.parsed.resolution)
-        resLabel.font = .systemFont(ofSize: 15, weight: .bold)
-        resLabel.textColor = CinemaTheme.textPrimary
-
-        var badgeViews: [NSView] = [tierChip, resLabel]
+        var badgeViews: [NSView] = [tierChip]
+        if item.parsed.resolution != "Unknown" {
+            badgeViews.append(CinemaTheme.makeQualityBadge(item.parsed.resolution))
+        }
         if item.parsed.cachedDebrid {
             badgeViews.append(CinemaTheme.makeChip(String(localized: "Instant Debrid"), highlighted: true))
         }
-        for b in item.parsed.hdrBadges { badgeViews.append(CinemaTheme.makeChip(b)) }
-        if item.parsed.codec != "Unknown" { badgeViews.append(CinemaTheme.makeChip(item.parsed.codec)) }
-        if item.parsed.audio != "Unknown" { badgeViews.append(CinemaTheme.makeChip(item.parsed.audio)) }
+        for b in item.parsed.hdrBadges { badgeViews.append(CinemaTheme.makeQualityBadge(b)) }
+        if item.parsed.codec != "Unknown" { badgeViews.append(CinemaTheme.makeQualityBadge(item.parsed.codec)) }
+        if item.parsed.audio != "Unknown" { badgeViews.append(CinemaTheme.makeQualityBadge(item.parsed.audio)) }
 
         let topRow = NSStackView(views: badgeViews)
         topRow.orientation = .horizontal

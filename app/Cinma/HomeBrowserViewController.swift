@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Horizontal `NSCollectionView` rail with title and optional source badge.
 @MainActor
@@ -68,6 +69,9 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
         scrollView.drawsBackground = false
         scrollView.hasHorizontalScroller = false
         scrollView.hasVerticalScroller = false
+        // No legacy scroller track under each rail (trackpad/arrow keys scroll).
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(headingLabel)
@@ -554,6 +558,18 @@ final class HomeBrowserViewController: NSViewController {
             stack.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
         }
 
+        let customize = CinemaTheme.makePillButton(
+            title: String(localized: "Customize Home Rails…"),
+            symbol: "slider.horizontal.3",
+            primary: false,
+            target: self,
+            action: #selector(customizeHomeClicked)
+        )
+        customize.setAccessibilityLabel(String(localized: "Choose which addon catalogs appear on Home"))
+        let customizeRow = NSStackView(views: [customize])
+        customizeRow.edgeInsets = NSEdgeInsets(top: 4, left: 64, bottom: 24, right: 64)
+        contentStack.addArrangedSubview(customizeRow)
+
         emptyHintLabel.font = .systemFont(ofSize: 14, weight: .regular)
         emptyHintLabel.textColor = CinemaTheme.textMuted
         emptyHintLabel.isHidden = true
@@ -682,11 +698,6 @@ final class HomeBrowserViewController: NSViewController {
         let style = PosterStyleContext.load(from: core)
         let visContext = CatalogVisibilityContext.load(from: core)
         let maxRails = Int(min(15, (try? core.playerPreferences())?.maxAddonRails ?? 6))
-        let collector = CatalogBatchCollector { [weak self] batch in
-            Task { @MainActor [weak self] in
-                self?.appendAddonRail(batch, maxRails: maxRails, style: style, visContext: visContext)
-            }
-        }
         for stack in [pinnedRailsStack, dynamicRailsStack] {
             for view in stack.arrangedSubviews {
                 stack.removeArrangedSubview(view)
@@ -694,7 +705,7 @@ final class HomeBrowserViewController: NSViewController {
             }
         }
         let pinned = (try? core.pinnedShelves()) ?? []
-        Task {
+        Task { [weak self] in
             if !pinned.isEmpty {
                 let pages = await withTaskGroup(of: (Int, PinnedShelfFfi, [MetaPreviewInfo])?.self) { group in
                     for (idx, shelf) in pinned.enumerated() {
@@ -723,9 +734,7 @@ final class HomeBrowserViewController: NSViewController {
                     }
                 }
             }
-            if maxRails > 0 {
-                _ = try? await core.browseCatalogs(mediaType: nil, observer: collector)
-            }
+            await self?.loadChosenCatalogRails(maxRails: maxRails, style: style, visContext: visContext)
             ImagePipeline.releaseMallocPressure()
         }
     }
@@ -745,18 +754,98 @@ final class HomeBrowserViewController: NSViewController {
         rail.widthAnchor.constraint(equalTo: pinnedRailsStack.widthAnchor).isActive = true
     }
 
-    private func appendAddonRail(_ batch: CatalogBatchInfo, maxRails: Int, style: PosterStyleContext, visContext: CatalogVisibilityContext) {
-        guard batch.error == nil, dynamicRailsStack.arrangedSubviews.count < maxRails else { return }
-        let visItems = CatalogVisibilityFilter.apply(batch.items, context: visContext)
-        guard !visItems.isEmpty else { return }
-        let rail = CatalogRailView(title: batch.catalogName, source: batch.addonName)
-        rail.translatesAutoresizingMaskIntoConstraints = false
-        rail.heightAnchor.constraint(equalToConstant: CatalogRailView.height(forItemHeight: style.itemSize.height)).isActive = true
-        rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
-        rail.onBuildContextMenu = { [weak self] item in self?.onBuildContextMenu?(item) }
-        rail.update(content: .posters(visItems), style: style)
-        dynamicRailsStack.addArrangedSubview(rail)
-        rail.widthAnchor.constraint(equalTo: dynamicRailsStack.widthAnchor).isActive = true
+    static func catalogKey(_ c: CatalogInfo) -> String {
+        "\(c.addonId)|\(c.mediaType)|\(c.id)"
+    }
+
+    /// The addon catalogs Home shows, in order: the user's choice, or the
+    /// first browsable ones in addon order (Settings → Addons sets the order).
+    static func chosenHomeCatalogs(core: CinmaCore, maxRails: Int) -> [CatalogInfo] {
+        let all = ((try? core.catalogs()) ?? []).filter(\.isBrowsable)
+        let keys = (try? core.homeCatalogKeys()) ?? []
+        if keys.isEmpty {
+            return Array(all.prefix(max(0, maxRails)))
+        }
+        let byKey = Dictionary(all.map { (catalogKey($0), $0) }, uniquingKeysWith: { a, _ in a })
+        return keys.compactMap { byKey[$0] }
+    }
+
+    /// One rail per chosen catalog, placed in order up front and filled as
+    /// answers arrive. Only these catalogs are requested, at most four at once.
+    private func loadChosenCatalogRails(maxRails: Int, style: PosterStyleContext, visContext: CatalogVisibilityContext) async {
+        let chosen = Self.chosenHomeCatalogs(core: core, maxRails: maxRails)
+        var rails: [CatalogRailView] = []
+        for catalog in chosen {
+            let rail = CatalogRailView(title: catalog.name, source: catalog.addonName)
+            rail.translatesAutoresizingMaskIntoConstraints = false
+            rail.heightAnchor.constraint(equalToConstant: CatalogRailView.height(forItemHeight: style.itemSize.height)).isActive = true
+            rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
+            rail.onBuildContextMenu = { [weak self] item in self?.onBuildContextMenu?(item) }
+            rail.isHidden = true
+            dynamicRailsStack.addArrangedSubview(rail)
+            rail.widthAnchor.constraint(equalTo: dynamicRailsStack.widthAnchor).isActive = true
+            rails.append(rail)
+        }
+        let core = core
+        await withTaskGroup(of: (Int, [MetaPreviewInfo]).self) { group in
+            var next = 0
+            func enqueue() {
+                guard next < chosen.count else { return }
+                let idx = next
+                let c = chosen[idx]
+                next += 1
+                group.addTask {
+                    let page = try? await core.catalog(
+                        addonId: c.addonId,
+                        mediaType: c.mediaType,
+                        catalogId: c.id,
+                        query: CatalogQueryInput(search: nil, genre: nil, skip: nil)
+                    )
+                    return (idx, page?.items ?? [])
+                }
+            }
+            for _ in 0..<4 { enqueue() }
+            for await (idx, items) in group {
+                let visItems = CatalogVisibilityFilter.apply(items, context: visContext)
+                let rail = rails[idx]
+                if visItems.isEmpty {
+                    dynamicRailsStack.removeArrangedSubview(rail)
+                    rail.removeFromSuperview()
+                } else {
+                    rail.update(content: .posters(visItems), style: style)
+                    rail.isHidden = false
+                }
+                enqueue()
+            }
+        }
+    }
+
+    @objc private func customizeHomeClicked() {
+        let all = ((try? core.catalogs()) ?? []).filter(\.isBrowsable)
+        let maxRails = Int(min(15, (try? core.playerPreferences())?.maxAddonRails ?? 6))
+        let current = Set(Self.chosenHomeCatalogs(core: core, maxRails: maxRails).map(Self.catalogKey))
+        var holder: NSHostingController<HomeRailsSheet>?
+        let sheet = HomeRailsSheet(
+            catalogs: all,
+            selected: current,
+            onSave: { [weak self] keys in
+                guard let self else { return }
+                do {
+                    try self.core.setHomeCatalogKeys(keys: keys)
+                } catch {
+                    self.emptyHintLabel.stringValue = FriendlyError.explain(error)
+                    self.emptyHintLabel.isHidden = false
+                }
+                if let vc = holder { self.dismiss(vc) }
+                self.loadAddonCatalogRails()
+            },
+            onCancel: { [weak self] in
+                if let vc = holder { self?.dismiss(vc) }
+            }
+        )
+        let vc = NSHostingController(rootView: sheet)
+        holder = vc
+        presentAsSheet(vc)
     }
 
     private func renderHero() {

@@ -390,6 +390,16 @@
         }
       }
     },
+    "%lld rails" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld raf"
+          }
+        }
+      }
+    },
     "%lld results" : {
       "localizations" : {
         "en" : {
@@ -1959,6 +1969,16 @@
         }
       }
     },
+    "Automatic" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik"
+          }
+        }
+      }
+    },
     "Automation & Streams" : {
       "localizations" : {
         "tr" : {
@@ -2577,6 +2597,16 @@
         }
       }
     },
+    "Choose which addon catalogs appear on Home" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana Sayfa'da hangi eklenti kataloglarının görüneceğini seçin"
+          }
+        }
+      }
+    },
     "Choose…" : {
       "localizations" : {
         "tr" : {
@@ -3119,6 +3149,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Özel Uyku Zamanlayıcısı"
+          }
+        }
+      }
+    },
+    "Customize Home Rails…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana Sayfa Raflarını Düzenle…"
           }
         }
       }
@@ -4131,6 +4171,16 @@
         }
       }
     },
+    "Filter catalogs…" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Katalogları filtrele…"
+          }
+        }
+      }
+    },
     "Filter channels…" : {
       "localizations" : {
         "tr" : {
@@ -4661,6 +4711,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ana Sayfa"
+          }
+        }
+      }
+    },
+    "Home Rails" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana Sayfa Rafları"
           }
         }
       }
@@ -7175,6 +7235,16 @@
         }
       }
     },
+    "Pick the addon catalogs shown on Home. They appear in addon order; change the order in Settings → Addons." : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ana Sayfa'da gösterilecek eklenti kataloglarını seçin. Eklenti sırasına göre görünürler; sırayı Ayarlar → Eklentiler'den değiştirebilirsiniz."
+          }
+        }
+      }
+    },
     "Pin to Home" : {
       "localizations" : {
         "en" : {
@@ -9209,6 +9279,16 @@
         }
       }
     },
+    "Show the first catalogs in addon order" : {
+      "localizations" : {
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eklenti sırasındaki ilk katalogları göster"
+          }
+        }
+      }
+    },
     "Sign In" : {
       "localizations" : {
         "tr" : {
@@ -11103,12 +11183,12 @@
         }
       }
     },
-    "Watch on: %@" : {
+    "Watch on" : {
       "localizations" : {
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "İzleme platformları: %@"
+            "value" : "İzle:"
           }
         }
       }

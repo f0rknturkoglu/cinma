@@ -127,6 +127,9 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
             onOpenSettings: { [weak self] in self?.onOpenSettings?() }
         )
         let host = NSHostingView(rootView: localView)
+        // The SwiftUI content must not impose its own minimum size on the
+        // page (it pushed the header and grid down even while hidden).
+        host.sizingOptions = []
         host.translatesAutoresizingMaskIntoConstraints = false
         host.isHidden = true
         self.localFilesHostView = host

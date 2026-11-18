@@ -613,6 +613,15 @@ impl CinmaCore {
             .await?)
     }
 
+    /// Home's addon catalogs (`addon_id|type|catalog_id`), empty = automatic.
+    pub fn home_catalog_keys(&self) -> Result<Vec<String>, CinmaError> {
+        Ok(self.inner.home_catalog_keys()?)
+    }
+
+    pub fn set_home_catalog_keys(&self, keys: Vec<String>) -> Result<(), CinmaError> {
+        Ok(self.inner.set_home_catalog_keys(keys)?)
+    }
+
     pub fn pinned_shelves(&self) -> Result<Vec<PinnedShelfFfi>, CinmaError> {
         Ok(self
             .inner

@@ -26,6 +26,7 @@ use crate::{Core, CoreError, Feature};
 
 pub(super) const SKIP_TTL_SECS: i64 = 7 * 24 * 3600;
 pub(super) const KEY_PINNED_SHELVES: &str = "pinned_shelves";
+pub(super) const KEY_HOME_CATALOGS: &str = "home.catalogs";
 
 pub(super) fn now_unix() -> i64 {
     SystemTime::now()

@@ -8,8 +8,8 @@ use cinma_ranker::RankResult;
 use cinma_stremio::Stream;
 
 use super::{
-    DebridProviderStatus, KEY_PINNED_SHELVES, ManualSkipMarkers, PinnedShelf, SKIP_TTL_SECS,
-    now_unix,
+    DebridProviderStatus, KEY_HOME_CATALOGS, KEY_PINNED_SHELVES, ManualSkipMarkers, PinnedShelf,
+    SKIP_TTL_SECS, now_unix,
 };
 use crate::addons::StreamCandidate;
 use crate::keychain::{get_debrid_key, set_debrid_key};
@@ -274,6 +274,23 @@ impl Core {
     // =========================================================================
     // 12. Dalga 3 — Pinned Catalog Shelves (#N20) & Anime Filler Detection (#N22)
     // =========================================================================
+
+    /// Addon catalogs chosen for Home, in display order, as
+    /// `addon_id|type|catalog_id` keys. Empty means "automatic": the first
+    /// browsable catalogs in addon order.
+    pub fn home_catalog_keys(&self) -> Result<Vec<String>, CoreError> {
+        self.load_profile_json(KEY_HOME_CATALOGS)
+    }
+
+    pub fn set_home_catalog_keys(&self, keys: Vec<String>) -> Result<(), CoreError> {
+        let mut seen = std::collections::HashSet::new();
+        let clean: Vec<String> = keys
+            .into_iter()
+            .map(|k| k.trim().to_owned())
+            .filter(|k| !k.is_empty() && seen.insert(k.clone()))
+            .collect();
+        self.save_profile_json(KEY_HOME_CATALOGS, &clean)
+    }
 
     pub fn pinned_shelves(&self) -> Result<Vec<PinnedShelf>, CoreError> {
         self.load_profile_json(KEY_PINNED_SHELVES)
