@@ -292,7 +292,7 @@ final class HomeBrowserViewController: NSViewController {
             let core = core
             Task {
                 try? await core.updateDiscordPresence(
-                    title: "Browsing Catalogs",
+                    title: String(localized: "Browsing Catalogs"),
                     subtitle: nil,
                     durationS: nil,
                     positionS: 0,
@@ -774,7 +774,10 @@ final class HomeBrowserViewController: NSViewController {
         let item = heroItems[heroIndex]
         let saved = (try? core.isInLibrary(metaId: item.id, mediaType: item.mediaType)) ?? false
         let symbol = saved ? "checkmark" : "plus"
-        btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: String(localized: "Library"))
+        let actionTitle = saved ? String(localized: "Remove from Library") : String(localized: "Add to Library")
+        btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: actionTitle)
+        btn.setAccessibilityLabel(actionTitle)
+        btn.toolTip = actionTitle
         btn.title = saved ? "✓" : "+"
     }
 
@@ -788,13 +791,13 @@ final class HomeBrowserViewController: NSViewController {
             dot.tag = i
             dot.isBordered = false
             dot.wantsLayer = true
-            dot.layer?.cornerRadius = 2
+            dot.layer?.cornerRadius = 4
             dot.layer?.backgroundColor = (i == heroIndex ? CinemaTheme.textPrimary : NSColor(white: 1, alpha: 0.35)).cgColor
             dot.setAccessibilityLabel(String(localized: "Featured slide \(i + 1)"))
             dot.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
-                dot.widthAnchor.constraint(equalToConstant: i == heroIndex ? 22 : 8),
-                dot.heightAnchor.constraint(equalToConstant: 4),
+                dot.widthAnchor.constraint(equalToConstant: i == heroIndex ? 24 : 10),
+                dot.heightAnchor.constraint(equalToConstant: 8),
             ])
             heroDotsStack.addArrangedSubview(dot)
         }
@@ -803,14 +806,14 @@ final class HomeBrowserViewController: NSViewController {
     private func startHeroRotationIfNeeded() {
         heroTimer?.cancel()
         heroTimer = nil
-        guard !CinemaTheme.reduceMotion else { return }
+        guard heroItems.count > 1, !CinemaTheme.reduceMotion else { return }
         if let window = view.window, !window.occlusionState.contains(.visible) || !NSApp.isActive {
             return
         }
         heroTimer = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled, let self, self.heroItems.count > 1 else { continue }
+                guard !Task.isCancelled, let self, self.heroItems.count > 1 else { return }
                 guard self.view.window?.occlusionState.contains(.visible) == true, NSApp.isActive else {
                     self.heroTimer = nil
                     return

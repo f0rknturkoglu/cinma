@@ -468,7 +468,8 @@ final class CalendarViewController: NSViewController {
             img.setRemoteImage(ep.still ?? ep.showPoster, pointSize: NSSize(width: 160, height: 90), taskStorage: &task)
             if let task { thumbTasks.append(task) }
 
-            let title = NSTextField(labelWithString: "\(ep.showName) — S\(ep.season) · B\(ep.episode) \(ep.episodeName)")
+            let epTag = String(localized: "S\(ep.season) · E\(ep.episode)")
+            let title = NSTextField(labelWithString: "\(ep.showName) — \(epTag) \(ep.episodeName)")
             title.font = .systemFont(ofSize: 15, weight: .semibold)
             title.textColor = CinemaTheme.textPrimary
 

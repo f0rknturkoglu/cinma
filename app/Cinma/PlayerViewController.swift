@@ -43,10 +43,21 @@ private final class PlayerRootView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        firstSupportedURL(from: sender.draggingPasteboard) != nil ? .copy : []
+        guard firstSupportedURL(from: sender.draggingPasteboard) != nil else { return [] }
+        wantsLayer = true
+        layer?.borderWidth = 3
+        layer?.borderColor = CinemaTheme.accent.cgColor
+        return .copy
+    }
+
+    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        layer?.borderWidth = 0
+        layer?.borderColor = nil
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        layer?.borderWidth = 0
+        layer?.borderColor = nil
         guard let url = firstSupportedURL(from: sender.draggingPasteboard) else { return false }
         onDropFile?(url)
         return true
@@ -203,8 +214,10 @@ final class PlayerViewController: NSViewController {
     private var statusClearTask: Task<Void, Never>?
     private var popoverBackdrop: ClickCatcherView?
     private var popoverCard: NSView?
+    private weak var activeSubtitlesHost: NSHostingView<SubtitleManagerPopoverView>?
     private var didTrimInitialMalloc = false
     private var sleepTimerTask: Task<Void, Never>?
+    private var activeSleepMinutes: Int = 0
     private var stallRecoveryTask: Task<Void, Never>?
     private var failedRetries = 0
     private var currentStreamIndex = 0
@@ -1396,6 +1409,7 @@ final class PlayerViewController: NSViewController {
                 filename: identity?.filename
             )
             self.searchingSubtitles = true
+            self.refreshSubtitlesPopoverIfVisible()
             let results = (try? await core.fetchSubtitles(input: input)) ?? []
             guard !self.closing else { return }
             self.searchingSubtitles = false
@@ -1403,6 +1417,7 @@ final class PlayerViewController: NSViewController {
             self.subtitleSearchStatus = identity?.hash != nil
                 ? String(localized: "Matched with OpenSubtitles hash")
                 : ""
+            self.refreshSubtitlesPopoverIfVisible()
         }
     }
 
@@ -1837,6 +1852,16 @@ final class PlayerViewController: NSViewController {
 
     @objc private func showSubtitlesPopover(_ sender: NSButton) {
         showHudAndCancelTimer()
+        let host = presentFloatingPopover(makeSubtitlesPopoverView(), relativeTo: sender)
+        activeSubtitlesHost = host
+    }
+
+    private func refreshSubtitlesPopoverIfVisible() {
+        guard let host = activeSubtitlesHost else { return }
+        host.rootView = makeSubtitlesPopoverView()
+    }
+
+    private func makeSubtitlesPopoverView() -> SubtitleManagerPopoverView {
         let settings = (try? core.subtitleSettings()) ?? SubtitleSettingsFfi(
             preferredLangs: ["tur", "eng"],
             audioLangs: ["eng"],
@@ -1866,7 +1891,7 @@ final class PlayerViewController: NSViewController {
             subHdrPeakNits: 0,
             subUseMargins: true
         )
-        let root = SubtitleManagerPopoverView(
+        return SubtitleManagerPopoverView(
             candidates: onlineSubtitles,
             loading: searchingSubtitles,
             statusMessage: subtitleSearchStatus,
@@ -1875,8 +1900,11 @@ final class PlayerViewController: NSViewController {
             subDelay: subDelay,
             settings: settings,
             onSearchOnline: { [weak self] in
-                self?.dismissFloatingPopover()
-                self?.scheduleOnlineSubtitleLookup()
+                guard let self else { return }
+                self.searchingSubtitles = true
+                self.subtitleSearchStatus = String(localized: "Searching online subtitles…")
+                self.refreshSubtitlesPopoverIfVisible()
+                self.scheduleOnlineSubtitleLookup()
             },
             onSelectOnline: { [weak self] cand in
                 self?.dismissFloatingPopover()
@@ -1902,7 +1930,7 @@ final class PlayerViewController: NSViewController {
                 }
                 try? self.session?.setSubtitleTrack(id: id)
                 self.tracks = (try? self.session?.tracks()) ?? []
-                self.dismissFloatingPopover()
+                self.refreshSubtitlesPopoverIfVisible()
             },
             onSelectSecondary: { [weak self] id in
                 guard let self else { return }
@@ -1914,13 +1942,15 @@ final class PlayerViewController: NSViewController {
                     self.sessionSecondarySubLang = nil
                 }
                 try? self.session?.setSecondarySubtitleTrack(id: id)
-                self.dismissFloatingPopover()
+                self.refreshSubtitlesPopoverIfVisible()
             },
             onAdjustDelay: { [weak self] delta in
                 self?.adjustSubDelay(delta)
+                self?.refreshSubtitlesPopoverIfVisible()
             },
             onResetDelay: { [weak self] in
                 self?.setSubDelay(0)
+                self?.refreshSubtitlesPopoverIfVisible()
             },
             onUpdateStyle: { [weak self] updated in
                 guard let self else { return }
@@ -1937,13 +1967,13 @@ final class PlayerViewController: NSViewController {
                 }
             }
         )
-        presentFloatingPopover(root, relativeTo: sender)
     }
 
     /// Presents a Liquid Glass card inside `view` anchored above `anchor` and
     /// clamped within `[leading + 20, trailing - 20]` so it never overflows off-screen.
-    private func presentFloatingPopover<V: View>(_ rootView: V, relativeTo anchor: NSView) {
-        guard !isScreenLocked else { return }
+    @discardableResult
+    private func presentFloatingPopover<V: View>(_ rootView: V, relativeTo anchor: NSView) -> NSHostingView<V>? {
+        guard !isScreenLocked else { return nil }
         dismissFloatingPopover()
 
         let backdrop = ClickCatcherView()
@@ -1982,10 +2012,12 @@ final class PlayerViewController: NSViewController {
         ])
         popoverBackdrop = backdrop
         popoverCard = card
+        return host
     }
 
     private func dismissFloatingPopover() {
         flushPendingPersistedSettings()
+        activeSubtitlesHost = nil
         popoverCard?.removeFromSuperview()
         popoverBackdrop?.removeFromSuperview()
         popoverCard = nil
@@ -2350,11 +2382,13 @@ final class PlayerViewController: NSViewController {
         menu.addItem(tmHolder)
 
         // Shaders submenu
+        let currentShader = prefs?.shaderPreset ?? "none"
         let shaderMenu = NSMenu()
         for (label, preset) in [(String(localized: "Off"), "none"), (String(localized: "Adaptive Sharpen (CAS)"), "sharpen")] {
             let item = NSMenuItem(title: label, action: #selector(selectShaderPreset(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = preset
+            item.state = currentShader == preset ? .on : .off
             shaderMenu.addItem(item)
         }
         let shaderHolder = NSMenuItem(title: String(localized: "Upscaling / Shader"), action: nil, keyEquivalent: "")
@@ -2362,12 +2396,14 @@ final class PlayerViewController: NSViewController {
         menu.addItem(shaderHolder)
 
         // HDR Target Peak submenu
+        let currentPeak = prefs?.hdrTargetPeak
         let peakMenu = NSMenu()
         for nits: UInt32? in [nil, 400, 600, 1000, 1600] {
             let title = nits.map { "\($0) nits" } ?? String(localized: "Auto")
             let item = NSMenuItem(title: title, action: #selector(selectHdrPeak(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = nits.map { NSNumber(value: $0) }
+            item.state = currentPeak == nits ? .on : .off
             peakMenu.addItem(item)
         }
         let peakHolder = NSMenuItem(title: String(localized: "HDR Target Peak"), action: nil, keyEquivalent: "")
@@ -2392,6 +2428,10 @@ final class PlayerViewController: NSViewController {
             item.target = self
             item.tag = mins
             if mins == -1 && sleepEndOfEpisode {
+                item.state = .on
+            } else if mins > 0 && !sleepEndOfEpisode && activeSleepMinutes == mins {
+                item.state = .on
+            } else if mins == 0 && !sleepEndOfEpisode && activeSleepMinutes == 0 {
                 item.state = .on
             }
             sleepMenu.addItem(item)
@@ -2462,6 +2502,7 @@ final class PlayerViewController: NSViewController {
         sleepTimerTask = nil
         let mins = sender.tag
         if mins == -1 {
+            activeSleepMinutes = 0
             sleepEndOfEpisode = true
             nextCountdownTask?.cancel()
             setNextCardVisible(false)
@@ -2470,13 +2511,16 @@ final class PlayerViewController: NSViewController {
         }
         sleepEndOfEpisode = false
         guard mins > 0 else {
+            activeSleepMinutes = 0
             showStatus(String(localized: "Sleep timer off"))
             return
         }
+        activeSleepMinutes = mins
         showStatus(String(localized: "Sleep timer set for \(mins) min"))
         sleepTimerTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(mins * 60))
             guard let self, !Task.isCancelled, !self.closing else { return }
+            self.activeSleepMinutes = 0
             self.close()
         }
     }
@@ -2786,6 +2830,7 @@ final class PlayerViewController: NSViewController {
             scrollAccumY = 0
             return
         }
+        guard event.momentumPhase == [] else { return }
         guard !isScreenLocked, !closing, popoverBackdrop == nil else { return }
         let prefs = currentPrefs()
         guard prefs?.trackpadGesturesEnabled ?? true else { return }
@@ -2800,8 +2845,11 @@ final class PlayerViewController: NSViewController {
                 let steps = Int(scrollAccumX / threshold)
                 scrollAccumX -= CGFloat(steps) * threshold
                 let exact = prefs?.exactSeek ?? true
-                try? session?.seekRelativeMode(seconds: Double(steps) * 2.0, exact: exact)
+                let deltaS = Double(steps) * 2.0
+                removeLiveTextOverlay()
+                try? session?.seekRelativeMode(seconds: deltaS, exact: exact)
                 saveProgressIfNeeded(force: false)
+                showStatus(deltaS >= 0 ? "+\(Int(deltaS))s" : "\(Int(deltaS))s", autoHideAfter: 1.2)
             }
         } else if abs(dy) > 0.1 {
             if event.hasPreciseScrollingDeltas {
@@ -2939,9 +2987,9 @@ final class PlayerViewController: NSViewController {
         let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             Task { @MainActor in
                 guard let self, !self.closing, !self.paused,
-                      (try? self.core.playerPreferences())?.pauseOnAudioOutputChange ?? true
+                      self.currentPrefs()?.pauseOnAudioOutputChange ?? true
                 else { return }
-                try? self.session?.togglePause()
+                try? self.session?.setPaused(paused: true)
                 self.showStatus(String(localized: "Paused — audio output changed"))
             }
         }
@@ -3175,6 +3223,10 @@ final class PlayerViewController: NSViewController {
     func closeFromPiP() { close() }
 
     // MARK: - Gamepad Control Helpers
+
+    func gamepadShowStatus(_ message: String) {
+        showStatus(message)
+    }
 
     func gamepadTogglePause() {
         togglePause()

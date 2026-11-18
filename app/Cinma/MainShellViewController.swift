@@ -182,6 +182,18 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         ) { [weak self] _ in
             Task { @MainActor in self?.syncNavTabsVisibility() }
         }
+        NotificationCenter.default.addObserver(
+            forName: .cinmaThemeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.updateTabButtonStyles()
+                self.refreshProfileBadge()
+                self.homeVC.reloadLocalState()
+            }
+        }
         syncIptvTabVisibility()
         syncNavTabsVisibility()
         refreshProfileBadge()

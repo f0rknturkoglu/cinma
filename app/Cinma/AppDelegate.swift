@@ -148,7 +148,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return self?.shell
             }
             GamepadController.shared.onStatus = { [weak self] msg in
-                self?.shell?.showStatus(msg)
+                if let player = (self?.window?.contentViewController as? PlayerViewController) ?? self?.pipPlayerVC {
+                    player.gamepadShowStatus(msg)
+                } else {
+                    self?.shell?.showStatus(msg)
+                }
             }
             GamepadController.shared.configure(core: core)
             rebuildMenu()

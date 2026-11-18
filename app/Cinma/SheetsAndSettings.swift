@@ -77,11 +77,16 @@ struct AddonManagerView: View {
                         }
 
                         Button(role: .destructive) {
-                            try? core.removeAddon(id: addon.id)
-                            reload()
+                            do {
+                                try core.removeAddon(id: addon.id)
+                                reload()
+                            } catch {
+                                status = FriendlyError.explain(error)
+                            }
                         } label: {
                             Image(systemName: "trash")
                         }
+                        .help(String(localized: "Remove Addon"))
                     }
                     .padding(.vertical, 4)
                 }
@@ -237,9 +242,13 @@ struct ProfilePickerView: View {
                     Button(String(localized: "Save PIN")) { savePin(editing) }
                     if editing.hasPin {
                         Button(String(localized: "Remove PIN"), role: .destructive) {
-                            try? core.setProfilePin(profileId: editing.id, pin: nil)
-                            pinEditProfile = nil
-                            reload()
+                            do {
+                                try core.setProfilePin(profileId: editing.id, pin: nil)
+                                pinEditProfile = nil
+                                reload()
+                            } catch {
+                                errorText = FriendlyError.explain(error)
+                            }
                         }
                     }
                     Button(String(localized: "Cancel")) { pinEditProfile = nil }
@@ -727,6 +736,7 @@ struct SettingsView: View {
             ToolbarItem(placement: .confirmationAction) {
                 Button(String(localized: "Close")) {
                     saveSubSettings()
+                    savePlayerPrefs()
                     stopRecording()
                     onDismiss()
                 }
@@ -734,6 +744,11 @@ struct SettingsView: View {
         }
         .frame(width: 680, height: 520)
         .onAppear(perform: reload)
+        .onDisappear {
+            saveSubSettings()
+            savePlayerPrefs()
+            stopRecording()
+        }
         .onDisappear { stopRecording() }
     }
 
@@ -1519,8 +1534,13 @@ struct SettingsView: View {
             Section(String(localized: "Key Bindings")) {
                 ForEach(commands, id: \.id) { cmd in
                     HStack {
-                        Text(cmd.id)
-                            .font(.system(.body, design: .monospaced))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(Self.commandTitle(for: cmd.id))
+                                .font(.body)
+                            Text(cmd.id)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
                         Spacer()
                         if recordingCommandId == cmd.id {
                             Text(String(localized: "Press shortcut… (Esc cancels)"))
@@ -1541,16 +1561,86 @@ struct SettingsView: View {
                                 editingCommandId = cmd.id
                                 keyDraft = cmd.key ?? ""
                             }
+                            if cmd.key != nil {
+                                Button(String(localized: "Clear")) {
+                                    do {
+                                        try core.setKeyBinding(id: cmd.id, combo: nil)
+                                        reload()
+                                    } catch {
+                                        status = FriendlyError.explain(error)
+                                    }
+                                }
+                            }
                             Button(String(localized: "Reset")) {
-                                try? core.resetKeyBinding(id: cmd.id)
-                                reload()
+                                do {
+                                    try core.resetKeyBinding(id: cmd.id)
+                                    reload()
+                                } catch {
+                                    status = FriendlyError.explain(error)
+                                }
                             }
                         }
                     }
                 }
             }
+
+            Section(String(localized: "Game Controller Mapping")) {
+                LabeledContent(String(localized: "A (Confirm / Play · Pause)"), value: String(localized: "Activate focused item or toggle pause"))
+                LabeledContent(String(localized: "B (Back / Cancel)"), value: String(localized: "Close sheet, exit fullscreen, or go back"))
+                LabeledContent(String(localized: "X (Skip / Play)"), value: String(localized: "Skip intro/outro, show HUD, or preview"))
+                LabeledContent(String(localized: "Y (Subtitles / Settings)"), value: String(localized: "Cycle subtitle track or open Settings"))
+                LabeledContent(String(localized: "LB / RB (Bumpers)"), value: String(localized: "Jump backward/forward by step or switch tabs"))
+                LabeledContent(String(localized: "LT / RT (Triggers)"), value: String(localized: "Previous or next chapter"))
+                LabeledContent(String(localized: "Menu"), value: String(localized: "Focus Search or toggle player HUD"))
+            }
         }
         .formStyle(.grouped)
+    }
+
+    private static func commandTitle(for id: String) -> String {
+        switch id {
+        case "app.about": return String(localized: "About Cinma")
+        case "app.hide": return String(localized: "Hide Cinma")
+        case "app.hide_others": return String(localized: "Hide Others")
+        case "app.show_all": return String(localized: "Show All")
+        case "app.quit": return String(localized: "Quit Cinma")
+        case "file.open": return String(localized: "Open File…")
+        case "file.open_url": return String(localized: "Open URL or Magnet…")
+        case "edit.undo": return String(localized: "Undo")
+        case "edit.redo": return String(localized: "Redo")
+        case "edit.cut": return String(localized: "Cut")
+        case "edit.copy": return String(localized: "Copy")
+        case "edit.paste": return String(localized: "Paste")
+        case "edit.select_all": return String(localized: "Select All")
+        case "window.minimize": return String(localized: "Minimize Window")
+        case "window.close": return String(localized: "Close Window")
+        case "player.toggle_pause": return String(localized: "Play / Pause")
+        case "player.seek_back": return String(localized: "Seek Backward")
+        case "player.seek_forward": return String(localized: "Seek Forward")
+        case "player.frame_step": return String(localized: "Step Forward One Frame")
+        case "player.frame_back_step": return String(localized: "Step Backward One Frame")
+        case "player.close": return String(localized: "Exit Player / Fullscreen")
+        case "player.fullscreen": return String(localized: "Toggle Fullscreen")
+        case "player.toggle_subtitles": return String(localized: "Show / Hide Subtitles")
+        case "player.cycle_subtitle": return String(localized: "Cycle Subtitle Track")
+        case "player.cycle_audio": return String(localized: "Cycle Audio Track")
+        case "player.screenshot": return String(localized: "Save Screenshot")
+        case "player.stats": return String(localized: "Toggle Playback Stats")
+        case "player.ab_loop": return String(localized: "A–B Loop")
+        case "player.speed_up": return String(localized: "Increase Playback Speed")
+        case "player.speed_down": return String(localized: "Decrease Playback Speed")
+        case "player.volume_up": return String(localized: "Volume Up")
+        case "player.volume_down": return String(localized: "Volume Down")
+        case "player.mute": return String(localized: "Mute / Unmute")
+        case "player.next_episode": return String(localized: "Next Episode")
+        case "player.sub_seek_prev": return String(localized: "Seek to Previous Subtitle")
+        case "player.sub_seek_next": return String(localized: "Seek to Next Subtitle")
+        case "player.search_dialogue": return String(localized: "Search Dialogue…")
+        case "player.live_text": return String(localized: "Scan Frame Text (Live Text)")
+        case "player.screen_lock": return String(localized: "Lock / Unlock Player Screen")
+        case "addon.install": return String(localized: "Install Addon Deep Link")
+        default: return id
+        }
     }
 
     private var backupTab: some View {
@@ -1824,11 +1914,17 @@ struct SettingsView: View {
         [
             SettingsSearchItem(id: "tmdb", title: String(localized: "Metadata (TMDB & Language)"), section: String(localized: "Metadata"), tab: .general, keywords: "tmdb api key language tr en"),
             SettingsSearchItem(id: "ui_lang", title: String(localized: "App Interface Language"), section: String(localized: "Metadata"), tab: .general, keywords: "language turkish english tr en"),
+            SettingsSearchItem(id: "spotlight", title: String(localized: "Index Library in macOS Spotlight"), section: String(localized: "Integrations"), tab: .general, keywords: "spotlight search shortcuts siri index"),
+            SettingsSearchItem(id: "calendar", title: String(localized: "Upcoming Episode Notifications"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "calendar notification release alert week"),
             SettingsSearchItem(id: "cw_split", title: String(localized: "Split Continue Watching into Movies & Series"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "continue watching movies series split home"),
+            SettingsSearchItem(id: "cw_hide", title: String(localized: "Hide Nearly Finished Items in Continue Watching"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "continue watching hide caught up 85"),
             SettingsSearchItem(id: "cw_top", title: String(localized: "Show Continue Watching Above Trending"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "continue watching home order"),
+            SettingsSearchItem(id: "addon_rails", title: String(localized: "Addon Catalog Rails on Home"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "home catalog rails limit pinned shelves"),
+            SettingsSearchItem(id: "hide_watched", title: String(localized: "Hide Watched & Unreleased in Catalogs"), section: String(localized: "Catalog & Episode Browsing"), tab: .general, keywords: "hide watched unreleased catalog discover"),
+            SettingsSearchItem(id: "poster_style", title: String(localized: "Poster Scale, Radius & Badges"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "poster size scale radius badge imdb watched library"),
             SettingsSearchItem(id: "spoilers", title: String(localized: "Hide Episode Spoilers (Blur Unwatched)"), section: String(localized: "Catalog & Episode Browsing"), tab: .general, keywords: "spoiler blur unwatched episode"),
             SettingsSearchItem(id: "quick_play", title: String(localized: "Enable One-Click Quick Play (Hero & Context Menu)"), section: String(localized: "Catalog & Episode Browsing"), tab: .general, keywords: "quick play hero one click best stream"),
-            SettingsSearchItem(id: "theme", title: String(localized: "Accent Color"), section: String(localized: "Theme, Glass & Navigation"), tab: .general, keywords: "theme accent amber crimson cyan glass"),
+            SettingsSearchItem(id: "theme", title: String(localized: "Accent Color & Liquid Glass"), section: String(localized: "Theme, Glass & Navigation"), tab: .general, keywords: "theme accent amber crimson cyan emerald violet glass tabs"),
             SettingsSearchItem(id: "hold_boost", title: String(localized: "Hold Space / Mouse for Speed Boost"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "hold 2x speed boost space mouse"),
             SettingsSearchItem(id: "trackpad", title: String(localized: "Trackpad Two-Finger Seek & Volume Gestures"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "trackpad scroll swipe gesture volume seek"),
             SettingsSearchItem(id: "haptic", title: String(localized: "Force Touch Haptic Feedback"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "haptic vibrate force touch feedback"),
@@ -1839,11 +1935,12 @@ struct SettingsView: View {
             SettingsSearchItem(id: "screenshot_sub", title: String(localized: "Include Subtitles in Screenshots"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "screenshot png subtitle include"),
             SettingsSearchItem(id: "ext_player", title: String(localized: "External Player Mode"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "external player iina infuse vlc mpv url scheme"),
             SettingsSearchItem(id: "hdr", title: String(localized: "Enable macOS EDR HDR Output"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "hdr edr tone mapping bt.2390 peak"),
-            SettingsSearchItem(id: "hwdec", title: String(localized: "Hardware Decoding"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "hwdec videotoolbox decoder mpv"),
+            SettingsSearchItem(id: "hwdec", title: String(localized: "Hardware Decoding"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "hwdec videotoolbox decoder mpv scaler buffer"),
             SettingsSearchItem(id: "audio_norm", title: String(localized: "Audio Normalization (Dynaudnorm)"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "audio normalize stereo downmix volume boost"),
-            SettingsSearchItem(id: "skip", title: String(localized: "Auto-Skip Intro"), section: String(localized: "Automation & Streams"), tab: .playback, keywords: "intro outro recap skip autoplay next episode"),
-            SettingsSearchItem(id: "sub_langs", title: String(localized: "Preferred Languages"), section: String(localized: "Languages & Search"), tab: .subtitles, keywords: "subtitle audio language dual"),
-            SettingsSearchItem(id: "sub_style", title: String(localized: "SRT Appearance"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "font size color outline background opacity position bold"),
+            SettingsSearchItem(id: "skip", title: String(localized: "Auto-Skip Intro / Outro & Countdown"), section: String(localized: "Automation & Streams"), tab: .playback, keywords: "intro outro recap skip autoplay next episode sleep timer"),
+            SettingsSearchItem(id: "stream_sort", title: String(localized: "Stream Sort, Debrid Only & Blocked Keywords"), section: String(localized: "Automation & Streams"), tab: .playback, keywords: "stream sort debrid blocked keyword timeout addon"),
+            SettingsSearchItem(id: "sub_langs", title: String(localized: "Preferred Languages & OpenSubtitles"), section: String(localized: "Languages & Search"), tab: .subtitles, keywords: "subtitle audio language dual sdh opensubtitles"),
+            SettingsSearchItem(id: "sub_style", title: String(localized: "SRT Appearance, Font & Scale"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "font size color outline background opacity position bold scale"),
             SettingsSearchItem(id: "sub_hdr_peak", title: String(localized: "HDR Subtitle Peak"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "hdr subtitle brightness nits peak"),
             SettingsSearchItem(id: "sub_margins", title: String(localized: "Place Subtitles in Black Bars (Margins)"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "letterbox margin black bar subtitle placement"),
             SettingsSearchItem(id: "vpn", title: String(localized: "VPN Interface Binding"), section: String(localized: "Torrent & VPN"), tab: .downloads, keywords: "vpn interface utun kill switch torrent speed cache"),
@@ -1853,8 +1950,8 @@ struct SettingsView: View {
             SettingsSearchItem(id: "local_folders", title: String(localized: "Local Media Folders"), section: String(localized: "Local Media Folders"), tab: .downloads, keywords: "local folder scanner library mkv mp4 nas"),
             SettingsSearchItem(id: "local_socket", title: String(localized: "Local Control Socket (Opt-In)"), section: String(localized: "Local Control Socket (Opt-In)"), tab: .downloads, keywords: "unix socket cinma.sock mcp json rpc api"),
             SettingsSearchItem(id: "anime_filler", title: String(localized: "Auto-Skip Anime Filler Episodes (MyAnimeList)"), section: String(localized: "Automation & Streams"), tab: .playback, keywords: "anime filler mal jikan auto skip"),
-            SettingsSearchItem(id: "shortcuts", title: String(localized: "Keyboard Shortcuts"), section: String(localized: "Shortcuts"), tab: .shortcuts, keywords: "keyboard shortcut keybinding hotkey frame step"),
-            SettingsSearchItem(id: "backup", title: String(localized: "Backup & Sync"), section: String(localized: "Backup"), tab: .backup, keywords: "export import json backup restore"),
+            SettingsSearchItem(id: "shortcuts", title: String(localized: "Keyboard Shortcuts & Controller Mapping"), section: String(localized: "Shortcuts"), tab: .shortcuts, keywords: "keyboard shortcut keybinding hotkey frame step gamepad controller"),
+            SettingsSearchItem(id: "backup", title: String(localized: "Backup & Sync"), section: String(localized: "Backup"), tab: .backup, keywords: "export import sqlite backup restore"),
         ]
     }
 

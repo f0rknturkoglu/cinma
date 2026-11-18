@@ -109,8 +109,13 @@ enum CinemaTheme {
     private static let reduceGlassKey = "cinma.reduceGlassEffect"
 
     static func syncThemePreferences(from prefs: PlayerPreferencesFfi) {
+        let prevAccent = UserDefaults.standard.string(forKey: themeAccentKey)
+        let prevReduce = UserDefaults.standard.bool(forKey: reduceGlassKey)
         UserDefaults.standard.set(prefs.themeAccent, forKey: themeAccentKey)
         UserDefaults.standard.set(prefs.reduceGlassEffect, forKey: reduceGlassKey)
+        if prevAccent != prefs.themeAccent || prevReduce != prefs.reduceGlassEffect {
+            NotificationCenter.default.post(name: .cinmaThemeChanged, object: nil)
+        }
     }
 
     /// Warm-neutral near-black base (§5.15).

@@ -343,13 +343,21 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
     }
 
     @objc private func pauseClicked(_ sender: NSButton) {
-        try? core.pauseDownload(id: Int64(sender.tag))
-        reload()
+        do {
+            try core.pauseDownload(id: Int64(sender.tag))
+            reload()
+        } catch {
+            usageLabel.stringValue = FriendlyError.explain(error)
+        }
     }
 
     @objc private func resumeClicked(_ sender: NSButton) {
-        try? core.resumeDownload(id: Int64(sender.tag))
-        reload()
+        do {
+            try core.resumeDownload(id: Int64(sender.tag))
+            reload()
+        } catch {
+            usageLabel.stringValue = FriendlyError.explain(error)
+        }
     }
 
     @objc private func removeClicked(_ sender: NSButton) {
@@ -357,8 +365,12 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
         guard let info = rowsById[id] else { return }
         guard let path = info.filePath, FileManager.default.fileExists(atPath: path) else {
             // Unfinished: its partial data is useless, remove it with the row.
-            try? core.removeDownload(id: id, deleteData: true)
-            reload()
+            do {
+                try core.removeDownload(id: id, deleteData: true)
+                reload()
+            } catch {
+                usageLabel.stringValue = FriendlyError.explain(error)
+            }
             return
         }
         // Finished files belong to the user: ask, and only ever use the Trash.
@@ -371,16 +383,20 @@ final class DownloadsViewController: NSViewController, NSTableViewDelegate {
         alert.buttons[1].hasDestructiveAction = true
         let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
             guard let self else { return }
-            switch response {
-            case .alertFirstButtonReturn:
-                try? self.core.removeDownload(id: id, deleteData: false)
-            case .alertSecondButtonReturn:
-                try? self.core.removeDownload(id: id, deleteData: false)
-                NSWorkspace.shared.recycle([URL(fileURLWithPath: path)])
-            default:
-                return
+            do {
+                switch response {
+                case .alertFirstButtonReturn:
+                    try self.core.removeDownload(id: id, deleteData: false)
+                case .alertSecondButtonReturn:
+                    try self.core.removeDownload(id: id, deleteData: false)
+                    NSWorkspace.shared.recycle([URL(fileURLWithPath: path)])
+                default:
+                    return
+                }
+                self.reload()
+            } catch {
+                self.usageLabel.stringValue = FriendlyError.explain(error)
             }
-            self.reload()
         }
         if let window = view.window {
             alert.beginSheetModal(for: window, completionHandler: handle)

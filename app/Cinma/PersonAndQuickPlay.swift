@@ -117,7 +117,7 @@ enum QuickPlayHelper {
                 let epNum = targetEpisode?.episode ?? targetEpisode?.number
                 let epSeason = targetEpisode?.season ?? seasonOverride
                 let subtitle = targetEpisode.map {
-                    "S\(epSeason ?? 1) · B\(epNum ?? 0) — \($0.title ?? "")"
+                    "\(String(localized: "S\(epSeason ?? 1) · E\(epNum ?? 0)")) — \($0.title ?? "")"
                 }
 
                 let parsed = best.parsed

@@ -407,7 +407,7 @@ final class ContinueWatchingCardItem: NSCollectionViewItem {
         let remainingMin = max(1, Int(((entry.durationS - entry.positionS) / 60).rounded()))
         let prefix: String
         if let s = entry.season, let e = entry.episode {
-            prefix = "S\(s) · B\(e)"
+            prefix = String(localized: "S\(s) · E\(e)")
         } else {
             prefix = String(localized: "Movie")
         }

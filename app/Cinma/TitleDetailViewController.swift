@@ -726,7 +726,7 @@ final class TitleDetailViewController: NSViewController {
         renderEpisodes()
         let s = ep.season ?? selectedSeason
         let e = ep.episode ?? ep.number ?? 0
-        let label = "S\(s) · B\(e) — \(ep.title ?? "")"
+        let label = "\(String(localized: "S\(s) · E\(e)")) — \(ep.title ?? "")"
         fetchStreams(videoId: ep.id, title: label, season: Int64(s), episode: Int64(e))
     }
 
@@ -1468,7 +1468,11 @@ final class TitleDetailViewController: NSViewController {
         let mediaType = meta?.mediaType ?? preview.mediaType
         let ep = selectedEpisode
         let videoId = ep?.id ?? metaId
-        let subtitle = ep.map { "S\($0.season ?? selectedSeason) · B\($0.episode ?? $0.number ?? 0) — \($0.title ?? "")" }
+        let subtitle = ep.map {
+            let s = $0.season ?? selectedSeason
+            let e = $0.episode ?? $0.number ?? 0
+            return "\(String(localized: "S\(s) · E\(e)")) — \($0.title ?? "")"
+        }
         let existingProgress = try? core.getWatchProgress(videoId: videoId)
         let savedResume = (existingProgress?.watched == false && (existingProgress?.positionS ?? 0) > 10)
             ? existingProgress?.positionS

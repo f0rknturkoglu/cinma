@@ -236,7 +236,7 @@ final class GamepadController {
     private func handleShoulder(forward: Bool) {
         guard enabled else { return }
         if let player = activePlayer?() {
-            player.gamepadSeek(seconds: forward ? 30 : -30)
+            player.gamepadSeekStep(forward: forward)
         } else {
             activeShell?()?.gamepadStepTab(delta: forward ? 1 : -1)
         }
