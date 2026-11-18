@@ -1004,6 +1004,10 @@ pub struct SubtitleSettingsFfi {
     pub prefer_embedded: bool,
     pub forced_when_native_audio: bool,
     pub hide_sdh: bool,
+    pub sub_scale_pct: u32,
+    pub ass_scale_with_window: bool,
+    pub enable_opensubtitles: bool,
+    pub enable_addon_subtitles: bool,
 }
 
 impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
@@ -1030,6 +1034,10 @@ impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
             prefer_embedded: s.prefer_embedded,
             forced_when_native_audio: s.forced_when_native_audio,
             hide_sdh: s.hide_sdh,
+            sub_scale_pct: s.sub_scale_pct,
+            ass_scale_with_window: s.ass_scale_with_window,
+            enable_opensubtitles: s.enable_opensubtitles,
+            enable_addon_subtitles: s.enable_addon_subtitles,
         }
     }
 }
@@ -1058,6 +1066,10 @@ impl From<SubtitleSettingsFfi> for cinma_core::SubtitleSettings {
             prefer_embedded: s.prefer_embedded,
             forced_when_native_audio: s.forced_when_native_audio,
             hide_sdh: s.hide_sdh,
+            sub_scale_pct: s.sub_scale_pct,
+            ass_scale_with_window: s.ass_scale_with_window,
+            enable_opensubtitles: s.enable_opensubtitles,
+            enable_addon_subtitles: s.enable_addon_subtitles,
         }
     }
 }
@@ -1132,6 +1144,17 @@ pub struct PlayerPreferencesFfi {
     pub cw_hide_caught_up: bool,
     pub custom_sleep_minutes: u32,
     pub show_p2p_speed_chip: bool,
+    pub prefer_original_titles: bool,
+    pub tmdb_image_lang: String,
+    pub theme_accent: String,
+    pub reduce_glass_effect: bool,
+    pub backdrop_dim_pct: u32,
+    pub hidden_nav_tabs: Vec<String>,
+    pub external_player_enabled: bool,
+    pub external_player_path: String,
+    pub confirm_stremio_deeplink: bool,
+    pub pause_scrobble_on_pause: bool,
+    pub mal_count_rewatches: bool,
 }
 
 impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
@@ -1205,6 +1228,17 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             cw_hide_caught_up: p.cw_hide_caught_up,
             custom_sleep_minutes: p.custom_sleep_minutes,
             show_p2p_speed_chip: p.show_p2p_speed_chip,
+            prefer_original_titles: p.prefer_original_titles,
+            tmdb_image_lang: p.tmdb_image_lang,
+            theme_accent: p.theme_accent,
+            reduce_glass_effect: p.reduce_glass_effect,
+            backdrop_dim_pct: p.backdrop_dim_pct,
+            hidden_nav_tabs: p.hidden_nav_tabs,
+            external_player_enabled: p.external_player_enabled,
+            external_player_path: p.external_player_path,
+            confirm_stremio_deeplink: p.confirm_stremio_deeplink,
+            pause_scrobble_on_pause: p.pause_scrobble_on_pause,
+            mal_count_rewatches: p.mal_count_rewatches,
         }
     }
 }
@@ -1280,6 +1314,17 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             cw_hide_caught_up: p.cw_hide_caught_up,
             custom_sleep_minutes: p.custom_sleep_minutes,
             show_p2p_speed_chip: p.show_p2p_speed_chip,
+            prefer_original_titles: p.prefer_original_titles,
+            tmdb_image_lang: p.tmdb_image_lang,
+            theme_accent: p.theme_accent,
+            reduce_glass_effect: p.reduce_glass_effect,
+            backdrop_dim_pct: p.backdrop_dim_pct,
+            hidden_nav_tabs: p.hidden_nav_tabs,
+            external_player_enabled: p.external_player_enabled,
+            external_player_path: p.external_player_path,
+            confirm_stremio_deeplink: p.confirm_stremio_deeplink,
+            pause_scrobble_on_pause: p.pause_scrobble_on_pause,
+            mal_count_rewatches: p.mal_count_rewatches,
         }
     }
 }
@@ -1664,6 +1709,21 @@ impl CinmaCore {
         Ok(self
             .inner
             .search_tmdb(query, media_type)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
+    pub async fn discover_by_provider(
+        &self,
+        media_type: String,
+        provider_id: u32,
+        page: u32,
+    ) -> Result<Vec<MetaPreviewInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .discover_by_provider(media_type, provider_id, page)
             .await?
             .into_iter()
             .map(Into::into)
@@ -3207,6 +3267,8 @@ impl PlaybackSession {
         box_opacity_pct: u32,
         align_x: String,
         secondary_pos: u32,
+        scale_pct: u32,
+        ass_scale_with_window: bool,
     ) -> Result<(), CinmaError> {
         Ok(self
             .inner
@@ -3225,6 +3287,8 @@ impl PlaybackSession {
                 box_opacity_pct,
                 &align_x,
                 secondary_pos,
+                scale_pct,
+                ass_scale_with_window,
             )
             .map_err(CoreError::from)?)
     }

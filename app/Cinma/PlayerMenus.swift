@@ -411,6 +411,27 @@ struct SubtitleManagerPopoverView: View {
                 .help(String(localized: "Outline color"))
             }
 
+            HStack {
+                Text(String(localized: "Scale"))
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Slider(
+                    value: Binding(
+                        get: { Double(draftSettings.subScalePct) },
+                        set: {
+                            draftSettings.subScalePct = UInt32($0.rounded())
+                            onUpdateStyle(draftSettings)
+                        }
+                    ),
+                    in: 50...150,
+                    step: 5
+                )
+                .frame(width: 165)
+                Text("\(draftSettings.subScalePct)%")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 44, alignment: .trailing)
+            }
+
             HStack(spacing: 14) {
                 Toggle(String(localized: "Bold"), isOn: $draftSettings.srtBold)
                     .toggleStyle(.switch)
@@ -422,6 +443,11 @@ struct SubtitleManagerPopoverView: View {
                     .controlSize(.small)
                     .onChange(of: draftSettings.assOverride) { _, _ in onUpdateStyle(draftSettings) }
             }
+
+            Toggle(String(localized: "Normalize ASS Scale"), isOn: $draftSettings.assScaleWithWindow)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .onChange(of: draftSettings.assScaleWithWindow) { _, _ in onUpdateStyle(draftSettings) }
 
             Toggle(String(localized: "Lift Above Controls"), isOn: $draftSettings.liftAboveControls)
                 .toggleStyle(.switch)

@@ -103,11 +103,13 @@ final class TitleDetailViewController: NSViewController {
 
         backdropView.translatesAutoresizingMaskIntoConstraints = false
 
+        let dimPct = Double((try? core.playerPreferences())?.backdropDimPct ?? 50)
+        let dimScale = CGFloat(min(1.8, max(0.35, dimPct / 50.0)))
         let leftScrim = GradientLayerView(
             colors: [
-                CinemaTheme.background.withAlphaComponent(0.95),
-                CinemaTheme.background.withAlphaComponent(0.68),
-                CinemaTheme.background.withAlphaComponent(0.28),
+                CinemaTheme.background.withAlphaComponent(min(0.98, 0.95 * dimScale)),
+                CinemaTheme.background.withAlphaComponent(min(0.95, 0.68 * dimScale)),
+                CinemaTheme.background.withAlphaComponent(min(0.85, 0.28 * dimScale)),
                 .clear,
             ],
             locations: [0, 0.25, 0.55, 0.92],
@@ -118,8 +120,8 @@ final class TitleDetailViewController: NSViewController {
         let bottomScrim = GradientLayerView(
             colors: [
                 .clear,
-                CinemaTheme.background.withAlphaComponent(0.45),
-                CinemaTheme.background.withAlphaComponent(0.88),
+                CinemaTheme.background.withAlphaComponent(min(0.92, 0.45 * dimScale)),
+                CinemaTheme.background.withAlphaComponent(min(0.98, 0.88 * dimScale)),
                 CinemaTheme.background,
             ],
             locations: [0, 0.35, 0.78, 1],
@@ -883,8 +885,25 @@ final class TitleDetailViewController: NSViewController {
         actionsRow.orientation = .horizontal
         actionsRow.spacing = 8
 
+        let detailPrefs = try? core.playerPreferences()
+        if detailPrefs?.externalPlayerEnabled == true,
+           let extUrl = item.stream.url,
+           extUrl.hasPrefix("http")
+        {
+            let extBtn = CinemaTheme.makePillButton(
+                title: String(localized: "External"),
+                symbol: "arrow.up.forward.app",
+                primary: false,
+                target: self,
+                action: #selector(openExternalStreamClicked(_:))
+            )
+            extBtn.identifier = NSUserInterfaceItemIdentifier(extUrl)
+            extBtn.heightAnchor.constraint(equalToConstant: 32).isActive = true
+            actionsRow.addArrangedSubview(extBtn)
+        }
+
         var cardViews: [NSView] = [topRow]
-        let showFilename = (try? core.playerPreferences())?.pickerShowFilename ?? true
+        let showFilename = detailPrefs?.pickerShowFilename ?? true
         if showFilename,
            let rawName = (item.stream.filename ?? item.stream.title)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !rawName.isEmpty
@@ -990,6 +1009,50 @@ final class TitleDetailViewController: NSViewController {
             sender.isEnabled = false
         } catch {
             streamStatusLabel.stringValue = FriendlyError.explain(error)
+        }
+    }
+
+    @objc private func openExternalStreamClicked(_ sender: NSButton) {
+        guard let urlStr = sender.identifier?.rawValue,
+              let url = URL(string: urlStr)
+        else { return }
+        let customPath = (try? core.playerPreferences())?.externalPlayerPath
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let candidates = [
+            customPath,
+            "/Applications/IINA.app/Contents/MacOS/iina-cli",
+            "/opt/homebrew/bin/mpv",
+            "/usr/local/bin/mpv",
+        ].filter { !$0.isEmpty }
+        if let binary = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: binary)
+            proc.arguments = [urlStr]
+            do {
+                try proc.run()
+                let appName = URL(fileURLWithPath: binary).lastPathComponent
+                streamStatusLabel.stringValue = String(localized: "Opened stream in \(appName)")
+                return
+            } catch {
+                streamStatusLabel.stringValue = FriendlyError.explain(error)
+                return
+            }
+        }
+        if !customPath.isEmpty && customPath.hasSuffix(".app"),
+           FileManager.default.fileExists(atPath: customPath)
+        {
+            NSWorkspace.shared.open(
+                [url],
+                withApplicationAt: URL(fileURLWithPath: customPath),
+                configuration: NSWorkspace.OpenConfiguration()
+            )
+            streamStatusLabel.stringValue = String(localized: "Opened stream in external player")
+            return
+        }
+        if NSWorkspace.shared.open(url) {
+            streamStatusLabel.stringValue = String(localized: "Opened stream in external player")
+        } else {
+            streamStatusLabel.stringValue = String(localized: "No external mpv/IINA binary found. Configure its path in Settings.")
         }
     }
 

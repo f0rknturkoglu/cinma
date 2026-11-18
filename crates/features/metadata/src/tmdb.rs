@@ -198,9 +198,20 @@ impl TmdbClient {
         tmdb_id: i64,
         language: &str,
     ) -> Result<RichMeta, MetadataError> {
+        self.movie_details_with_opts(api_key, tmdb_id, language, false, None)
+            .await
+    }
+
+    pub async fn movie_details_with_opts(
+        &self,
+        api_key: &str,
+        tmdb_id: i64,
+        language: &str,
+        prefer_original: bool,
+        image_lang: Option<&str>,
+    ) -> Result<RichMeta, MetadataError> {
         let id_str = tmdb_id.to_string();
-        let lang_short = language.split('-').next().unwrap_or("en");
-        let include_img_lang = format!("{lang_short},en,null");
+        let (logo_lang, include_img_lang) = resolve_image_lang(language, image_lang);
         let url = self.endpoint(
             &["movie", &id_str],
             &[
@@ -214,7 +225,7 @@ impl TmdbClient {
         let imdb_id = raw.external_ids.as_ref().and_then(|e| e.imdb_id.clone());
         let canonical_id = imdb_id.clone().unwrap_or_else(|| format!("tmdb:{tmdb_id}"));
 
-        let logo = pick_logo(raw.images.as_ref(), lang_short);
+        let logo = pick_logo(raw.images.as_ref(), &logo_lang);
         let cast = raw
             .credits
             .as_ref()
@@ -237,11 +248,18 @@ impl TmdbClient {
             .as_deref()
             .and_then(|d| d.get(..4))
             .map(str::to_owned);
+        let name = if prefer_original {
+            raw.original_title
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(raw.title)
+        } else {
+            raw.title
+        };
 
         let meta = Meta {
             id: canonical_id,
             media_type: "movie".into(),
-            name: raw.title,
+            name,
             poster: image_url("w500", raw.poster_path.as_deref()),
             poster_shape: Some("poster".into()),
             background: image_url("w1280", raw.backdrop_path.as_deref()),
@@ -292,9 +310,20 @@ impl TmdbClient {
         tmdb_id: i64,
         language: &str,
     ) -> Result<RichMeta, MetadataError> {
+        self.tv_details_with_opts(api_key, tmdb_id, language, false, None)
+            .await
+    }
+
+    pub async fn tv_details_with_opts(
+        &self,
+        api_key: &str,
+        tmdb_id: i64,
+        language: &str,
+        prefer_original: bool,
+        image_lang: Option<&str>,
+    ) -> Result<RichMeta, MetadataError> {
         let id_str = tmdb_id.to_string();
-        let lang_short = language.split('-').next().unwrap_or("en");
-        let include_img_lang = format!("{lang_short},en,null");
+        let (logo_lang, include_img_lang) = resolve_image_lang(language, image_lang);
         let url = self.endpoint(
             &["tv", &id_str],
             &[
@@ -310,7 +339,7 @@ impl TmdbClient {
         let canonical_id = imdb_id.clone().unwrap_or_else(|| format!("tmdb:{tmdb_id}"));
         let poster = image_url("w500", raw.poster_path.as_deref());
 
-        let logo = pick_logo(raw.images.as_ref(), lang_short);
+        let logo = pick_logo(raw.images.as_ref(), &logo_lang);
         let cast = raw
             .credits
             .as_ref()
@@ -336,9 +365,17 @@ impl TmdbClient {
             .filter(|n| *n > 0)
             .collect();
 
+        let show_name = if prefer_original {
+            raw.original_name
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(raw.name)
+        } else {
+            raw.name
+        };
+
         let next_episode = raw.next_episode_to_air.map(|ep| UpcomingEpisode {
             show_id: canonical_id.clone(),
-            show_name: raw.name.clone(),
+            show_name: show_name.clone(),
             show_poster: poster.clone(),
             season: ep.season_number,
             episode: ep.episode_number,
@@ -358,7 +395,7 @@ impl TmdbClient {
         let meta = Meta {
             id: canonical_id,
             media_type: "series".into(),
-            name: raw.name,
+            name: show_name,
             poster,
             poster_shape: Some("poster".into()),
             background: image_url("w1280", raw.backdrop_path.as_deref()),
@@ -476,6 +513,46 @@ impl TmdbClient {
         }
         Ok(out)
     }
+
+    /// Discovers popular movies or series available on a TMDB watch provider in `region`.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn discover_by_provider(
+        &self,
+        api_key: &str,
+        media_type: &str,
+        provider_id: u32,
+        region: &str,
+        language: &str,
+        page: u32,
+        prefer_original: bool,
+    ) -> Result<Vec<MetaPreview>, MetadataError> {
+        let kind = if media_type == "series" || media_type == "tv" {
+            "tv"
+        } else {
+            "movie"
+        };
+        let fallback_type = if kind == "tv" { "series" } else { "movie" };
+        let pid = provider_id.to_string();
+        let page_str = page.max(1).to_string();
+        let url = self.endpoint(
+            &["discover", kind],
+            &[
+                ("api_key", api_key),
+                ("language", language),
+                ("watch_region", region),
+                ("with_watch_providers", &pid),
+                ("sort_by", "popularity.desc"),
+                ("page", &page_str),
+                ("include_adult", "false"),
+            ],
+        )?;
+        let resp: TmdbListResponse = self.get_json(url).await?;
+        Ok(resp
+            .results
+            .into_iter()
+            .filter_map(|r| r.into_preview_with_opts(fallback_type, prefer_original))
+            .collect())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -486,11 +563,30 @@ pub struct WatchProvider {
     pub kind: String,
 }
 
+fn resolve_image_lang(language: &str, image_lang: Option<&str>) -> (String, String) {
+    let lang_short = language.split('-').next().unwrap_or("en");
+    let pref = image_lang
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && *s != "auto");
+    match pref {
+        Some("null") => ("null".to_owned(), "null,en".to_owned()),
+        Some(custom) => (custom.to_owned(), format!("{custom},en,null")),
+        None => (lang_short.to_owned(), format!("{lang_short},en,null")),
+    }
+}
+
 fn pick_logo(images: Option<&TmdbImages>, lang_short: &str) -> Option<String> {
     let logos = &images?.logos;
-    logos
-        .iter()
-        .find(|l| l.iso_639_1.as_deref() == Some(lang_short) && !l.file_path.ends_with(".svg"))
+    let preferred = if lang_short == "null" {
+        logos
+            .iter()
+            .find(|l| l.iso_639_1.is_none() && !l.file_path.ends_with(".svg"))
+    } else {
+        logos
+            .iter()
+            .find(|l| l.iso_639_1.as_deref() == Some(lang_short) && !l.file_path.ends_with(".svg"))
+    };
+    preferred
         .or_else(|| {
             logos
                 .iter()
@@ -549,6 +645,10 @@ struct TmdbListItem {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
+    original_title: Option<String>,
+    #[serde(default)]
+    original_name: Option<String>,
+    #[serde(default)]
     poster_path: Option<String>,
     #[serde(default)]
     backdrop_path: Option<String>,
@@ -564,12 +664,28 @@ struct TmdbListItem {
 
 impl TmdbListItem {
     fn into_preview(self, fallback_type: &str) -> Option<MetaPreview> {
+        self.into_preview_with_opts(fallback_type, false)
+    }
+
+    fn into_preview_with_opts(
+        self,
+        fallback_type: &str,
+        prefer_original: bool,
+    ) -> Option<MetaPreview> {
         let media_type = match self.media_type.as_deref().unwrap_or(fallback_type) {
             "movie" => "movie",
             "tv" | "series" => "series",
             _ => return None,
         };
-        let name = self.title.or(self.name)?;
+        let name = if prefer_original {
+            self.original_title
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| self.original_name.filter(|s| !s.trim().is_empty()))
+                .or(self.title)
+                .or(self.name)?
+        } else {
+            self.title.or(self.name)?
+        };
         let release_info = self
             .release_date
             .or(self.first_air_date)
@@ -658,6 +774,8 @@ struct TmdbImageItem {
 struct TmdbMovieDetails {
     title: String,
     #[serde(default)]
+    original_title: Option<String>,
+    #[serde(default)]
     overview: Option<String>,
     #[serde(default)]
     poster_path: Option<String>,
@@ -702,6 +820,8 @@ struct TmdbNextEpisode {
 #[derive(Deserialize)]
 struct TmdbTvDetails {
     name: String,
+    #[serde(default)]
+    original_name: Option<String>,
     #[serde(default)]
     overview: Option<String>,
     #[serde(default)]

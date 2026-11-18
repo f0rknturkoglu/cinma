@@ -402,3 +402,48 @@ fn wave3_settings_debrid_only_cw_caught_up_and_disk_download_limit() {
         Some(2048 * 1024)
     );
 }
+
+#[test]
+fn wave4_lightweight_settings_persist_and_subtitle_provider_toggles_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let core: Arc<Core> = Core::open(dir.path()).unwrap();
+
+    let sub = SubtitleSettings {
+        sub_scale_pct: 120,
+        ass_scale_with_window: false,
+        enable_opensubtitles: false,
+        enable_addon_subtitles: false,
+        ..Default::default()
+    };
+    core.set_subtitle_settings(&sub).unwrap();
+    let sub_loaded = core.subtitle_settings().unwrap();
+    assert_eq!(sub_loaded, sub);
+
+    let prefs = PlayerPreferences {
+        prefer_original_titles: true,
+        tmdb_image_lang: "null".into(),
+        theme_accent: "cyan".into(),
+        reduce_glass_effect: true,
+        backdrop_dim_pct: 75,
+        hidden_nav_tabs: vec!["calendar".into(), "downloads".into()],
+        external_player_enabled: true,
+        external_player_path: "/opt/homebrew/bin/mpv".into(),
+        confirm_stremio_deeplink: false,
+        pause_scrobble_on_pause: false,
+        mal_count_rewatches: true,
+        ..Default::default()
+    };
+    core.set_player_preferences(&prefs).unwrap();
+    assert_eq!(core.player_preferences().unwrap(), prefs);
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let empty_subs = rt
+        .block_on(core.fetch_subtitles(SubtitleSearchRequest {
+            media_type: "movie".into(),
+            video_id: "tt0133093".into(),
+            imdb_id: Some("tt0133093".into()),
+            ..Default::default()
+        }))
+        .unwrap();
+    assert!(empty_subs.is_empty());
+}

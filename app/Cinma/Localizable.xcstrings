@@ -436,6 +436,16 @@
         }
       }
     },
+    "/opt/homebrew/bin/mpv": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/opt/homebrew/bin/mpv"
+          }
+        }
+      }
+    },
     "0.5×": {
       "localizations": {
         "tr": {
@@ -812,6 +822,16 @@
         }
       }
     },
+    "Accent Color": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vurgu Rengi"
+          }
+        }
+      }
+    },
     "Account Quota: %u / %u remaining · %@": {
       "localizations": {
         "en": {
@@ -906,6 +926,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "URL / yt-dlp Ekle…"
+          }
+        }
+      }
+    },
+    "Add a TMDB API key in Settings to filter by streaming platform.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yayın platformuna göre filtrelemek için Ayarlar'dan bir TMDB API anahtarı ekleyin."
           }
         }
       }
@@ -1120,6 +1150,16 @@
         }
       }
     },
+    "All Platforms": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tüm Platformlar"
+          }
+        }
+      }
+    },
     "AllDebrid": {
       "localizations": {
         "tr": {
@@ -1268,6 +1308,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Etkin oynatmayı kapatmak istediğinizden emin misiniz?"
+          }
+        }
+      }
+    },
+    "Ask Confirmation Before Installing stremio:// Addons": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "stremio:// Eklentilerini Kurmadan Önce Onay İste"
           }
         }
       }
@@ -2467,6 +2517,16 @@
         }
       }
     },
+    "Count Rewatches in MyAnimeList / AniList": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MyAnimeList / AniList Yeniden İzlemelerini Say"
+          }
+        }
+      }
+    },
     "Create": {
       "localizations": {
         "en": {
@@ -2479,6 +2539,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Oluştur"
+          }
+        }
+      }
+    },
+    "Crimson": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kızıl"
           }
         }
       }
@@ -2621,12 +2691,32 @@
         }
       }
     },
+    "Detail Backdrop Dimming": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detay Arka Plan Karartma"
+          }
+        }
+      }
+    },
     "Detailed": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Detaylı"
+          }
+        }
+      }
+    },
+    "Deutsch (de-DE)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deutsch (de-DE)"
           }
         }
       }
@@ -2848,6 +2938,16 @@
         }
       }
     },
+    "Emerald": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zümrüt"
+          }
+        }
+      }
+    },
     "Enable LAN Device Discovery & Casting": {
       "localizations": {
         "tr": {
@@ -2954,6 +3054,16 @@
         }
       }
     },
+    "Español (es-ES)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Español (es-ES)"
+          }
+        }
+      }
+    },
     "Exact Relative Seeks (vs Keyframe)": {
       "localizations": {
         "en": {
@@ -3038,6 +3148,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Harici"
+          }
+        }
+      }
+    },
+    "External Player Binary Path": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Harici Oynatıcı Uygulama Yolu"
           }
         }
       }
@@ -3302,6 +3422,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ses Ana Dille Eşleştiğinde Yalnızca Zorunlu Altyazı"
+          }
+        }
+      }
+    },
+    "Français (fr-FR)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Français (fr-FR)"
           }
         }
       }
@@ -3850,12 +3980,32 @@
         }
       }
     },
+    "Integrations & Deep Links": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entegrasyonlar ve Derin Bağlantılar"
+          }
+        }
+      }
+    },
     "Integrations…": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Entegrasyonlar…"
+          }
+        }
+      }
+    },
+    "Keep Original Movie / Series Titles": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Özgün Film / Dizi Başlıklarını Koru"
           }
         }
       }
@@ -4408,6 +4558,16 @@
         }
       }
     },
+    "Movies": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filmler"
+          }
+        }
+      }
+    },
     "Mute": {
       "localizations": {
         "en": {
@@ -4699,6 +4859,16 @@
         }
       }
     },
+    "No external mpv/IINA binary found. Configure its path in Settings.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Harici mpv/IINA yürütücüsü bulunamadı. Yolunu Ayarlar'dan yapılandırın."
+          }
+        }
+      }
+    },
     "No matches found for “%@”.": {
       "localizations": {
         "en": {
@@ -4725,6 +4895,16 @@
         }
       }
     },
+    "No titles returned for this platform.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu platform için içerik bulunamadı."
+          }
+        }
+      }
+    },
     "No upcoming episodes scheduled for shows in your library.": {
       "localizations": {
         "en": {
@@ -4737,6 +4917,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kütüphanenizdeki diziler için planlanmış yaklaşan bölüm yok."
+          }
+        }
+      }
+    },
+    "Normalize ASS Scale": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ASS Ölçeğini Normalize Et"
+          }
+        }
+      }
+    },
+    "Normalize ASS/SSA Scale with Window": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ASS/SSA Ölçeğini Pencereye Göre Normalize Et"
           }
         }
       }
@@ -5027,6 +5227,26 @@
         }
       }
     },
+    "Opened stream in %@": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yayın %@ içinde açıldı"
+          }
+        }
+      }
+    },
+    "Opened stream in external player": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yayın harici oynatıcıda açıldı"
+          }
+        }
+      }
+    },
     "Opens a movie or series in Cinma by IMDb/TMDB ID.": {
       "localizations": {
         "tr": {
@@ -5183,6 +5403,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tüm İndirmeleri Duraklat"
+          }
+        }
+      }
+    },
+    "Pause Trakt / Simkl Scrobble When Paused": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Duraklatıldığında Trakt / Simkl Scrobble Güncellemesini Durdur"
           }
         }
       }
@@ -5729,6 +5959,16 @@
         }
       }
     },
+    "Reduce Liquid Glass Transparency (Solid Surface)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Liquid Glass Şeffaflığını Azalt (Düz Yüzey)"
+          }
+        }
+      }
+    },
     "Refresh Anime ID Map": {
       "localizations": {
         "tr": {
@@ -6152,6 +6392,16 @@
         }
       }
     },
+    "Scale": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ölçek"
+          }
+        }
+      }
+    },
     "Scanning…": {
       "localizations": {
         "tr": {
@@ -6206,6 +6456,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Çevrimiçi Ara"
+          }
+        }
+      }
+    },
+    "Search OpenSubtitles API": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenSubtitles API ile Ara"
+          }
+        }
+      }
+    },
+    "Search Stremio Subtitle Addons": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stremio Altyazı Eklentilerinde Ara"
           }
         }
       }
@@ -6486,6 +6756,16 @@
         }
       }
     },
+    "Show \"Open in External Player\" Button on Direct Streams": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Doğrudan Akışlarda \"Haricide Aç\" Düğmesini Göster"
+          }
+        }
+      }
+    },
     "Show All": {
       "localizations": {
         "en": {
@@ -6498,6 +6778,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tümünü Göster"
+          }
+        }
+      }
+    },
+    "Show Calendar Tab": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Takvim Sekmesini Göster"
           }
         }
       }
@@ -6558,6 +6848,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ana Sayfada Gezinirken Discord Durumunu Göster"
+          }
+        }
+      }
+    },
+    "Show Discover Tab": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keşfet Sekmesini Göster"
+          }
+        }
+      }
+    },
+    "Show Downloads Tab": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İndirilenler Sekmesini Göster"
           }
         }
       }
@@ -7189,6 +7499,16 @@
         }
       }
     },
+    "Subtitle Scale": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazı Ölçeği"
+          }
+        }
+      }
+    },
     "Subtitle delay:": {
       "localizations": {
         "en": {
@@ -7394,6 +7714,16 @@
         }
       }
     },
+    "TMDB Poster / Logo Language": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TMDB Poster / Logo Dili"
+          }
+        }
+      }
+    },
     "TMDB key removed from Keychain": {
       "localizations": {
         "en": {
@@ -7488,6 +7818,16 @@
         }
       }
     },
+    "Textless (No Language)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yazısız (Dilsiz)"
+          }
+        }
+      }
+    },
     "The server did not respond in time. Try another source or check Addons.": {
       "localizations": {
         "en": {
@@ -7500,6 +7840,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sunucu zamanında yanıt vermedi. Başka bir kaynak deneyin veya Eklentileri kontrol edin."
+          }
+        }
+      }
+    },
+    "Theme, Glass & Navigation": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tema, Cam Efekti ve Gezinme"
           }
         }
       }
@@ -8176,6 +8526,16 @@
         }
       }
     },
+    "Violet": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mor"
+          }
+        }
+      }
+    },
     "Volume: %lld%%": {
       "localizations": {
         "tr": {
@@ -8580,6 +8940,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "yt-dlp kurulu değil. Ayarlar → İndirmeler bölümünden kurun."
+          }
+        }
+      }
+    },
+    "日本語 (ja-JP)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日本語 (ja-JP)"
           }
         }
       }

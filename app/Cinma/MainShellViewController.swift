@@ -128,7 +128,15 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         ) { [weak self] _ in
             Task { @MainActor in self?.syncIptvTabVisibility() }
         }
+        NotificationCenter.default.addObserver(
+            forName: .cinmaNavTabsChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.syncNavTabsVisibility() }
+        }
         syncIptvTabVisibility()
+        syncNavTabsVisibility()
         refreshProfileBadge()
         if let restore = pendingRestore {
             pendingRestore = nil
@@ -378,6 +386,10 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
 
     func handleProfileChanged() {
         refreshProfileBadge()
+        if let prefs = try? core.playerPreferences() {
+            CinemaTheme.syncThemePreferences(from: prefs)
+        }
+        syncNavTabsVisibility()
         homeVC.refreshAll()
         discoverVC.reloadCatalogList()
         libraryVC.reload()
@@ -490,6 +502,24 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         if !enabled {
             if activeTab == .liveTv { switchToTab(.home) }
             liveTvVC = nil
+        }
+    }
+
+    private func syncNavTabsVisibility() {
+        let hidden = Set((try? core.playerPreferences())?.hiddenNavTabs ?? [])
+        let hideable: [(Tab, String)] = [
+            (.discover, "discover"),
+            (.calendar, "calendar"),
+            (.downloads, "downloads"),
+        ]
+        for (tab, key) in hideable {
+            if let btn = tabButtons.first(where: { $0.tag == tab.rawValue }) {
+                btn.isHidden = hidden.contains(key)
+            }
+        }
+        profileButton.layer?.backgroundColor = CinemaTheme.accent.cgColor
+        if hideable.contains(where: { $0.0 == activeTab && hidden.contains($0.1) }) {
+            switchToTab(.home)
         }
     }
 

@@ -517,7 +517,11 @@ struct SettingsView: View {
         offByDefault: false,
         preferEmbedded: false,
         forcedWhenNativeAudio: false,
-        hideSdh: false
+        hideSdh: false,
+        subScalePct: 100,
+        assScaleWithWindow: true,
+        enableOpensubtitles: true,
+        enableAddonSubtitles: true
     )
     @State private var playerPrefs = PlayerPreferencesFfi(
         exactSeek: true,
@@ -587,7 +591,18 @@ struct SettingsView: View {
         weekStartsMonday: true,
         cwHideCaughtUp: false,
         customSleepMinutes: 45,
-        showP2pSpeedChip: true
+        showP2pSpeedChip: true,
+        preferOriginalTitles: false,
+        tmdbImageLang: "auto",
+        themeAccent: "amber",
+        reduceGlassEffect: false,
+        backdropDimPct: 50,
+        hiddenNavTabs: [],
+        externalPlayerEnabled: false,
+        externalPlayerPath: "",
+        confirmStremioDeeplink: true,
+        pauseScrobbleOnPause: true,
+        malCountRewatches: false
     )
     @State private var subLangsText = "tur, eng"
     @State private var audioLangsText = "eng, jpn, tur"
@@ -595,6 +610,7 @@ struct SettingsView: View {
     @State private var srtFontText = ""
     @State private var blockWordsText = ""
     @State private var extraMpvText = ""
+    @State private var externalPlayerPathText = ""
     @State private var commands: [CommandInfo] = []
     @State private var editingCommandId: String?
     @State private var keyDraft = ""
@@ -679,10 +695,23 @@ struct SettingsView: View {
                 Picker(String(localized: "Metadata Language"), selection: $language) {
                     Text("English (en-US)").tag("en-US")
                     Text("Türkçe (tr-TR)").tag("tr-TR")
+                    Text("Deutsch (de-DE)").tag("de-DE")
+                    Text("Français (fr-FR)").tag("fr-FR")
+                    Text("Español (es-ES)").tag("es-ES")
+                    Text("日本語 (ja-JP)").tag("ja-JP")
                 }
                 .onChange(of: language) { _, newValue in
                     try? core.setMetadataLanguage(lang: newValue)
                 }
+                Toggle(String(localized: "Keep Original Movie / Series Titles"), isOn: $playerPrefs.preferOriginalTitles)
+                    .onChange(of: playerPrefs.preferOriginalTitles) { _, _ in savePlayerPrefs() }
+                Picker(String(localized: "TMDB Poster / Logo Language"), selection: $playerPrefs.tmdbImageLang) {
+                    Text(String(localized: "Auto")).tag("auto")
+                    Text("English").tag("en")
+                    Text("Türkçe").tag("tr")
+                    Text(String(localized: "Textless (No Language)")).tag("null")
+                }
+                .onChange(of: playerPrefs.tmdbImageLang) { _, _ in savePlayerPrefs() }
                 Picker(String(localized: "App Interface Language"), selection: $playerPrefs.uiLanguage) {
                     Text(String(localized: "System Default")).tag("system")
                     Text("Türkçe").tag("tr")
@@ -812,6 +841,33 @@ struct SettingsView: View {
                 Toggle(String(localized: "Show Discord Status While Browsing Home"), isOn: $playerPrefs.discordShowWhenBrowsing)
                     .onChange(of: playerPrefs.discordShowWhenBrowsing) { _, _ in savePlayerPrefs() }
             }
+
+            Section(String(localized: "Theme, Glass & Navigation")) {
+                Picker(String(localized: "Accent Color"), selection: $playerPrefs.themeAccent) {
+                    Text(String(localized: "Amber")).tag("amber")
+                    Text(String(localized: "Crimson")).tag("crimson")
+                    Text(String(localized: "Cyan")).tag("cyan")
+                    Text(String(localized: "Emerald")).tag("emerald")
+                    Text(String(localized: "Violet")).tag("violet")
+                }
+                .onChange(of: playerPrefs.themeAccent) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Reduce Liquid Glass Transparency (Solid Surface)"), isOn: $playerPrefs.reduceGlassEffect)
+                    .onChange(of: playerPrefs.reduceGlassEffect) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Detail Backdrop Dimming")): \(playerPrefs.backdropDimPct)%", value: $playerPrefs.backdropDimPct, in: 20...90, step: 5)
+                    .onChange(of: playerPrefs.backdropDimPct) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show Discover Tab"), isOn: navTabVisibleBinding("discover"))
+                Toggle(String(localized: "Show Calendar Tab"), isOn: navTabVisibleBinding("calendar"))
+                Toggle(String(localized: "Show Downloads Tab"), isOn: navTabVisibleBinding("downloads"))
+            }
+
+            Section(String(localized: "Integrations & Deep Links")) {
+                Toggle(String(localized: "Ask Confirmation Before Installing stremio:// Addons"), isOn: $playerPrefs.confirmStremioDeeplink)
+                    .onChange(of: playerPrefs.confirmStremioDeeplink) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Pause Trakt / Simkl Scrobble When Paused"), isOn: $playerPrefs.pauseScrobbleOnPause)
+                    .onChange(of: playerPrefs.pauseScrobbleOnPause) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Count Rewatches in MyAnimeList / AniList"), isOn: $playerPrefs.malCountRewatches)
+                    .onChange(of: playerPrefs.malCountRewatches) { _, _ in savePlayerPrefs() }
+            }
         }
         .formStyle(.grouped)
     }
@@ -888,6 +944,10 @@ struct SettingsView: View {
                     .onChange(of: subSettings.forcedWhenNativeAudio) { _, _ in saveSubSettings() }
                 Toggle(String(localized: "Hide SDH / Hearing-Impaired Cues"), isOn: $subSettings.hideSdh)
                     .onChange(of: subSettings.hideSdh) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Search Stremio Subtitle Addons"), isOn: $subSettings.enableAddonSubtitles)
+                    .onChange(of: subSettings.enableAddonSubtitles) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Search OpenSubtitles API"), isOn: $subSettings.enableOpensubtitles)
+                    .onChange(of: subSettings.enableOpensubtitles) { _, _ in saveSubSettings() }
             }
 
             Section(String(localized: "SRT Appearance")) {
@@ -957,6 +1017,10 @@ struct SettingsView: View {
                     .onChange(of: subSettings.srtPos) { _, _ in saveSubSettings() }
                 Toggle(String(localized: "Lift Subtitles Above Player Controls"), isOn: $subSettings.liftAboveControls)
                     .onChange(of: subSettings.liftAboveControls) { _, _ in saveSubSettings() }
+                Stepper("\(String(localized: "Subtitle Scale")): \(subSettings.subScalePct)%", value: $subSettings.subScalePct, in: 50...150, step: 5)
+                    .onChange(of: subSettings.subScalePct) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Normalize ASS/SSA Scale with Window"), isOn: $subSettings.assScaleWithWindow)
+                    .onChange(of: subSettings.assScaleWithWindow) { _, _ in saveSubSettings() }
                 Toggle(String(localized: "Override ASS/SSA Script Styling"), isOn: $subSettings.assOverride)
                     .onChange(of: subSettings.assOverride) { _, _ in saveSubSettings() }
             }
@@ -1014,6 +1078,17 @@ struct SettingsView: View {
                     .onChange(of: playerPrefs.showP2pSpeedChip) { _, _ in savePlayerPrefs() }
                 Stepper("\(String(localized: "Custom Sleep Timer")): \(playerPrefs.customSleepMinutes) min", value: $playerPrefs.customSleepMinutes, in: 5...240, step: 5)
                     .onChange(of: playerPrefs.customSleepMinutes) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Show \"Open in External Player\" Button on Direct Streams"), isOn: $playerPrefs.externalPlayerEnabled)
+                    .onChange(of: playerPrefs.externalPlayerEnabled) { _, _ in savePlayerPrefs() }
+                if playerPrefs.externalPlayerEnabled {
+                    HStack {
+                        Text(String(localized: "External Player Binary Path"))
+                        Spacer()
+                        TextField("/opt/homebrew/bin/mpv", text: $externalPlayerPathText)
+                            .frame(width: 220)
+                            .onSubmit { savePlayerPrefs() }
+                    }
+                }
             }
 
             Section(String(localized: "Video & Audio")) {
@@ -1310,8 +1385,25 @@ struct SettingsView: View {
             playerPrefs = p
             blockWordsText = p.trackBlockWords.joined(separator: ", ")
             extraMpvText = p.mpvExtraOptions
+            externalPlayerPathText = p.externalPlayerPath
         }
         commands = (try? core.commands()) ?? []
+    }
+
+    private func navTabVisibleBinding(_ key: String) -> Binding<Bool> {
+        Binding(
+            get: { !playerPrefs.hiddenNavTabs.contains(key) },
+            set: { visible in
+                var set = Set(playerPrefs.hiddenNavTabs)
+                if visible {
+                    set.remove(key)
+                } else {
+                    set.insert(key)
+                }
+                playerPrefs.hiddenNavTabs = set.sorted()
+                savePlayerPrefs()
+            }
+        )
     }
 
     private func saveSubSettings() {
@@ -1333,7 +1425,10 @@ struct SettingsView: View {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         playerPrefs.mpvExtraOptions = extraMpvText.trimmingCharacters(in: .whitespacesAndNewlines)
+        playerPrefs.externalPlayerPath = externalPlayerPathText.trimmingCharacters(in: .whitespacesAndNewlines)
         try? core.setPlayerPreferences(prefs: playerPrefs)
+        CinemaTheme.syncThemePreferences(from: playerPrefs)
+        NotificationCenter.default.post(name: .cinmaNavTabsChanged, object: nil)
     }
 
     private func applyAppLanguagePreference(_ code: String) {

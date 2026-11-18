@@ -237,7 +237,13 @@ impl Core {
         id: String,
     ) -> Result<RichMetaResult, CoreError> {
         let lang = self.metadata_language()?;
-        let cache_key = format!("meta:{media_type}:{id}:{lang}");
+        let prefs = self.player_preferences().unwrap_or_default();
+        let cache_suffix = format!(
+            "{lang}:orig={}:img={}",
+            u8::from(prefs.prefer_original_titles),
+            prefs.tmdb_image_lang
+        );
+        let cache_key = format!("meta:{media_type}:{id}:{cache_suffix}");
         let now = now_unix();
         if let Some(raw) = self
             .db
@@ -257,7 +263,14 @@ impl Core {
 
         if let Some(api_key) = self.tmdb_key()? {
             if let Ok(mut rich) = self
-                .fetch_tmdb_rich(&api_key, &media_type, &id, &lang)
+                .fetch_tmdb_rich(
+                    &api_key,
+                    &media_type,
+                    &id,
+                    &lang,
+                    prefs.prefer_original_titles,
+                    &prefs.tmdb_image_lang,
+                )
                 .await
             {
                 if rich.meta.media_type == "series"
@@ -280,7 +293,7 @@ impl Core {
                         }
                     }
                 }
-                self.persist_rich_meta(&cache_key, "tmdb", &rich, now)?;
+                self.persist_rich_meta(&cache_key, &cache_suffix, "tmdb", &rich, now)?;
                 return Ok(RichMetaResult {
                     source: "tmdb".into(),
                     meta: rich.meta,
@@ -410,12 +423,62 @@ impl Core {
         Ok(upcoming)
     }
 
+    pub async fn discover_by_provider(
+        self: &Arc<Self>,
+        media_type: String,
+        provider_id: u32,
+        page: u32,
+    ) -> Result<Vec<MetaPreview>, CoreError> {
+        let Some(api_key) = self.tmdb_key()? else {
+            return Ok(Vec::new());
+        };
+        let lang = self.metadata_language()?;
+        let prefs = self.player_preferences().unwrap_or_default();
+        let region = lang.split('-').nth(1).unwrap_or("US").to_ascii_uppercase();
+        let client = self.tmdb_client()?;
+        let prefer_original = prefs.prefer_original_titles;
+        let items = {
+            let c = client.clone();
+            let k = api_key.clone();
+            let mt = media_type.clone();
+            let reg = region.clone();
+            let l = lang.clone();
+            self.spawn(async move {
+                Ok(
+                    c.discover_by_provider(&k, &mt, provider_id, &reg, &l, page, prefer_original)
+                        .await?,
+                )
+            })
+            .await?
+        };
+        if items.is_empty() && region != "US" {
+            return self
+                .spawn(async move {
+                    Ok(client
+                        .discover_by_provider(
+                            &api_key,
+                            &media_type,
+                            provider_id,
+                            "US",
+                            &lang,
+                            page,
+                            prefer_original,
+                        )
+                        .await?)
+                })
+                .await;
+        }
+        Ok(items)
+    }
+
     async fn fetch_tmdb_rich(
         self: &Arc<Self>,
         api_key: &str,
         media_type: &str,
         id: &str,
         lang: &str,
+        prefer_original: bool,
+        image_lang: &str,
     ) -> Result<RichMeta, CoreError> {
         let Some((tmdb_id, _)) = self
             .resolve_tmdb_and_base(api_key, media_type, id, lang)
@@ -428,12 +491,17 @@ impl Core {
         let client = self.tmdb_client()?;
         let key = api_key.to_owned();
         let l = lang.to_owned();
+        let img_lang = image_lang.to_owned();
         let is_series = matches!(media_type, "series" | "tv");
         self.spawn(async move {
             if is_series {
-                Ok(client.tv_details(&key, tmdb_id, &l).await?)
+                Ok(client
+                    .tv_details_with_opts(&key, tmdb_id, &l, prefer_original, Some(&img_lang))
+                    .await?)
             } else {
-                Ok(client.movie_details(&key, tmdb_id, &l).await?)
+                Ok(client
+                    .movie_details_with_opts(&key, tmdb_id, &l, prefer_original, Some(&img_lang))
+                    .await?)
             }
         })
         .await
@@ -508,6 +576,7 @@ impl Core {
     fn persist_rich_meta(
         &self,
         cache_key: &str,
+        cache_suffix: &str,
         source: &str,
         rich: &RichMeta,
         now: i64,
@@ -524,12 +593,7 @@ impl Core {
         }
         // Also cache under canonical IMDb ID if requested via `tmdb:<id>`.
         if let Some(ref imdb) = rich.id_map.imdb_id {
-            let alt_key = format!(
-                "meta:{}:{}:{}",
-                rich.meta.media_type,
-                imdb,
-                cache_key.rsplit(':').next().unwrap_or("tr-TR")
-            );
+            let alt_key = format!("meta:{}:{imdb}:{cache_suffix}", rich.meta.media_type);
             if alt_key != cache_key
                 && let Ok(json) = serde_json::to_string(&payload)
             {

@@ -96,6 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         switch result {
         case let .success(core):
             self.core = core
+            if let prefs = try? core.playerPreferences() {
+                CinemaTheme.syncThemePreferences(from: prefs)
+            }
             LaunchMetrics.report("CORE_READY")
             try? core.subscribe(listener: CoreEventSink { [weak self] event in
                 Task { @MainActor in self?.handle(event) }
@@ -237,9 +240,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Task {
                 do {
                     let preview = try await core.inspectAddon(url: manifest)
-                    guard await confirmAddonInstall(preview) else {
-                        shell?.showStatus(String(localized: "Addon installation cancelled"))
-                        return
+                    let confirmNeeded = (try? core.playerPreferences())?.confirmStremioDeeplink ?? true
+                    if confirmNeeded {
+                        guard await confirmAddonInstall(preview) else {
+                            shell?.showStatus(String(localized: "Addon installation cancelled"))
+                            return
+                        }
                     }
                     shell?.showStatus(String(localized: "Installing addon…"))
                     let addon = try await core.installAddon(url: preview.transportUrl)

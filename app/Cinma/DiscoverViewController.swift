@@ -11,6 +11,8 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     private let titleLabel = NSTextField(labelWithString: String(localized: "Discover"))
     private let subtitleLabel = NSTextField(labelWithString: "")
     private let catalogPopup = NSPopUpButton()
+    private let platformStack = NSStackView()
+    private var platformScroll = NSScrollView()
     private let genreStack = NSStackView()
     private let loadMoreButton = CinemaTheme.makePillButton(
         title: String(localized: "Load More"),
@@ -32,6 +34,9 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
 
     private var catalogs: [CatalogInfo] = []
     private var selectedGenre: String?
+    private var selectedProviderId: UInt32?
+    private var providerMediaType = "movie"
+    private var providerPage: UInt32 = 1
     private var items: [MetaPreviewInfo] = []
     private var seenIds: Set<String> = []
     private var hasMore = false
@@ -64,6 +69,36 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         catalogPopup.bezelStyle = .rounded
         catalogPopup.translatesAutoresizingMaskIntoConstraints = false
         catalogPopup.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
+
+        platformStack.orientation = .horizontal
+        platformStack.alignment = .centerY
+        platformStack.spacing = 8
+        platformStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let platformDoc = NSView()
+        platformDoc.translatesAutoresizingMaskIntoConstraints = false
+        platformDoc.addSubview(platformStack)
+
+        platformScroll = NSScrollView()
+        platformScroll.documentView = platformDoc
+        platformScroll.drawsBackground = false
+        platformScroll.hasHorizontalScroller = false
+        platformScroll.hasVerticalScroller = false
+        platformScroll.automaticallyAdjustsContentInsets = false
+        platformScroll.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            platformScroll.heightAnchor.constraint(equalToConstant: 36),
+            platformDoc.topAnchor.constraint(equalTo: platformScroll.contentView.topAnchor),
+            platformDoc.bottomAnchor.constraint(equalTo: platformScroll.contentView.bottomAnchor),
+            platformDoc.leadingAnchor.constraint(equalTo: platformScroll.contentView.leadingAnchor),
+            platformDoc.heightAnchor.constraint(equalTo: platformScroll.heightAnchor),
+            platformStack.topAnchor.constraint(equalTo: platformDoc.topAnchor),
+            platformStack.bottomAnchor.constraint(equalTo: platformDoc.bottomAnchor),
+            platformStack.leadingAnchor.constraint(equalTo: platformDoc.leadingAnchor),
+            platformStack.trailingAnchor.constraint(equalTo: platformDoc.trailingAnchor),
+        ])
+        rebuildPlatformPills()
 
         genreStack.orientation = .horizontal
         genreStack.alignment = .centerY
@@ -151,10 +186,10 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         gridScroll.automaticallyAdjustsContentInsets = false
         gridScroll.translatesAutoresizingMaskIntoConstraints = false
 
-        let topStack = NSStackView(views: [headerRow, genreScroll])
+        let topStack = NSStackView(views: [headerRow, platformScroll, genreScroll])
         topStack.orientation = .vertical
         topStack.alignment = .leading
-        topStack.spacing = 12
+        topStack.spacing = 10
         topStack.translatesAutoresizingMaskIntoConstraints = false
 
         root.addSubview(topStack)
@@ -168,6 +203,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             topStack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 64),
             topStack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -64),
             headerRow.widthAnchor.constraint(equalTo: topStack.widthAnchor),
+            platformScroll.widthAnchor.constraint(equalTo: topStack.widthAnchor),
             genreScroll.widthAnchor.constraint(equalTo: topStack.widthAnchor),
 
             gridScroll.topAnchor.constraint(equalTo: topStack.bottomAnchor, constant: 12),
@@ -213,9 +249,13 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
             let typeLabel = c.mediaType == "series" ? String(localized: "Series") : String(localized: "Movie")
             catalogPopup.addItem(withTitle: "\(c.name) · \(typeLabel) (\(c.addonName))")
         }
-        catalogPopup.isHidden = catalogs.isEmpty || searchModeQuery != nil
+        catalogPopup.isHidden = catalogs.isEmpty || searchModeQuery != nil || selectedProviderId != nil
         if searchModeQuery == nil {
-            loadSelectedCatalog(reset: true)
+            if let pid = selectedProviderId {
+                loadProviderCatalog(providerId: pid, reset: true)
+            } else {
+                loadSelectedCatalog(reset: true)
+            }
         }
     }
 
@@ -227,6 +267,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         }
         searchModeQuery = trimmed
         catalogPopup.isHidden = true
+        platformScroll.isHidden = true
         genreStack.isHidden = true
         loadMoreButton.isHidden = true
         titleLabel.stringValue = String(localized: "Search: “\(trimmed)”")
@@ -264,6 +305,7 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     func clearSearch() {
         searchModeQuery = nil
         titleLabel.stringValue = String(localized: "Discover")
+        platformScroll.isHidden = false
         genreStack.isHidden = false
         reloadCatalogList()
     }
@@ -374,6 +416,133 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
         }
     }
 
+    private static let streamingPlatforms: [(id: UInt32?, name: String)] = [
+        (nil, String(localized: "All Platforms")),
+        (8, "Netflix"),
+        (337, "Disney+"),
+        (350, "Apple TV+"),
+        (119, "Prime Video"),
+        (1899, "Max"),
+        (283, "Crunchyroll"),
+        (11, "MUBI"),
+    ]
+
+    private func rebuildPlatformPills() {
+        for v in platformStack.arrangedSubviews {
+            platformStack.removeArrangedSubview(v)
+            v.removeFromSuperview()
+        }
+        for plat in Self.streamingPlatforms {
+            let btn = CinemaTheme.makePillButton(
+                title: plat.name,
+                primary: selectedProviderId == plat.id,
+                target: self,
+                action: #selector(selectPlatform(_:))
+            )
+            btn.tag = plat.id.map { Int($0) } ?? -1
+            btn.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            platformStack.addArrangedSubview(btn)
+        }
+    }
+
+    private func rebuildProviderMediaTypePills() {
+        for v in genreStack.arrangedSubviews {
+            genreStack.removeArrangedSubview(v)
+            v.removeFromSuperview()
+        }
+        let types: [(String, String)] = [
+            ("movie", String(localized: "Movies")),
+            ("series", String(localized: "Series")),
+        ]
+        for (kind, title) in types {
+            let btn = CinemaTheme.makePillButton(
+                title: title,
+                primary: providerMediaType == kind,
+                target: self,
+                action: #selector(selectProviderMediaType(_:))
+            )
+            btn.identifier = NSUserInterfaceItemIdentifier(kind)
+            btn.heightAnchor.constraint(equalToConstant: 30).isActive = true
+            genreStack.addArrangedSubview(btn)
+        }
+    }
+
+    private func loadProviderCatalog(providerId: UInt32, reset: Bool) {
+        catalogPopup.isHidden = true
+        emptyStack.isHidden = true
+        let platformName = Self.streamingPlatforms.first(where: { $0.id == providerId })?.name ?? "TMDB"
+        if reset {
+            items = []
+            seenIds = []
+            providerPage = 1
+            hasMore = false
+            collectionView.reloadData()
+            rebuildProviderMediaTypePills()
+            spinner.startAnimation(nil)
+        } else {
+            providerPage += 1
+        }
+        let typeTitle = providerMediaType == "series" ? String(localized: "Series") : String(localized: "Movies")
+        subtitleLabel.stringValue = "\(platformName) · \(typeTitle)"
+
+        activeTask?.cancel()
+        let core = core
+        let mt = providerMediaType
+        let page = providerPage
+        activeTask = Task { [weak self] in
+            do {
+                let fetched = try await core.discoverByProvider(
+                    mediaType: mt,
+                    providerId: providerId,
+                    page: page
+                )
+                guard !Task.isCancelled, let self else { return }
+                self.spinner.stopAnimation(nil)
+                let visible = CatalogVisibilityFilter.apply(fetched, core: self.core)
+                let fresh = visible.filter { self.seenIds.insert("\($0.mediaType):\($0.id)").inserted }
+                self.items.append(contentsOf: fresh)
+                self.hasMore = fetched.count >= 20
+                self.loadMoreButton.isHidden = !self.hasMore
+                self.emptyStack.isHidden = !self.items.isEmpty
+                if self.items.isEmpty {
+                    let hasKey = (try? self.core.hasTmdbKey()) ?? false
+                    self.emptyMessageLabel.stringValue = hasKey
+                        ? String(localized: "No titles returned for this platform.")
+                        : String(localized: "Add a TMDB API key in Settings to filter by streaming platform.")
+                    self.emptyActionButton.title = String(localized: "Retry")
+                }
+                self.collectionView.reloadData()
+            } catch {
+                guard !Task.isCancelled, let self else { return }
+                self.spinner.stopAnimation(nil)
+                let friendly = FriendlyError.explain(error)
+                self.subtitleLabel.stringValue = friendly
+                if self.items.isEmpty {
+                    self.emptyMessageLabel.stringValue = friendly
+                    self.emptyActionButton.title = String(localized: "Retry")
+                    self.emptyStack.isHidden = false
+                }
+            }
+        }
+    }
+
+    @objc private func selectPlatform(_ sender: NSButton) {
+        selectedProviderId = sender.tag >= 0 ? UInt32(sender.tag) : nil
+        rebuildPlatformPills()
+        if let pid = selectedProviderId {
+            loadProviderCatalog(providerId: pid, reset: true)
+        } else {
+            catalogPopup.isHidden = catalogs.isEmpty || searchModeQuery != nil
+            loadSelectedCatalog(reset: true)
+        }
+    }
+
+    @objc private func selectProviderMediaType(_ sender: NSButton) {
+        guard let kind = sender.identifier?.rawValue, let pid = selectedProviderId else { return }
+        providerMediaType = kind
+        loadProviderCatalog(providerId: pid, reset: true)
+    }
+
     @objc private func catalogChanged() {
         selectedGenre = nil
         loadSelectedCatalog(reset: true)
@@ -387,6 +556,8 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     @objc private func emptyActionClicked() {
         if searchModeQuery != nil {
             clearSearch()
+        } else if let pid = selectedProviderId {
+            loadProviderCatalog(providerId: pid, reset: true)
         } else if catalogs.isEmpty {
             onOpenAddons?()
         } else {
@@ -395,7 +566,11 @@ final class DiscoverViewController: NSViewController, NSCollectionViewDataSource
     }
 
     @objc private func loadMore() {
-        loadSelectedCatalog(reset: false)
+        if let pid = selectedProviderId {
+            loadProviderCatalog(providerId: pid, reset: false)
+        } else {
+            loadSelectedCatalog(reset: false)
+        }
     }
 
     func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int {

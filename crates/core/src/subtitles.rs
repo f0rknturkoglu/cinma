@@ -54,6 +54,14 @@ pub struct SubtitleSettings {
     pub forced_when_native_audio: bool,
     /// Filter out SDH / hearing-impaired tracks and strip `[...]` / `(...)` cues from SRT files.
     pub hide_sdh: bool,
+    /// Subtitle scale multiplier percentage (`50..=150`, `100` = 1.0x).
+    pub sub_scale_pct: u32,
+    /// Scale ASS/SSA subtitle font size with video window height.
+    pub ass_scale_with_window: bool,
+    /// Query OpenSubtitles REST API when performing online subtitle searches.
+    pub enable_opensubtitles: bool,
+    /// Query installed Stremio subtitle addons when performing online subtitle searches.
+    pub enable_addon_subtitles: bool,
 }
 
 impl Default for SubtitleSettings {
@@ -80,6 +88,10 @@ impl Default for SubtitleSettings {
             prefer_embedded: false,
             forced_when_native_audio: false,
             hide_sdh: false,
+            sub_scale_pct: 100,
+            ass_scale_with_window: true,
+            enable_opensubtitles: true,
+            enable_addon_subtitles: true,
         }
     }
 }
@@ -219,6 +231,28 @@ pub struct PlayerPreferences {
     pub custom_sleep_minutes: u32,
     /// Show compact live torrent speed and peer count next to the Globe button.
     pub show_p2p_speed_chip: bool,
+    /// Prefer original-language movie/series titles over localized TMDB titles.
+    pub prefer_original_titles: bool,
+    /// Preferred language for TMDB poster/logo artwork (`"auto"` | `"en"` | `"tr"` | `"null"`).
+    pub tmdb_image_lang: String,
+    /// Dynamic accent color preset (`"amber"` | `"crimson"` | `"cyan"` | `"emerald"` | `"violet"`).
+    pub theme_accent: String,
+    /// Render solid dark surfaces instead of Liquid Glass vibrancy layers to minimize GPU work.
+    pub reduce_glass_effect: bool,
+    /// Background scrim dimming intensity (`20..=90`) behind hero artwork on detail pages.
+    pub backdrop_dim_pct: u32,
+    /// Top-navigation tabs hidden by the user (`"discover"`, `"calendar"`, `"downloads"`).
+    pub hidden_nav_tabs: Vec<String>,
+    /// Show button on direct HTTP/Debrid streams to open in external mpv / IINA.
+    pub external_player_enabled: bool,
+    /// Optional explicit path to an external player binary (`/opt/homebrew/bin/mpv`, etc.).
+    pub external_player_path: String,
+    /// Prompt for confirmation before installing `stremio://` addon links.
+    pub confirm_stremio_deeplink: bool,
+    /// Pause Trakt / Simkl scrobble state updates when playback is paused.
+    pub pause_scrobble_on_pause: bool,
+    /// Count rewatches when syncing progress with MyAnimeList / AniList.
+    pub mal_count_rewatches: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -292,6 +326,17 @@ impl Default for PlayerPreferences {
             cw_hide_caught_up: false,
             custom_sleep_minutes: 45,
             show_p2p_speed_chip: true,
+            prefer_original_titles: false,
+            tmdb_image_lang: "auto".to_owned(),
+            theme_accent: "amber".to_owned(),
+            reduce_glass_effect: false,
+            backdrop_dim_pct: 50,
+            hidden_nav_tabs: Vec::new(),
+            external_player_enabled: false,
+            external_player_path: String::new(),
+            confirm_stremio_deeplink: true,
+            pause_scrobble_on_pause: true,
+            mal_count_rewatches: false,
         }
     }
 }
@@ -466,7 +511,7 @@ impl Core {
         };
 
         let mut handles = Vec::new();
-        if self.feature_enabled(Feature::Addons)? {
+        if settings.enable_addon_subtitles && self.feature_enabled(Feature::Addons)? {
             let http = self.http()?;
             let targets: Vec<_> = self
                 .addons()?
@@ -494,7 +539,9 @@ impl Core {
             }
         }
 
-        if let Some(os_key) = get_opensubtitles_api_key()? {
+        if settings.enable_opensubtitles
+            && let Some(os_key) = get_opensubtitles_api_key()?
+        {
             let os_token = get_opensubtitles_token()?;
             let params = SubtitleQueryParams {
                 imdb_id: req.imdb_id,

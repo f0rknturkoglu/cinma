@@ -675,6 +675,8 @@ impl Player {
         box_opacity_pct: u32,
         align_x: &str,
         secondary_pos: u32,
+        scale_pct: u32,
+        ass_scale_with_window: bool,
     ) -> Result<(), PlayerError> {
         if let Some(font) = font.filter(|s| !s.trim().is_empty()) {
             self.set_property_str("sub-font", font)?;
@@ -724,6 +726,14 @@ impl Player {
         self.set_property_str(
             "secondary-sub-pos",
             &secondary_pos.clamp(5, 100).to_string(),
+        )?;
+        self.set_property_str(
+            "sub-scale",
+            &format!("{:.2}", f64::from(scale_pct.clamp(50, 150)) / 100.0),
+        )?;
+        self.set_property_str(
+            "sub-ass-scale-with-window",
+            if ass_scale_with_window { "yes" } else { "no" },
         )?;
         self.set_property_str(
             "sub-ass-override",

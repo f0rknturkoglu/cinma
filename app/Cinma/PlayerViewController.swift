@@ -768,7 +768,18 @@ final class PlayerViewController: NSViewController {
                 weekStartsMonday: true,
                 cwHideCaughtUp: false,
                 customSleepMinutes: 45,
-                showP2pSpeedChip: true
+                showP2pSpeedChip: true,
+                preferOriginalTitles: false,
+                tmdbImageLang: "auto",
+                themeAccent: "amber",
+                reduceGlassEffect: false,
+                backdropDimPct: 50,
+                hiddenNavTabs: [],
+                externalPlayerEnabled: false,
+                externalPlayerPath: "",
+                confirmStremioDeeplink: true,
+                pauseScrobbleOnPause: true,
+                malCountRewatches: false
             )
             let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface, macEdrEnabled: prefs.macEdrEnabled)
             do {
@@ -1008,7 +1019,9 @@ final class PlayerViewController: NSViewController {
             opacityPct: s.srtOpacity,
             boxOpacityPct: s.srtBoxOpacity,
             alignX: s.srtAlignX,
-            secondaryPos: s.secondaryPos
+            secondaryPos: s.secondaryPos,
+            scalePct: s.subScalePct,
+            assScaleWithWindow: s.assScaleWithWindow
         )
     }
 
@@ -1579,7 +1592,11 @@ final class PlayerViewController: NSViewController {
             offByDefault: false,
             preferEmbedded: false,
             forcedWhenNativeAudio: false,
-            hideSdh: false
+            hideSdh: false,
+            subScalePct: 100,
+            assScaleWithWindow: true,
+            enableOpensubtitles: true,
+            enableAddonSubtitles: true
         )
         let root = SubtitleManagerPopoverView(
             candidates: onlineSubtitles,

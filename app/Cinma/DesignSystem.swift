@@ -105,19 +105,35 @@ enum FriendlyError {
 
 @MainActor
 enum CinemaTheme {
+    private static let themeAccentKey = "cinma.themeAccent"
+    private static let reduceGlassKey = "cinma.reduceGlassEffect"
+
+    static func syncThemePreferences(from prefs: PlayerPreferencesFfi) {
+        UserDefaults.standard.set(prefs.themeAccent, forKey: themeAccentKey)
+        UserDefaults.standard.set(prefs.reduceGlassEffect, forKey: reduceGlassKey)
+    }
+
     /// Warm-neutral near-black base (§5.15).
     static let background = NSColor(srgbRed: 0x0B / 255, green: 0x0B / 255, blue: 0x0D / 255, alpha: 1)
     static let elevatedBackground = NSColor(srgbRed: 0x16 / 255, green: 0x16 / 255, blue: 0x1A / 255, alpha: 1)
     static let textPrimary = NSColor(srgbRed: 0xF2 / 255, green: 0xF0 / 255, blue: 0xEC / 255, alpha: 1)
     static let textSecondary = NSColor(srgbRed: 0xC9 / 255, green: 0xC5 / 255, blue: 0xBE / 255, alpha: 1)
     static let textMuted = NSColor(srgbRed: 0xA8 / 255, green: 0xA4 / 255, blue: 0x9C / 255, alpha: 1)
-    static let accent = NSColor(srgbRed: 0xE8 / 255, green: 0xA3 / 255, blue: 0x3D / 255, alpha: 1)
+    static var accent: NSColor {
+        switch UserDefaults.standard.string(forKey: themeAccentKey) {
+        case "crimson": return NSColor(srgbRed: 0xE5 / 255, green: 0x48 / 255, blue: 0x4D / 255, alpha: 1)
+        case "cyan": return NSColor(srgbRed: 0x38 / 255, green: 0xBD / 255, blue: 0xF8 / 255, alpha: 1)
+        case "emerald": return NSColor(srgbRed: 0x34 / 255, green: 0xD3 / 255, blue: 0x99 / 255, alpha: 1)
+        case "violet": return NSColor(srgbRed: 0xA7 / 255, green: 0x8B / 255, blue: 0xFA / 255, alpha: 1)
+        default: return NSColor(srgbRed: 0xE8 / 255, green: 0xA3 / 255, blue: 0x3D / 255, alpha: 1)
+        }
+    }
     static let accentInk = NSColor(srgbRed: 0x1A / 255, green: 0x12 / 255, blue: 0x06 / 255, alpha: 1)
     static let green = NSColor(srgbRed: 0x5C / 255, green: 0xC9 / 255, blue: 0x8A / 255, alpha: 1)
     static let cardBackground = NSColor(white: 1, alpha: 0.04)
     static let cardBorder = NSColor(white: 1, alpha: 0.09)
-    static let highlightBackground = NSColor(srgbRed: 0xE8 / 255, green: 0xA3 / 255, blue: 0x3D / 255, alpha: 0.10)
-    static let highlightBorder = NSColor(srgbRed: 0xE8 / 255, green: 0xA3 / 255, blue: 0x3D / 255, alpha: 0.45)
+    static var highlightBackground: NSColor { accent.withAlphaComponent(0.10) }
+    static var highlightBorder: NSColor { accent.withAlphaComponent(0.45) }
 
     static var reduceMotion: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -125,6 +141,7 @@ enum CinemaTheme {
 
     static var reduceTransparency: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            || UserDefaults.standard.bool(forKey: reduceGlassKey)
     }
 
     enum GlassKind {
