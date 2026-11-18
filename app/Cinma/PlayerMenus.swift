@@ -85,7 +85,7 @@ struct SubtitleManagerPopoverView: View {
             }
         }
         .padding(14)
-        .frame(width: 390)
+        .frame(width: 410)
         .preferredColorScheme(.dark)
     }
 
@@ -217,9 +217,8 @@ struct SubtitleManagerPopoverView: View {
         ]
         let selectedColor = (draftSettings.srtColor ?? "#FFFFFF").uppercased()
         let selectedBorder = (draftSettings.srtBorderColor ?? "#000000").uppercased()
-        let hasBackBox = (draftSettings.srtBackColor?.isEmpty == false && draftSettings.srtBackColor != "#00000000")
 
-        VStack(alignment: .leading, spacing: 11) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(String(localized: "Font Size"))
                     .font(.caption.weight(.semibold))
@@ -235,7 +234,7 @@ struct SubtitleManagerPopoverView: View {
                     in: 20...84,
                     step: 2
                 )
-                .frame(width: 160)
+                .frame(width: 165)
                 Text("\(draftSettings.srtFontSize) px")
                     .font(.system(.caption, design: .monospaced))
                     .frame(width: 44, alignment: .trailing)
@@ -256,8 +255,54 @@ struct SubtitleManagerPopoverView: View {
                     in: 10...100,
                     step: 5
                 )
-                .frame(width: 160)
+                .frame(width: 165)
                 Text("\(draftSettings.srtPos)%")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 44, alignment: .trailing)
+            }
+
+            HStack {
+                Text(String(localized: "Text Opacity"))
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Slider(
+                    value: Binding(
+                        get: { Double(draftSettings.srtOpacity) },
+                        set: {
+                            draftSettings.srtOpacity = UInt32($0.rounded())
+                            onUpdateStyle(draftSettings)
+                        }
+                    ),
+                    in: 10...100,
+                    step: 5
+                )
+                .frame(width: 165)
+                Text("\(draftSettings.srtOpacity)%")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 44, alignment: .trailing)
+            }
+
+            HStack {
+                Text(String(localized: "Background Box"))
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Slider(
+                    value: Binding(
+                        get: { Double(draftSettings.srtBoxOpacity) },
+                        set: {
+                            let val = UInt32($0.rounded())
+                            draftSettings.srtBoxOpacity = val
+                            if val > 0, (draftSettings.srtBackColor ?? "").isEmpty {
+                                draftSettings.srtBackColor = "#000000"
+                            }
+                            onUpdateStyle(draftSettings)
+                        }
+                    ),
+                    in: 0...100,
+                    step: 5
+                )
+                .frame(width: 165)
+                Text(draftSettings.srtBoxOpacity == 0 ? String(localized: "Off") : "\(draftSettings.srtBoxOpacity)%")
                     .font(.system(.caption, design: .monospaced))
                     .frame(width: 44, alignment: .trailing)
             }
@@ -294,6 +339,45 @@ struct SubtitleManagerPopoverView: View {
             }
 
             HStack {
+                Text(String(localized: "Alignment"))
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { draftSettings.srtAlignX },
+                    set: {
+                        draftSettings.srtAlignX = $0
+                        onUpdateStyle(draftSettings)
+                    }
+                )) {
+                    Text(String(localized: "Left")).tag("left")
+                    Text(String(localized: "Center")).tag("center")
+                    Text(String(localized: "Right")).tag("right")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 210)
+            }
+
+            HStack {
+                Text(String(localized: "2nd Subtitle"))
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { draftSettings.secondaryPos <= 50 ? UInt32(12) : UInt32(88) },
+                    set: {
+                        draftSettings.secondaryPos = $0
+                        onUpdateStyle(draftSettings)
+                    }
+                )) {
+                    Text(String(localized: "Top")).tag(UInt32(12))
+                    Text(String(localized: "Bottom")).tag(UInt32(88))
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 140)
+            }
+
+            HStack {
                 Text(String(localized: "Black Outline"))
                     .font(.caption.weight(.semibold))
                 Spacer()
@@ -319,26 +403,21 @@ struct SubtitleManagerPopoverView: View {
             }
 
             HStack(spacing: 14) {
-                Toggle(String(localized: "Background Box"), isOn: Binding(
-                    get: { hasBackBox },
-                    set: { enabled in
-                        draftSettings.srtBackColor = enabled ? "#99000000" : nil
-                        onUpdateStyle(draftSettings)
-                    }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.small)
-
                 Toggle(String(localized: "Bold"), isOn: $draftSettings.srtBold)
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .onChange(of: draftSettings.srtBold) { _, _ in onUpdateStyle(draftSettings) }
+
+                Toggle(String(localized: "Override ASS"), isOn: $draftSettings.assOverride)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .onChange(of: draftSettings.assOverride) { _, _ in onUpdateStyle(draftSettings) }
             }
 
-            Toggle(String(localized: "Override ASS"), isOn: $draftSettings.assOverride)
+            Toggle(String(localized: "Lift Above Controls"), isOn: $draftSettings.liftAboveControls)
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .onChange(of: draftSettings.assOverride) { _, _ in onUpdateStyle(draftSettings) }
+                .onChange(of: draftSettings.liftAboveControls) { _, _ in onUpdateStyle(draftSettings) }
         }
     }
 

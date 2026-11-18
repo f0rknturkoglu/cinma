@@ -507,7 +507,15 @@ struct SettingsView: View {
         srtBackColor: nil,
         srtBold: false,
         srtPos: 95,
-        assOverride: false
+        assOverride: false,
+        srtOpacity: 100,
+        srtBoxOpacity: 0,
+        srtAlignX: "center",
+        secondaryPos: 12,
+        liftAboveControls: true,
+        offByDefault: false,
+        preferEmbedded: false,
+        forcedWhenNativeAudio: false
     )
     @State private var playerPrefs = PlayerPreferencesFfi(
         exactSeek: true,
@@ -515,7 +523,22 @@ struct SettingsView: View {
         shaderPreset: "none",
         autoplayNext: true,
         autoplayCountdownS: 10,
-        forceHdrSurface: false
+        forceHdrSurface: false,
+        seekBackStepS: 10,
+        seekForwardStepS: 10,
+        defaultSpeedPct: 100,
+        volumeBoostMax: 150,
+        pauseMinimized: true,
+        pauseUnfocused: false,
+        autoSkipIntro: false,
+        autoSkipRecap: false,
+        autoSkipOutro: false,
+        showSkipButton: true,
+        autoNextStreamOnStall: true,
+        stallTimeoutS: 12,
+        cropMode: "fit",
+        audioNormalize: false,
+        downmixStereo: false
     )
     @State private var subLangsText = "tur, eng"
     @State private var audioLangsText = "eng, jpn, tur"
@@ -732,6 +755,12 @@ struct SettingsView: View {
                         .frame(width: 120)
                         .onSubmit { saveSubSettings() }
                 }
+                Toggle(String(localized: "Subtitles Off by Default"), isOn: $subSettings.offByDefault)
+                    .onChange(of: subSettings.offByDefault) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Prefer Embedded Subtitles"), isOn: $subSettings.preferEmbedded)
+                    .onChange(of: subSettings.preferEmbedded) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Forced Subtitles Only When Audio Matches Native Language"), isOn: $subSettings.forcedWhenNativeAudio)
+                    .onChange(of: subSettings.forcedWhenNativeAudio) { _, _ in saveSubSettings() }
             }
 
             Section(String(localized: "SRT Appearance")) {
@@ -759,22 +788,48 @@ struct SettingsView: View {
                     Text(String(localized: "Amber")).tag("#FFC107")
                     Text(String(localized: "Cyan")).tag("#67E8F9")
                 }
+                Stepper("\(String(localized: "Text Opacity")): \(subSettings.srtOpacity)%", value: $subSettings.srtOpacity, in: 10...100, step: 5)
+                    .onChange(of: subSettings.srtOpacity) { _, _ in saveSubSettings() }
                 Stepper("\(String(localized: "Black Outline")): \(subSettings.srtBorderSize) px", value: $subSettings.srtBorderSize, in: 0...8, step: 1)
                     .onChange(of: subSettings.srtBorderSize) { _, _ in saveSubSettings() }
-                Toggle(
-                    String(localized: "Background Box"),
-                    isOn: Binding(
-                        get: { subSettings.srtBackColor?.isEmpty == false && subSettings.srtBackColor != "#00000000" },
+                Stepper(
+                    "\(String(localized: "Background Box Opacity")): \(subSettings.srtBoxOpacity == 0 ? String(localized: "Off") : "\(subSettings.srtBoxOpacity)%")",
+                    value: Binding(
+                        get: { subSettings.srtBoxOpacity },
+                        set: { val in
+                            subSettings.srtBoxOpacity = val
+                            subSettings.srtBackColor = val > 0 ? (subSettings.srtBackColor ?? "#000000") : nil
+                            saveSubSettings()
+                        }
+                    ),
+                    in: 0...100,
+                    step: 5
+                )
+                Picker(String(localized: "Horizontal Alignment"), selection: $subSettings.srtAlignX) {
+                    Text(String(localized: "Left")).tag("left")
+                    Text(String(localized: "Center")).tag("center")
+                    Text(String(localized: "Right")).tag("right")
+                }
+                .onChange(of: subSettings.srtAlignX) { _, _ in saveSubSettings() }
+                Picker(
+                    String(localized: "Secondary Subtitle Placement"),
+                    selection: Binding(
+                        get: { subSettings.secondaryPos <= 50 ? UInt32(12) : UInt32(88) },
                         set: {
-                            subSettings.srtBackColor = $0 ? "#99000000" : nil
+                            subSettings.secondaryPos = $0
                             saveSubSettings()
                         }
                     )
-                )
+                ) {
+                    Text(String(localized: "Top")).tag(UInt32(12))
+                    Text(String(localized: "Bottom")).tag(UInt32(88))
+                }
                 Toggle(String(localized: "Bold"), isOn: $subSettings.srtBold)
                     .onChange(of: subSettings.srtBold) { _, _ in saveSubSettings() }
                 Stepper("\(String(localized: "SRT Position")): \(subSettings.srtPos)%", value: $subSettings.srtPos, in: 10...100, step: 5)
                     .onChange(of: subSettings.srtPos) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Lift Subtitles Above Player Controls"), isOn: $subSettings.liftAboveControls)
+                    .onChange(of: subSettings.liftAboveControls) { _, _ in saveSubSettings() }
                 Toggle(String(localized: "Override ASS/SSA Script Styling"), isOn: $subSettings.assOverride)
                     .onChange(of: subSettings.assOverride) { _, _ in saveSubSettings() }
             }
@@ -784,9 +839,37 @@ struct SettingsView: View {
 
     private var playbackTab: some View {
         Form {
-            Section(String(localized: "Playback & Video")) {
+            Section(String(localized: "Playback Behavior")) {
+                Picker(String(localized: "Default Playback Speed"), selection: $playerPrefs.defaultSpeedPct) {
+                    Text("0.5×").tag(UInt32(50))
+                    Text("0.75×").tag(UInt32(75))
+                    Text("1×").tag(UInt32(100))
+                    Text("1.25×").tag(UInt32(125))
+                    Text("1.5×").tag(UInt32(150))
+                    Text("2×").tag(UInt32(200))
+                }
+                .onChange(of: playerPrefs.defaultSpeedPct) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Exact Relative Seeks (vs Keyframe)"), isOn: $playerPrefs.exactSeek)
                     .onChange(of: playerPrefs.exactSeek) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Seek Back Step")): \(playerPrefs.seekBackStepS)s", value: $playerPrefs.seekBackStepS, in: 3...60, step: 1)
+                    .onChange(of: playerPrefs.seekBackStepS) { _, _ in savePlayerPrefs() }
+                Stepper("\(String(localized: "Seek Forward Step")): \(playerPrefs.seekForwardStepS)s", value: $playerPrefs.seekForwardStepS, in: 3...60, step: 1)
+                    .onChange(of: playerPrefs.seekForwardStepS) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Pause When Minimized"), isOn: $playerPrefs.pauseMinimized)
+                    .onChange(of: playerPrefs.pauseMinimized) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Pause When Window Loses Focus"), isOn: $playerPrefs.pauseUnfocused)
+                    .onChange(of: playerPrefs.pauseUnfocused) { _, _ in savePlayerPrefs() }
+            }
+
+            Section(String(localized: "Video & Audio")) {
+                Picker(String(localized: "Aspect / Crop Mode"), selection: $playerPrefs.cropMode) {
+                    Text(String(localized: "Fit (Original)")).tag("fit")
+                    Text(String(localized: "Fill Screen (Crop)")).tag("fill")
+                    Text("16:9").tag("16:9")
+                    Text("21:9").tag("21:9")
+                    Text("4:3").tag("4:3")
+                }
+                .onChange(of: playerPrefs.cropMode) { _, _ in savePlayerPrefs() }
                 Picker(String(localized: "Upscaling / Shader"), selection: $playerPrefs.shaderPreset) {
                     Text(String(localized: "Off")).tag("none")
                     Text(String(localized: "Adaptive Sharpen (CAS)")).tag("sharpen")
@@ -810,11 +893,38 @@ struct SettingsView: View {
                 }
                 Toggle(String(localized: "Force 16-bit HDR Surface on SDR"), isOn: $playerPrefs.forceHdrSurface)
                     .onChange(of: playerPrefs.forceHdrSurface) { _, _ in savePlayerPrefs() }
+                Picker(String(localized: "Max Volume Boost"), selection: $playerPrefs.volumeBoostMax) {
+                    Text("100%").tag(UInt32(100))
+                    Text("150%").tag(UInt32(150))
+                    Text("200%").tag(UInt32(200))
+                }
+                .onChange(of: playerPrefs.volumeBoostMax) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Audio Normalization (Dynaudnorm)"), isOn: $playerPrefs.audioNormalize)
+                    .onChange(of: playerPrefs.audioNormalize) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Downmix Audio to Stereo"), isOn: $playerPrefs.downmixStereo)
+                    .onChange(of: playerPrefs.downmixStereo) { _, _ in savePlayerPrefs() }
+            }
+
+            Section(String(localized: "Automation & Streams")) {
+                Toggle(String(localized: "Show Skip Intro / Recap / Outro Button"), isOn: $playerPrefs.showSkipButton)
+                    .onChange(of: playerPrefs.showSkipButton) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Auto-Skip Intro"), isOn: $playerPrefs.autoSkipIntro)
+                    .onChange(of: playerPrefs.autoSkipIntro) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Auto-Skip Recap"), isOn: $playerPrefs.autoSkipRecap)
+                    .onChange(of: playerPrefs.autoSkipRecap) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Auto-Skip Outro / Credits"), isOn: $playerPrefs.autoSkipOutro)
+                    .onChange(of: playerPrefs.autoSkipOutro) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Auto-Play Next Episode"), isOn: $playerPrefs.autoplayNext)
                     .onChange(of: playerPrefs.autoplayNext) { _, _ in savePlayerPrefs() }
                 if playerPrefs.autoplayNext {
                     Stepper("\(String(localized: "Auto-Play Countdown")): \(playerPrefs.autoplayCountdownS)s", value: $playerPrefs.autoplayCountdownS, in: 3...30)
                         .onChange(of: playerPrefs.autoplayCountdownS) { _, _ in savePlayerPrefs() }
+                }
+                Toggle(String(localized: "Auto-Switch Stream on Stall"), isOn: $playerPrefs.autoNextStreamOnStall)
+                    .onChange(of: playerPrefs.autoNextStreamOnStall) { _, _ in savePlayerPrefs() }
+                if playerPrefs.autoNextStreamOnStall {
+                    Stepper("\(String(localized: "Stall Timeout")): \(playerPrefs.stallTimeoutS)s", value: $playerPrefs.stallTimeoutS, in: 5...30, step: 1)
+                        .onChange(of: playerPrefs.stallTimeoutS) { _, _ in savePlayerPrefs() }
                 }
             }
         }

@@ -113,3 +113,75 @@ fn subtitle_settings_offsets_addon_fetch_and_cp1254_prepare_work() {
     });
     server_thread.join().unwrap();
 }
+
+#[test]
+fn wave1_settings_persist_and_deserialize_legacy_defaults() {
+    let dir = tempfile::tempdir().unwrap();
+    let core: Arc<Core> = Core::open(dir.path()).unwrap();
+
+    // Verify legacy partial JSON deserializes cleanly via #[serde(default)].
+    let legacy_sub: SubtitleSettings =
+        serde_json::from_str(r#"{"srt_font_size":50,"srt_bold":true}"#).unwrap();
+    assert_eq!(legacy_sub.srt_font_size, 50);
+    assert!(legacy_sub.srt_bold);
+    assert_eq!(legacy_sub.srt_opacity, 100);
+    assert_eq!(legacy_sub.srt_box_opacity, 0);
+    assert_eq!(legacy_sub.srt_align_x, "center");
+    assert_eq!(legacy_sub.secondary_pos, 12);
+    assert!(legacy_sub.lift_above_controls);
+    assert!(!legacy_sub.off_by_default);
+    assert!(!legacy_sub.prefer_embedded);
+    assert!(!legacy_sub.forced_when_native_audio);
+
+    let legacy_prefs: PlayerPreferences = serde_json::from_str(r#"{"exact_seek":false}"#).unwrap();
+    assert!(!legacy_prefs.exact_seek);
+    assert_eq!(legacy_prefs.seek_back_step_s, 10);
+    assert_eq!(legacy_prefs.seek_forward_step_s, 10);
+    assert_eq!(legacy_prefs.default_speed_pct, 100);
+    assert_eq!(legacy_prefs.volume_boost_max, 150);
+    assert!(legacy_prefs.pause_minimized);
+    assert!(!legacy_prefs.pause_unfocused);
+    assert!(!legacy_prefs.auto_skip_intro);
+    assert!(legacy_prefs.show_skip_button);
+    assert!(legacy_prefs.auto_next_stream_on_stall);
+    assert_eq!(legacy_prefs.stall_timeout_s, 12);
+    assert_eq!(legacy_prefs.crop_mode, "fit");
+    assert!(!legacy_prefs.audio_normalize);
+    assert!(!legacy_prefs.downmix_stereo);
+
+    // Verify all Wave 1 fields roundtrip through SQLite.
+    let updated_sub = SubtitleSettings {
+        srt_opacity: 80,
+        srt_box_opacity: 60,
+        srt_align_x: "left".into(),
+        secondary_pos: 88,
+        lift_above_controls: false,
+        off_by_default: true,
+        prefer_embedded: true,
+        forced_when_native_audio: true,
+        ..Default::default()
+    };
+    core.set_subtitle_settings(&updated_sub).unwrap();
+    assert_eq!(core.subtitle_settings().unwrap(), updated_sub);
+
+    let updated_prefs = PlayerPreferences {
+        seek_back_step_s: 5,
+        seek_forward_step_s: 30,
+        default_speed_pct: 125,
+        volume_boost_max: 200,
+        pause_minimized: false,
+        pause_unfocused: true,
+        auto_skip_intro: true,
+        auto_skip_recap: true,
+        auto_skip_outro: true,
+        show_skip_button: false,
+        auto_next_stream_on_stall: false,
+        stall_timeout_s: 20,
+        crop_mode: "21:9".into(),
+        audio_normalize: true,
+        downmix_stereo: true,
+        ..Default::default()
+    };
+    core.set_player_preferences(&updated_prefs).unwrap();
+    assert_eq!(core.player_preferences().unwrap(), updated_prefs);
+}

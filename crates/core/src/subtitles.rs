@@ -36,6 +36,22 @@ pub struct SubtitleSettings {
     pub srt_bold: bool,
     pub srt_pos: u32,
     pub ass_override: bool,
+    /// Primary subtitle text opacity (`10..=100`).
+    pub srt_opacity: u32,
+    /// Primary subtitle background box opacity (`0..=100`).
+    pub srt_box_opacity: u32,
+    /// Horizontal alignment: `"left"` | `"center"` | `"right"`.
+    pub srt_align_x: String,
+    /// Vertical position (`0..=100`) for secondary subtitle (`12` top / `88` bottom).
+    pub secondary_pos: u32,
+    /// Temporarily lift subtitles clear of the bottom HUD controls when visible.
+    pub lift_above_controls: bool,
+    /// Start playback with subtitles disabled by default.
+    pub off_by_default: bool,
+    /// Prefer embedded container subtitle tracks over external files when available.
+    pub prefer_embedded: bool,
+    /// Only auto-select forced subtitles when the active audio matches a preferred native/audio language.
+    pub forced_when_native_audio: bool,
 }
 
 impl Default for SubtitleSettings {
@@ -53,6 +69,14 @@ impl Default for SubtitleSettings {
             srt_bold: false,
             srt_pos: 95,
             ass_override: false,
+            srt_opacity: 100,
+            srt_box_opacity: 0,
+            srt_align_x: "center".to_owned(),
+            secondary_pos: 12,
+            lift_above_controls: true,
+            off_by_default: false,
+            prefer_embedded: false,
+            forced_when_native_audio: false,
         }
     }
 }
@@ -68,6 +92,36 @@ pub struct PlayerPreferences {
     pub autoplay_countdown_s: u32,
     /// When `false`, SDR sources use an 8-bit BT.709 layer instead of 16-bit float EDR.
     pub force_hdr_surface: bool,
+    /// Seek backward step in seconds (`3..=60`).
+    pub seek_back_step_s: u32,
+    /// Seek forward step in seconds (`3..=60`).
+    pub seek_forward_step_s: u32,
+    /// Default playback speed percentage (`50..=200`, e.g. `100` = 1.0x).
+    pub default_speed_pct: u32,
+    /// Maximum volume boost percentage (`100` | `150` | `200`).
+    pub volume_boost_max: u32,
+    /// Pause playback when the player window is minimized.
+    pub pause_minimized: bool,
+    /// Pause playback when the app/window loses focus.
+    pub pause_unfocused: bool,
+    /// Automatically skip intro segments when encountered.
+    pub auto_skip_intro: bool,
+    /// Automatically skip recap segments when encountered.
+    pub auto_skip_recap: bool,
+    /// Automatically skip outro/credits segments when encountered.
+    pub auto_skip_outro: bool,
+    /// Show the on-screen "Skip Intro / Recap / Outro" button.
+    pub show_skip_button: bool,
+    /// Automatically try the next stream candidate when playback stalls.
+    pub auto_next_stream_on_stall: bool,
+    /// Seconds to wait before declaring a playback stall (`5..=30`).
+    pub stall_timeout_s: u32,
+    /// Aspect / crop mode: `"fit"` | `"fill"` | `"16:9"` | `"21:9"` | `"4:3"`.
+    pub crop_mode: String,
+    /// Apply mpv `lavfi=[dynaudnorm]` audio loudness normalization.
+    pub audio_normalize: bool,
+    /// Downmix multichannel audio to stereo (`2.0`).
+    pub downmix_stereo: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -79,6 +133,21 @@ impl Default for PlayerPreferences {
             autoplay_next: true,
             autoplay_countdown_s: 10,
             force_hdr_surface: false,
+            seek_back_step_s: 10,
+            seek_forward_step_s: 10,
+            default_speed_pct: 100,
+            volume_boost_max: 150,
+            pause_minimized: true,
+            pause_unfocused: false,
+            auto_skip_intro: false,
+            auto_skip_recap: false,
+            auto_skip_outro: false,
+            show_skip_button: true,
+            auto_next_stream_on_stall: true,
+            stall_timeout_s: 12,
+            crop_mode: "fit".to_owned(),
+            audio_normalize: false,
+            downmix_stereo: false,
         }
     }
 }

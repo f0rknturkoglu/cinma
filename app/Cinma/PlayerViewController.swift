@@ -149,6 +149,12 @@ final class PlayerViewController: NSViewController {
     private var currentStreamIndex = 0
     private var pendingSwitchPosition: Double?
     private var isHoveringScrub = false
+    private var hudVisible = true
+    private var baseSubtitlePos: UInt32 = 95
+    private var liftSubtitlesAboveControls = true
+    private var lastAutoSkippedSegmentStart: Double?
+    private var focusObservers: [NSObjectProtocol] = []
+    private var pausedBySystemEvent = false
 
     var onEnterPiP: (() -> Void)?
     var onPauseStateChanged: ((Bool) -> Void)?
@@ -548,6 +554,7 @@ final class PlayerViewController: NSViewController {
         videoLayer.contentsScale = view.window?.backingScaleFactor ?? 2
         view.window?.makeFirstResponder(view)
         installMediaKeys()
+        installWindowFocusObservers()
         start()
         showHudAndResetTimer()
         if let delay = DevAutomation.autoCloseAfter {
@@ -568,6 +575,40 @@ final class PlayerViewController: NSViewController {
         nowPlaying.installCommands()
     }
 
+    private func installWindowFocusObservers() {
+        guard focusObservers.isEmpty, let window = view.window else { return }
+        let nc = NotificationCenter.default
+        focusObservers = [
+            nc.addObserver(forName: NSWindow.didMiniaturizeNotification, object: window, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.handlePauseOnSystemEvent(isMinimize: true) }
+            },
+            nc.addObserver(forName: NSWindow.didDeminiaturizeNotification, object: window, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.handleResumeAfterSystemEvent() }
+            },
+            nc.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.handlePauseOnSystemEvent(isMinimize: false) }
+            },
+            nc.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.handleResumeAfterSystemEvent() }
+            },
+        ]
+    }
+
+    private func handlePauseOnSystemEvent(isMinimize: Bool) {
+        guard !closing, let session, !paused else { return }
+        guard let prefs = try? core.playerPreferences() else { return }
+        let shouldPause = isMinimize ? prefs.pauseMinimized : prefs.pauseUnfocused
+        guard shouldPause else { return }
+        pausedBySystemEvent = true
+        try? session.togglePause()
+    }
+
+    private func handleResumeAfterSystemEvent() {
+        guard !closing, let session, paused, pausedBySystemEvent else { return }
+        pausedBySystemEvent = false
+        try? session.togglePause()
+    }
+
     private func start() {
         showStatus(String(localized: "Starting player…"), autoHideAfter: 0)
         loadSkipSegmentsIfEnabled()
@@ -583,11 +624,30 @@ final class PlayerViewController: NSViewController {
                 shaderPreset: "none",
                 autoplayNext: true,
                 autoplayCountdownS: 10,
-                forceHdrSurface: false
+                forceHdrSurface: false,
+                seekBackStepS: 10,
+                seekForwardStepS: 10,
+                defaultSpeedPct: 100,
+                volumeBoostMax: 150,
+                pauseMinimized: true,
+                pauseUnfocused: false,
+                autoSkipIntro: false,
+                autoSkipRecap: false,
+                autoSkipOutro: false,
+                showSkipButton: true,
+                autoNextStreamOnStall: true,
+                stallTimeoutS: 12,
+                cropMode: "fit",
+                audioNormalize: false,
+                downmixStereo: false
             )
             let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface)
             do {
                 await MainActor.run {
+                    let initialSpeed = Double(prefs.defaultSpeedPct) / 100.0
+                    if abs(self.speed - 1.0) < 0.01 && abs(initialSpeed - 1.0) > 0.01 {
+                        self.setSpeed(initialSpeed)
+                    }
                     self.videoLayer.configureSurface(hdr: isHdr)
                     if self.videoView.layer !== self.videoLayer {
                         self.videoView.layer = self.videoLayer
@@ -642,6 +702,7 @@ final class PlayerViewController: NSViewController {
             nextCountdownLabel.stringValue = ""
             showStatus("", autoHideAfter: 0)
             failedRetries = 0
+            lastAutoSkippedSegmentStart = nil
             cancelStallWatchdog()
             appliedAutoTracks = false
             applySavedStyleAndOffsets()
@@ -691,6 +752,7 @@ final class PlayerViewController: NSViewController {
 
         case .paused(let isPaused):
             paused = isPaused
+            if !isPaused { pausedBySystemEvent = false }
             onPauseStateChanged?(isPaused)
             let name = isPaused ? "play.fill" : "pause.fill"
             let label = isPaused ? String(localized: "Play") : String(localized: "Pause")
@@ -761,10 +823,12 @@ final class PlayerViewController: NSViewController {
             let paths = (try? core.resolveShaderPaths(preset: prefs.shaderPreset)) ?? []
             try? session.setGlslShaders(paths: paths)
             try? session.setHdrTargetPeak(nits: prefs.hdrTargetPeak)
+            try? session.setVolumeMax(maxPct: prefs.volumeBoostMax)
+            volume = min(volume, Double(prefs.volumeBoostMax))
+            try? session.setCropMode(mode: prefs.cropMode)
+            try? session.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
         }
-        if abs(speed - 1.0) > 0.01 {
-            try? session.setSpeed(speed: speed)
-        }
+        try? session.setSpeed(speed: speed)
         if abs(volume - 100.0) > 0.5 {
             try? session.setVolume(volume: volume)
         }
@@ -782,7 +846,20 @@ final class PlayerViewController: NSViewController {
         if abs(audioDelay) > 0.001 { try? session.setAudioDelay(seconds: audioDelay) }
     }
 
+    private func effectiveSubtitlePos(for settings: SubtitleSettingsFfi? = nil) -> UInt32 {
+        if let settings {
+            baseSubtitlePos = settings.srtPos
+            liftSubtitlesAboveControls = settings.liftAboveControls
+        }
+        return (liftSubtitlesAboveControls && hudVisible) ? min(baseSubtitlePos, 78) : baseSubtitlePos
+    }
+
+    private func syncSubtitlePosForHud() {
+        try? session?.setSubtitlePos(pos: effectiveSubtitlePos())
+    }
+
     private func applySubtitleStyle(_ s: SubtitleSettingsFfi, session: PlaybackSession?) {
+        let pos = effectiveSubtitlePos(for: s)
         try? session?.setSubtitleStyle(
             font: s.srtFont,
             fontSize: s.srtFontSize,
@@ -791,8 +868,12 @@ final class PlayerViewController: NSViewController {
             borderColorHex: s.srtBorderColor,
             backColorHex: s.srtBackColor,
             bold: s.srtBold,
-            pos: s.srtPos,
-            assOverride: s.assOverride
+            pos: pos,
+            assOverride: s.assOverride,
+            opacityPct: s.srtOpacity,
+            boxOpacityPct: s.srtBoxOpacity,
+            alignX: s.srtAlignX,
+            secondaryPos: s.secondaryPos
         )
     }
 
@@ -832,7 +913,12 @@ final class PlayerViewController: NSViewController {
         }
 
         let subTracks = tracks.filter { $0.trackType == "sub" }
-        if sessionSubEnabled == false {
+        let activeAudio = matchedAudio ?? audioTracks.first(where: { $0.selected })
+        let audioIsNative = activeAudio.map { tr in
+            prefs.audioLangs.contains(where: { trackMatchesLang(tr, $0) })
+        } ?? false
+
+        if sessionSubEnabled == false || (sessionSubLang == nil && prefs.offByDefault) {
             subtitlesEnabled = false
             try? session.setSubtitleTrack(id: nil)
             try? session.setSecondarySubtitleTrack(id: nil)
@@ -841,14 +927,13 @@ final class PlayerViewController: NSViewController {
 
         var primaryId: Int64?
         if let wantSubLang = sessionSubLang {
-            var match: MediaTrackInfo?
-            if let wantSubTitle = sessionSubTitle, !wantSubTitle.isEmpty {
-                match = subTracks.first { trackMatchesLang($0, wantSubLang) && $0.title == wantSubTitle }
-            }
-            match = match
-                ?? subTracks.first { trackMatchesLang($0, wantSubLang) && !$0.forced }
-                ?? subTracks.first { trackMatchesLang($0, wantSubLang) }
-            if let match {
+            if let match = pickBestSubTrack(
+                in: subTracks,
+                lang: wantSubLang,
+                title: sessionSubTitle,
+                forcedOnly: false,
+                preferEmbedded: prefs.preferEmbedded
+            ) {
                 primaryId = match.id
                 lastSelectedSid = match.id
                 subtitlesEnabled = true
@@ -856,10 +941,18 @@ final class PlayerViewController: NSViewController {
             }
         }
         if primaryId == nil {
-            for lang in prefs.preferredLangs {
-                if let match = subTracks.first(where: { trackMatchesLang($0, lang) && !$0.forced })
-                    ?? subTracks.first(where: { trackMatchesLang($0, lang) })
-                {
+            let needForcedOnly = prefs.forcedWhenNativeAudio && audioIsNative
+            let candidateLangs = needForcedOnly
+                ? (prefs.preferredLangs + [activeAudio?.lang].compactMap { $0 })
+                : prefs.preferredLangs
+            for lang in candidateLangs {
+                if let match = pickBestSubTrack(
+                    in: subTracks,
+                    lang: lang,
+                    title: nil,
+                    forcedOnly: needForcedOnly,
+                    preferEmbedded: prefs.preferEmbedded
+                ) {
                     primaryId = match.id
                     lastSelectedSid = match.id
                     subtitlesEnabled = true
@@ -867,17 +960,56 @@ final class PlayerViewController: NSViewController {
                     break
                 }
             }
+            if primaryId == nil && needForcedOnly {
+                subtitlesEnabled = false
+                try? session.setSubtitleTrack(id: nil)
+            }
         }
 
         if sessionSecondarySubEnabled == false {
             secondarySid = nil
             try? session.setSecondarySubtitleTrack(id: nil)
         } else if let secLang = sessionSecondarySubLang ?? prefs.dualSecondaryLang, !secLang.isEmpty,
-                  let dualMatch = subTracks.first(where: { trackMatchesLang($0, secLang) && $0.id != primaryId })
+                  let dualMatch = pickBestSubTrack(
+                      in: subTracks.filter { $0.id != primaryId },
+                      lang: secLang,
+                      title: nil,
+                      forcedOnly: false,
+                      preferEmbedded: prefs.preferEmbedded
+                  )
         {
             secondarySid = dualMatch.id
             try? session.setSecondarySubtitleTrack(id: dualMatch.id)
         }
+    }
+
+    private func pickBestSubTrack(
+        in subTracks: [MediaTrackInfo],
+        lang: String,
+        title: String?,
+        forcedOnly: Bool,
+        preferEmbedded: Bool
+    ) -> MediaTrackInfo? {
+        let langMatches = subTracks.filter { trackMatchesLang($0, lang) }
+        guard !langMatches.isEmpty else { return nil }
+        if forcedOnly {
+            let forced = langMatches.filter { $0.forced }
+            if preferEmbedded, let emb = forced.first(where: { !$0.external }) { return emb }
+            return forced.first
+        }
+        if let title, !title.isEmpty {
+            if let exact = langMatches.first(where: { $0.title == title && (!preferEmbedded || !$0.external) })
+                ?? langMatches.first(where: { $0.title == title })
+            {
+                return exact
+            }
+        }
+        let nonForced = langMatches.filter { !$0.forced }
+        let orderedPool = nonForced.isEmpty ? langMatches : nonForced
+        if preferEmbedded, let emb = orderedPool.first(where: { !$0.external }) {
+            return emb
+        }
+        return orderedPool.first
     }
 
     private func trackMatchesLang(_ track: MediaTrackInfo, _ pref: String) -> Bool {
@@ -1025,6 +1157,7 @@ final class PlayerViewController: NSViewController {
         chapters = []
         scrubBar.chapters = []
         apiSkipSegments = []
+        lastAutoSkippedSegmentStart = nil
         onlineSubtitles = []
 
         if let prev = metadata {
@@ -1069,9 +1202,14 @@ final class PlayerViewController: NSViewController {
 
     // MARK: - Skip Intro / Outro Chapters
 
+    private func isRecapChapter(_ title: String) -> Bool {
+        let lower = title.lowercased()
+        return lower.contains("recap") || lower.contains("önceki")
+    }
+
     private func isIntroChapter(_ title: String) -> Bool {
         let lower = title.lowercased()
-        return lower.contains("intro") || lower.contains("opening") || lower == "op" || lower.contains("recap") || lower.contains("önceki")
+        return lower.contains("intro") || lower.contains("opening") || lower == "op"
     }
 
     private func isOutroChapter(_ title: String) -> Bool {
@@ -1079,24 +1217,58 @@ final class PlayerViewController: NSViewController {
         return lower.contains("outro") || lower.contains("credits") || lower.contains("ending") || lower == "ed"
     }
 
-    private func updateSkipSegmentVisibility() {
+    private func currentSkipSegment() -> (kind: String, startS: Double, endS: Double)? {
         if let seg = activeApiSkipSegment() {
-            switch seg.kind {
-            case "outro": skipButton.title = String(localized: "Skip Outro")
-            case "recap": skipButton.title = String(localized: "Skip Recap")
-            default: skipButton.title = String(localized: "Skip Intro")
-            }
-            skipButton.isHidden = false
-            return
+            return (seg.kind, seg.startS, seg.endS)
         }
-        guard let idx = chapters.lastIndex(where: { $0.startS <= position }),
-              isIntroChapter(chapters[idx].title),
-              idx + 1 < chapters.count
-        else {
+        guard let idx = chapters.lastIndex(where: { $0.startS <= position }) else { return nil }
+        let ch = chapters[idx]
+        let nextStart = idx + 1 < chapters.count ? chapters[idx + 1].startS : max(position, duration - 1.0)
+        guard nextStart > position + 1.0 else { return nil }
+        if isRecapChapter(ch.title) {
+            return ("recap", ch.startS, nextStart)
+        }
+        if isIntroChapter(ch.title), idx + 1 < chapters.count {
+            return ("intro", ch.startS, nextStart)
+        }
+        if isOutroChapter(ch.title) {
+            return ("outro", ch.startS, nextStart)
+        }
+        return nil
+    }
+
+    private func updateSkipSegmentVisibility() {
+        guard let seg = currentSkipSegment() else {
             skipButton.isHidden = true
             return
         }
-        skipButton.title = String(localized: "Skip Intro")
+        let prefs = try? core.playerPreferences()
+        let autoSkip: Bool = switch seg.kind {
+        case "outro": prefs?.autoSkipOutro ?? false
+        case "recap": prefs?.autoSkipRecap ?? false
+        default: prefs?.autoSkipIntro ?? false
+        }
+        if autoSkip && (lastAutoSkippedSegmentStart.map { abs($0 - seg.startS) > 2.0 } ?? true) {
+            lastAutoSkippedSegmentStart = seg.startS
+            seekAbsolute(seg.endS)
+            skipButton.isHidden = true
+            let toast: String = switch seg.kind {
+            case "outro": String(localized: "Auto-skipped Outro")
+            case "recap": String(localized: "Auto-skipped Recap")
+            default: String(localized: "Auto-skipped Intro")
+            }
+            showStatus(toast)
+            return
+        }
+        guard prefs?.showSkipButton ?? true else {
+            skipButton.isHidden = true
+            return
+        }
+        switch seg.kind {
+        case "outro": skipButton.title = String(localized: "Skip Outro")
+        case "recap": skipButton.title = String(localized: "Skip Recap")
+        default: skipButton.title = String(localized: "Skip Intro")
+        }
         skipButton.isHidden = false
     }
 
@@ -1105,15 +1277,9 @@ final class PlayerViewController: NSViewController {
     }
 
     @objc private func skipCurrentSegment() {
-        if let seg = activeApiSkipSegment() {
-            seekAbsolute(seg.endS)
-            skipButton.isHidden = true
-            return
-        }
-        guard let idx = chapters.lastIndex(where: { $0.startS <= position }),
-              idx + 1 < chapters.count
-        else { return }
-        seekAbsolute(chapters[idx + 1].startS)
+        guard let seg = currentSkipSegment() else { return }
+        lastAutoSkippedSegmentStart = seg.startS
+        seekAbsolute(seg.endS)
         skipButton.isHidden = true
     }
 
@@ -1121,8 +1287,11 @@ final class PlayerViewController: NSViewController {
 
     private func armStallWatchdog() {
         cancelStallWatchdog()
+        let prefs = try? core.playerPreferences()
+        guard prefs?.autoNextStreamOnStall ?? true else { return }
+        let timeoutS = Int(max(5, min(30, prefs?.stallTimeoutS ?? 12)))
         stallRecoveryTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(12))
+            try? await Task.sleep(for: .seconds(timeoutS))
             guard let self, !Task.isCancelled, !self.closing else { return }
             self.attemptStreamRecovery()
         }
@@ -1234,7 +1403,15 @@ final class PlayerViewController: NSViewController {
             srtBackColor: nil,
             srtBold: false,
             srtPos: 95,
-            assOverride: false
+            assOverride: false,
+            srtOpacity: 100,
+            srtBoxOpacity: 0,
+            srtAlignX: "center",
+            secondaryPos: 12,
+            liftAboveControls: true,
+            offByDefault: false,
+            preferEmbedded: false,
+            forcedWhenNativeAudio: false
         )
         let root = SubtitleManagerPopoverView(
             candidates: onlineSubtitles,
@@ -1453,7 +1630,36 @@ final class PlayerViewController: NSViewController {
         let reset = NSMenuItem(title: String(localized: "Reset Audio Delay"), action: #selector(resetAudioDelayItem), keyEquivalent: "")
         reset.target = self
         menu.addItem(reset)
+
+        menu.addItem(.separator())
+        let prefs = try? core.playerPreferences()
+        let normItem = NSMenuItem(title: String(localized: "Audio Normalization (Dynaudnorm)"), action: #selector(toggleAudioNormalize), keyEquivalent: "")
+        normItem.target = self
+        normItem.state = (prefs?.audioNormalize ?? false) ? .on : .off
+        menu.addItem(normItem)
+
+        let stereoItem = NSMenuItem(title: String(localized: "Downmix to Stereo (2.0)"), action: #selector(toggleDownmixStereo), keyEquivalent: "")
+        stereoItem.target = self
+        stereoItem.state = (prefs?.downmixStereo ?? false) ? .on : .off
+        menu.addItem(stereoItem)
+
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc private func toggleAudioNormalize() {
+        guard var prefs = try? core.playerPreferences() else { return }
+        prefs.audioNormalize.toggle()
+        try? core.setPlayerPreferences(prefs: prefs)
+        try? session?.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
+        showStatus(prefs.audioNormalize ? String(localized: "Audio normalization on") : String(localized: "Audio normalization off"))
+    }
+
+    @objc private func toggleDownmixStereo() {
+        guard var prefs = try? core.playerPreferences() else { return }
+        prefs.downmixStereo.toggle()
+        try? core.setPlayerPreferences(prefs: prefs)
+        try? session?.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
+        showStatus(prefs.downmixStereo ? String(localized: "Stereo downmix on") : String(localized: "Stereo downmix off"))
     }
 
     @objc private func selectAudioTrackItem(_ sender: NSMenuItem) {
@@ -1546,6 +1752,26 @@ final class PlayerViewController: NSViewController {
         abItem.target = self
         menu.addItem(abItem)
 
+        // Aspect / Crop submenu
+        let currentCrop = (try? core.playerPreferences())?.cropMode ?? "fit"
+        let cropMenu = NSMenu()
+        for (label, mode) in [
+            (String(localized: "Fit (Original)"), "fit"),
+            (String(localized: "Fill Screen (Crop)"), "fill"),
+            ("16:9", "16:9"),
+            ("21:9 (Ultrawide)", "21:9"),
+            ("4:3", "4:3"),
+        ] {
+            let item = NSMenuItem(title: label, action: #selector(selectCropMode(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode
+            item.state = currentCrop == mode ? .on : .off
+            cropMenu.addItem(item)
+        }
+        let cropHolder = NSMenuItem(title: String(localized: "Aspect / Crop"), action: nil, keyEquivalent: "")
+        cropHolder.submenu = cropMenu
+        menu.addItem(cropHolder)
+
         // Shaders submenu
         let shaderMenu = NSMenu()
         for (label, preset) in [(String(localized: "Off"), "none"), (String(localized: "Adaptive Sharpen (CAS)"), "sharpen")] {
@@ -1584,6 +1810,16 @@ final class PlayerViewController: NSViewController {
         menu.addItem(sleepHolder)
 
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
+    }
+
+    @objc private func selectCropMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? String else { return }
+        if var prefs = try? core.playerPreferences() {
+            prefs.cropMode = mode
+            try? core.setPlayerPreferences(prefs: prefs)
+        }
+        try? session?.setCropMode(mode: mode)
+        showStatus("\(String(localized: "Aspect")): \(sender.title)")
     }
 
     @objc private func selectShaderPreset(_ sender: NSMenuItem) {
@@ -1772,7 +2008,9 @@ final class PlayerViewController: NSViewController {
         case "player.speed_up": setSpeed(speed + 0.25)
         case "player.speed_down": setSpeed(speed - 0.25)
         case "player.volume_up":
-            volume = min(150, volume + 10)
+            let maxVol = Double((try? core.playerPreferences())?.volumeBoostMax ?? 150)
+            volume = min(maxVol, volume + 10)
+            try? session?.setVolumeMax(maxPct: UInt32(maxVol))
             try? session?.setVolume(volume: volume)
         case "player.volume_down":
             volume = max(0, volume - 10)
@@ -1784,17 +2022,24 @@ final class PlayerViewController: NSViewController {
         return true
     }
 
-    @objc private func togglePause() { try? session?.togglePause() }
+    @objc private func togglePause() {
+        pausedBySystemEvent = false
+        try? session?.togglePause()
+    }
 
     @objc private func seekBack10() {
-        let exact = (try? core.playerPreferences())?.exactSeek ?? true
-        try? session?.seekRelativeMode(seconds: -10, exact: exact)
+        let prefs = try? core.playerPreferences()
+        let exact = prefs?.exactSeek ?? true
+        let step = Double(max(3, min(60, prefs?.seekBackStepS ?? 10)))
+        try? session?.seekRelativeMode(seconds: -step, exact: exact)
         saveProgressIfNeeded(force: true)
     }
 
     @objc private func seekForward10() {
-        let exact = (try? core.playerPreferences())?.exactSeek ?? true
-        try? session?.seekRelativeMode(seconds: 10, exact: exact)
+        let prefs = try? core.playerPreferences()
+        let exact = prefs?.exactSeek ?? true
+        let step = Double(max(3, min(60, prefs?.seekForwardStepS ?? 10)))
+        try? session?.seekRelativeMode(seconds: step, exact: exact)
         saveProgressIfNeeded(force: true)
     }
 
@@ -1855,6 +2100,11 @@ final class PlayerViewController: NSViewController {
     }
 
     private func setHudAlpha(_ alpha: CGFloat) {
+        let nowVisible = alpha > 0
+        if hudVisible != nowVisible {
+            hudVisible = nowVisible
+            syncSubtitlePosForHud()
+        }
         let pills = [titlePill, bar]
         if alpha > 0 {
             for p in pills { p.isHidden = false }
@@ -1987,6 +2237,8 @@ final class PlayerViewController: NSViewController {
         sleepTimerTask?.cancel()
         nextCountdownTask?.cancel()
         cancelStallWatchdog()
+        for obs in focusObservers { NotificationCenter.default.removeObserver(obs) }
+        focusObservers.removeAll()
         dismissFloatingPopover()
         nowPlaying.teardown()
         let discordCore = core

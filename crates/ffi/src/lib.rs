@@ -995,6 +995,14 @@ pub struct SubtitleSettingsFfi {
     pub srt_bold: bool,
     pub srt_pos: u32,
     pub ass_override: bool,
+    pub srt_opacity: u32,
+    pub srt_box_opacity: u32,
+    pub srt_align_x: String,
+    pub secondary_pos: u32,
+    pub lift_above_controls: bool,
+    pub off_by_default: bool,
+    pub prefer_embedded: bool,
+    pub forced_when_native_audio: bool,
 }
 
 impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
@@ -1012,6 +1020,14 @@ impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
             srt_bold: s.srt_bold,
             srt_pos: s.srt_pos,
             ass_override: s.ass_override,
+            srt_opacity: s.srt_opacity,
+            srt_box_opacity: s.srt_box_opacity,
+            srt_align_x: s.srt_align_x,
+            secondary_pos: s.secondary_pos,
+            lift_above_controls: s.lift_above_controls,
+            off_by_default: s.off_by_default,
+            prefer_embedded: s.prefer_embedded,
+            forced_when_native_audio: s.forced_when_native_audio,
         }
     }
 }
@@ -1031,6 +1047,14 @@ impl From<SubtitleSettingsFfi> for cinma_core::SubtitleSettings {
             srt_bold: s.srt_bold,
             srt_pos: s.srt_pos,
             ass_override: s.ass_override,
+            srt_opacity: s.srt_opacity,
+            srt_box_opacity: s.srt_box_opacity,
+            srt_align_x: s.srt_align_x,
+            secondary_pos: s.secondary_pos,
+            lift_above_controls: s.lift_above_controls,
+            off_by_default: s.off_by_default,
+            prefer_embedded: s.prefer_embedded,
+            forced_when_native_audio: s.forced_when_native_audio,
         }
     }
 }
@@ -1043,6 +1067,21 @@ pub struct PlayerPreferencesFfi {
     pub autoplay_next: bool,
     pub autoplay_countdown_s: u32,
     pub force_hdr_surface: bool,
+    pub seek_back_step_s: u32,
+    pub seek_forward_step_s: u32,
+    pub default_speed_pct: u32,
+    pub volume_boost_max: u32,
+    pub pause_minimized: bool,
+    pub pause_unfocused: bool,
+    pub auto_skip_intro: bool,
+    pub auto_skip_recap: bool,
+    pub auto_skip_outro: bool,
+    pub show_skip_button: bool,
+    pub auto_next_stream_on_stall: bool,
+    pub stall_timeout_s: u32,
+    pub crop_mode: String,
+    pub audio_normalize: bool,
+    pub downmix_stereo: bool,
 }
 
 impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
@@ -1054,6 +1093,21 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             autoplay_next: p.autoplay_next,
             autoplay_countdown_s: p.autoplay_countdown_s,
             force_hdr_surface: p.force_hdr_surface,
+            seek_back_step_s: p.seek_back_step_s,
+            seek_forward_step_s: p.seek_forward_step_s,
+            default_speed_pct: p.default_speed_pct,
+            volume_boost_max: p.volume_boost_max,
+            pause_minimized: p.pause_minimized,
+            pause_unfocused: p.pause_unfocused,
+            auto_skip_intro: p.auto_skip_intro,
+            auto_skip_recap: p.auto_skip_recap,
+            auto_skip_outro: p.auto_skip_outro,
+            show_skip_button: p.show_skip_button,
+            auto_next_stream_on_stall: p.auto_next_stream_on_stall,
+            stall_timeout_s: p.stall_timeout_s,
+            crop_mode: p.crop_mode,
+            audio_normalize: p.audio_normalize,
+            downmix_stereo: p.downmix_stereo,
         }
     }
 }
@@ -1067,6 +1121,21 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             autoplay_next: p.autoplay_next,
             autoplay_countdown_s: p.autoplay_countdown_s,
             force_hdr_surface: p.force_hdr_surface,
+            seek_back_step_s: p.seek_back_step_s,
+            seek_forward_step_s: p.seek_forward_step_s,
+            default_speed_pct: p.default_speed_pct,
+            volume_boost_max: p.volume_boost_max,
+            pause_minimized: p.pause_minimized,
+            pause_unfocused: p.pause_unfocused,
+            auto_skip_intro: p.auto_skip_intro,
+            auto_skip_recap: p.auto_skip_recap,
+            auto_skip_outro: p.auto_skip_outro,
+            show_skip_button: p.show_skip_button,
+            auto_next_stream_on_stall: p.auto_next_stream_on_stall,
+            stall_timeout_s: p.stall_timeout_s,
+            crop_mode: p.crop_mode,
+            audio_normalize: p.audio_normalize,
+            downmix_stereo: p.downmix_stereo,
         }
     }
 }
@@ -2940,6 +3009,10 @@ impl PlaybackSession {
         bold: bool,
         pos: Option<u32>,
         ass_override: bool,
+        opacity_pct: u32,
+        box_opacity_pct: u32,
+        align_x: String,
+        secondary_pos: u32,
     ) -> Result<(), CinmaError> {
         Ok(self
             .inner
@@ -2954,7 +3027,19 @@ impl PlaybackSession {
                 bold,
                 pos,
                 ass_override,
+                opacity_pct,
+                box_opacity_pct,
+                &align_x,
+                secondary_pos,
             )
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_subtitle_pos(&self, pos: u32) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_subtitle_pos(pos)
             .map_err(CoreError::from)?)
     }
 
@@ -2974,11 +3059,39 @@ impl PlaybackSession {
             .map_err(CoreError::from)?)
     }
 
+    pub fn set_volume_max(&self, max_pct: u32) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_volume_max(max_pct)
+            .map_err(CoreError::from)?)
+    }
+
     pub fn set_muted(&self, muted: bool) -> Result<(), CinmaError> {
         Ok(self
             .inner
             .player()
             .set_muted(muted)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_crop_mode(&self, mode: String) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_crop_mode(&mode)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_audio_processing(
+        &self,
+        normalize: bool,
+        downmix_stereo: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_audio_processing(normalize, downmix_stereo)
             .map_err(CoreError::from)?)
     }
 

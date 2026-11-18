@@ -627,6 +627,10 @@ impl Player {
         bold: bool,
         pos: Option<u32>,
         ass_override: bool,
+        opacity_pct: u32,
+        box_opacity_pct: u32,
+        align_x: &str,
+        secondary_pos: u32,
     ) -> Result<(), PlayerError> {
         if let Some(font) = font.filter(|s| !s.trim().is_empty()) {
             self.set_property_str("sub-font", font)?;
@@ -634,32 +638,57 @@ impl Player {
         if let Some(size) = font_size {
             self.set_property_str("sub-font-size", &size.clamp(14, 96).to_string())?;
         }
-        let color = color_hex
+        let text_opacity = opacity_pct.clamp(10, 100);
+        let base_color = color_hex
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .unwrap_or("#FFFFFF");
-        self.set_property_str("sub-color", color)?;
+        let color = apply_hex_alpha(base_color, text_opacity);
+        self.set_property_str("sub-color", &color)?;
         if let Some(b_size) = border_size {
             self.set_property_str("sub-border-size", &b_size.clamp(0, 8).to_string())?;
         }
-        let b_color = border_color_hex
+        let base_border_color = border_color_hex
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .unwrap_or("#000000");
-        self.set_property_str("sub-border-color", b_color)?;
-        let bg_color = back_color_hex
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("#00000000");
-        self.set_property_str("sub-back-color", bg_color)?;
+        let b_color = apply_hex_alpha(base_border_color, text_opacity);
+        self.set_property_str("sub-border-color", &b_color)?;
+        let box_opacity = box_opacity_pct.min(100);
+        if box_opacity == 0 {
+            self.set_property_str("sub-back-color", "#00000000")?;
+            self.set_property_str("sub-border-style", "outline-and-shadow")?;
+        } else {
+            let base_bg = back_color_hex
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or("#000000");
+            let bg_color = apply_hex_alpha(base_bg, box_opacity);
+            self.set_property_str("sub-back-color", &bg_color)?;
+            self.set_property_str("sub-border-style", "background-box")?;
+        }
         self.set_property_str("sub-bold", if bold { "yes" } else { "no" })?;
         if let Some(pos) = pos {
-            self.set_property_str("sub-pos", &pos.clamp(5, 100).to_string())?;
+            self.set_subtitle_pos(pos)?;
         }
+        let align = match align_x.trim() {
+            "left" => "left",
+            "right" => "right",
+            _ => "center",
+        };
+        self.set_property_str("sub-align-x", align)?;
+        self.set_property_str(
+            "secondary-sub-pos",
+            &secondary_pos.clamp(5, 100).to_string(),
+        )?;
         self.set_property_str(
             "sub-ass-override",
             if ass_override { "force" } else { "no" },
         )
+    }
+
+    pub fn set_subtitle_pos(&self, pos: u32) -> Result<(), PlayerError> {
+        self.set_property_str("sub-pos", &pos.clamp(5, 100).to_string())
     }
 
     pub fn set_speed(&self, speed: f64) -> Result<(), PlayerError> {
@@ -667,11 +696,42 @@ impl Player {
     }
 
     pub fn set_volume(&self, volume: f64) -> Result<(), PlayerError> {
-        self.set_property_str("volume", &format!("{:.1}", volume.clamp(0.0, 150.0)))
+        self.set_property_str("volume", &format!("{:.1}", volume.clamp(0.0, 200.0)))
+    }
+
+    pub fn set_volume_max(&self, max_pct: u32) -> Result<(), PlayerError> {
+        self.set_property_str("volume-max", &max_pct.clamp(100, 200).to_string())
     }
 
     pub fn set_muted(&self, muted: bool) -> Result<(), PlayerError> {
         self.set_property_str("mute", if muted { "yes" } else { "no" })
+    }
+
+    pub fn set_crop_mode(&self, mode: &str) -> Result<(), PlayerError> {
+        let (panscan, aspect) = match mode.trim() {
+            "fill" => ("1.0", "no"),
+            "16:9" => ("0.0", "16:9"),
+            "21:9" => ("0.0", "21:9"),
+            "4:3" => ("0.0", "4:3"),
+            _ => ("0.0", "no"),
+        };
+        self.set_property_str("panscan", panscan)?;
+        self.set_property_str("video-aspect-override", aspect)
+    }
+
+    pub fn set_audio_processing(
+        &self,
+        normalize: bool,
+        downmix_stereo: bool,
+    ) -> Result<(), PlayerError> {
+        let channels = if downmix_stereo {
+            "stereo"
+        } else {
+            "auto-safe"
+        };
+        self.set_property_str("audio-channels", channels)?;
+        let af = if normalize { "dynaudnorm" } else { "" };
+        self.set_property_str("af", af)
     }
 
     pub fn set_ab_loop_a(&self, seconds: Option<f64>) -> Result<(), PlayerError> {
@@ -1177,6 +1237,17 @@ fn map_f64(fields: &[(String, MpvNode)], key: &str) -> Option<f64> {
     }
 }
 
+fn apply_hex_alpha(hex: &str, opacity_pct: u32) -> String {
+    let raw = hex.trim().trim_start_matches('#');
+    let rgb = match raw.len() {
+        6 if raw.bytes().all(|b| b.is_ascii_hexdigit()) => raw,
+        8 if raw.bytes().all(|b| b.is_ascii_hexdigit()) => &raw[2..],
+        _ => return hex.trim().to_owned(),
+    };
+    let alpha = ((opacity_pct.min(100) * 255 + 50) / 100) as u8;
+    format!("#{alpha:02X}{}", rgb.to_ascii_uppercase())
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod sysctl_tests {
     #[test]
@@ -1184,5 +1255,12 @@ mod sysctl_tests {
         let brand = super::sysctl_string("machdep.cpu.brand_string").unwrap_or_default();
         assert!(!brand.is_empty(), "brand string should be readable");
         assert!(super::sysctl_string("no.such.sysctl").is_none());
+    }
+
+    #[test]
+    fn applies_alpha_to_rgb_and_argb_hex() {
+        assert_eq!(super::apply_hex_alpha("#ffffff", 100), "#FFFFFFFF");
+        assert_eq!(super::apply_hex_alpha("#FFFFFF", 50), "#80FFFFFF");
+        assert_eq!(super::apply_hex_alpha("#80ffdd33", 0), "#00FFDD33");
     }
 }
