@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 
 use crate::{Core, CoreError};
@@ -73,11 +73,30 @@ impl Core {
     }
 }
 
+/// Largest JSON-RPC request line accepted on the socket.
+const MAX_REQUEST_BYTES: u64 = 64 * 1024;
+
 async fn handle_socket_client(core: Arc<Core>, stream: tokio::net::UnixStream) {
     let (read_half, mut write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
     let mut line = String::new();
-    while reader.read_line(&mut line).await.unwrap_or(0) > 0 {
+    loop {
+        line.clear();
+        // Bounded read: a client cannot make us buffer an endless line.
+        let n = (&mut reader)
+            .take(MAX_REQUEST_BYTES + 1)
+            .read_line(&mut line)
+            .await
+            .unwrap_or(0);
+        if n == 0 {
+            break;
+        }
+        if n as u64 > MAX_REQUEST_BYTES && !line.ends_with('\n') {
+            let _ = write_half
+                .write_all(b"{\"error\":\"request too large\"}\n")
+                .await;
+            break;
+        }
         let trimmed = line.trim();
         if !trimmed.is_empty() {
             let reply = dispatch_rpc(&core, trimmed);
@@ -87,7 +106,6 @@ async fn handle_socket_client(core: Arc<Core>, stream: tokio::net::UnixStream) {
                 break;
             }
         }
-        line.clear();
     }
 }
 

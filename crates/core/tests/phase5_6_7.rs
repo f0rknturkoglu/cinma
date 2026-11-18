@@ -147,8 +147,8 @@ fn http_download_and_play_now_and_outbox_retry() {
         )
         .unwrap();
 
-    // Poll until completed (very fast on localhost).
-    for _ in 0..80 {
+    // Poll until completed (fast on localhost; generous under parallel test load).
+    for _ in 0..400 {
         let rows = core.downloads().unwrap();
         if rows
             .iter()

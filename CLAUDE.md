@@ -215,11 +215,11 @@ The values below are **owner-approved (2026-11-17)** after Phase 0–7 review. I
 |---|---|---|
 | Cold start → first interactive frame | **< 250 ms** | 169 ms |
 | Idle footprint, window open, empty | **≤ 70 MB** | 30 MB |
-| Idle footprint, Home with artwork loaded | **≤ 200 MB** (owner-approved) | 172 MB |
+| Idle footprint, Home with artwork loaded | **≤ 200 MB** (owner-approved) | 135 MB (2026-11-19) |
 | Idle footprint, menu bar only, queue idle | ≤ 40 MB | 28 MB (previous agent; not re-measured) |
 | Idle CPU | **≤ 0.5 %** with Home visible (hero rotation); ~0 % with the window closed [~0 %] | 0.17 % / 0.00 % |
-| 4K HEVC HDR10 playback CPU (hwdec) | **< 20 % of one core** [< 10 %] | ~17 % |
-| Playback footprint, 4K HDR | **≤ 700 MB** (owner-approved) | ~630 MB |
+| 4K HEVC HDR10 playback CPU (hwdec) | **< 20 % of one core** [< 10 %] | ~15 % (2026-11-19) |
+| Playback footprint, 4K HDR | **≤ 700 MB** (owner-approved) | 590 MB in a 1280×800 window; 683–689 MB in a 1920×975 window on a 4K external display (larger framebuffers, not a code change) |
 | Torrent time-to-first-frame (healthy real swarm) | median < 5 s | not measured (sandbox) |
 | Seek recovery (healthy swarm) | median < 2 s | not measured (sandbox) |
 | Thumbnail hover | < 16 ms cached, < 120 ms on-demand local | — |

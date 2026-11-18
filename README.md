@@ -119,11 +119,11 @@ Tüm otomatik ölçümler `Apple Silicon (arm64)` üzerinde `Release` yapıland�
 | Senaryo / Metrik | Hedef ([CLAUDE.md §6](CLAUDE.md#6-targets-apple-silicon-m1-baseline)) | Ölçülen (Release / Otomatik) | Gerçek Kullanım Gözlemi (Release UI) | Durum |
 |---|---|---|---|---|
 | **Soğuk Açılış → İlk Kare** (`first_frame_ms`, 5 çalıştırma medyanı) | `< 250 ms` | **164.1 – 184.2 ms** *(Faz 8: `164.1 ms`, Faz 9: `184.2 ms`)* | ~170 ms | ✅ |
-| **Boşta Pencere (İçeriksiz)** (`phys_footprint`) | `≤ 70 MB` | **28.0 – 31.0 MB** *(RSS: ~100 MB)* | — | ✅ |
+| **Boşta Pencere (İçeriksiz)** (`phys_footprint`) | `≤ 70 MB` | **28.0 – 34.0 MB** *(RSS: ~100 MB; 2026-11-19: 34 MB, açılış 173 ms)* | — | ✅ |
 | **Menü Çubuğu Modu (Pencere Kapalı, Kuyruk Boş)** | `≤ 40 MB` | **28.0 MB** / `0.00% CPU` | — | ✅ |
-| **Ana Sayfa Yüklü Boşta** (Cinemeta kapakları + Hero dönüşü, 30 sn) | `≤ 200 MB`, `≤ 0.5% CPU` | **172.0 MB**, **0.17% CPU** | Boşta / gezinmede **~260 MB RAM** *(uzun oturumda görsel + SwiftUI/AppKit önbelleğiyle)* | ✅ |
-| **1080p Torrent Oynatma** (*Cowboy Bebop 1080p*) | Akıcı hwdec oynatma | Sentetik 1080p SDR MKV: `378 MB` footprint, **%7.1 CPU**, TTFF `383.9–422.0 ms`, seek `79.6–189.7 ms` | Gerçek Torrentio akışında **~370 MB RAM** | ✅ |
-| **4K Torrent / Yüksek Bit Hızlı Oynatma** (*The Odyssey*) | `< 20% CPU`, `≤ 700 MB` | Sentetik 4K HEVC HDR10: **543 – 628 MB** footprint, **%7.3 – 17.4 CPU**, TTFF `143.1 – 350.5 ms`, seek `139.1–139.6 ms` | Gerçek 4K akışta **~460 MB RAM** *(RAM optimizasyonu sonrası)* | ✅ |
+| **Ana Sayfa Yüklü Boşta** (Cinemeta kapakları + Hero dönüşü, 30 sn) | `≤ 200 MB`, `≤ 0.5% CPU` | **135 MB**, **%0 CPU** (2026-11-19; önceki ölçüm 172 MB / %0,17) | Boşta / gezinmede **~260 MB RAM** *(uzun oturumda görsel + SwiftUI/AppKit önbelleğiyle)* | ✅ |
+| **1080p Torrent Oynatma** (*Cowboy Bebop 1080p*) | Akıcı hwdec oynatma | Sentetik 1080p SDR MKV: `378 MB` footprint, TTFF `383.9–422.0 ms`, seek `79.6–189.7 ms` *(Faz 4'te yazılan %7,1 CPU yeniden ölçülmedi)* | Gerçek Torrentio akışında **~370 MB RAM** | ✅ |
+| **4K Torrent / Yüksek Bit Hızlı Oynatma** (*The Odyssey*) | `< 20% CPU`, `≤ 700 MB` | Sentetik 4K HEVC HDR10 (2026-11-19): **%15 CPU**; footprint pencere boyutuna bağlı: **590 MB** (1280×800 pencere), **683–689 MB** (4K harici ekranda 1920×975 pencere). TTFF `315 ms`. *(Faz 4'te yazılan %7,3 tekrar ölçülemedi.)* | Gerçek 4K akışta **~460 MB RAM** *(RAM optimizasyonu sonrası)* | ✅ |
 | **Boşta CPU (Boş Pencere)** | `~0%` | **0.00%** | `0%` | ✅ |
 | **Loopback Torrent Akışı (6 MB/s)** | `< 5 s TTFF`, `< 2 s seek` | TTFF **192 – 205 ms**, seek **953 ms – 1.3 s** | Gerçek internet swarm'ı ağ koşullarına bağlıdır | ⚠️ *(Sandbox kısıtı)* |
 
@@ -213,15 +213,15 @@ Proje **Faz 0–9** ve **Harbor Ayar Eşitleme (Hafif / Sıfır Ek Yük)** paket
 - [ ] **Gerçek Medya Corpus Doğrulaması (`tools/media-corpus.md`):** Dolby Vision P5/P8/P7, donanım AV1, yoğun ASS altyazılı anime ve çoklu ses dosyalarının gerçek donanımda doğrulanması; gerekirse `vo=gpu-next` + `macvk`/`libplacebo` (`ADR 0004` D1) geçiş değerlendirmesi.
 - [ ] **Gerçek Swarm TTFF / Seek Ayarı:** Gerçek internet P2P swarm'larında `tools/measure-playback.sh` ile `< 5 sn` TTFF / `< 2 sn` sarma hedeflerinin ölçülüp `librqbit` pencere parametrelerinin ince ayarlanması.
 - [ ] **Bellek Parçalanması Denemesi:** Torrent oturumu kapandıktan sonra kalan `~113 MB` malloc parçalanmasını azaltmak için `mimalloc` / `jemalloc` karşılaştırması.
-- [ ] **Çökme Güvenliği & Hijyen:** `yt-dlp` muxing ve yedek geri yükleme yolları için ek `kill -9` testleri, kullanılmayan eski disk kotası / `keep_watched` artık kodlarının temizlenmesi ve tek tıkla **"Tanı Bilgilerini Kopyala"** (yerel sürüm/hata özeti).
+- [ ] **Çökme Güvenliği & Hijyen:** `yt-dlp` muxing ve yedek geri yükleme yolları için ek `kill -9` testleri, ve tek tıkla **"Tanı Bilgilerini Kopyala"** (yerel sürüm/hata özeti).
 - [ ] **Canlı Cihaz & Hesap Doğrulaması:** Gerçek Chromecast/DLNA TV'ler, Trakt/Simkl/AniList/MAL OAuth geri dönüşleri, Real-Debrid/AllDebrid anahtarları ve BSD `utun*` VPN Kill Switch'in canlı ağda doğrulanması.
 
 ### Bilerek Ertelenen / İsteğe Bağlı Özellikler (Ağır Sistem Yükü Nedeniyle Beklemede)
-- *Anime4K Çok Geçişli GLSL Shader Paketleri (`#22`):* GPU/ısınma yükü oluşturmaması için ilk aşamada dahil edilmedi; istenirse yalnızca anime türlerinde isteğe bağlı eklenti olarak eklenebilir.
-- *Detay Ekranında Otomatik Fragman Oynatma (`#46`):* `yt-dlp` + sessiz arka plan `mpv` önizlemesinin boşta RAM (`~260 MB`) hedefini yükseltmemesi için kapalı tutuldu; yerine manuel **Fragman** düğmesi aktif.
-- *Sonraki Bölümü Tam Dosya Olarak Önceden İndirme (`#9`):* Mevcut sistem zaten `%88`'de `head+tail` ön ısıtması yaptığı için tam indirme SSD yazma ve bant genişliği adına ertelendi.
-- *Ek Doğrudan Altyazı REST Sağlayıcıları (`SubDL`, `SubSource`, `Wyzie`, `Jimaku` — `#30`):* Stremio eklentileri ve OpenSubtitles REST API'nin yetmediği durumlar için modüler olarak eklenebilir.
-- *Harici Webhook Bildirim Servisi (`#54`) ve Gamepad / 10-Foot TV Modu (`#56`):* Tek süreçli masaüstü odaklı mimari nedeniyle kapsam dışında bırakıldı.
+- *Anime4K Çok Geçişli GLSL Shader Paketleri:* GPU/ısınma yükü oluşturmaması için ilk aşamada dahil edilmedi; istenirse yalnızca anime türlerinde isteğe bağlı eklenti olarak eklenebilir.
+- *Detay Ekranında Otomatik Fragman Oynatma:* `yt-dlp` + sessiz arka plan `mpv` önizlemesinin boşta RAM (`~260 MB`) hedefini yükseltmemesi için kapalı tutuldu; yerine manuel **Fragman** düğmesi aktif.
+- *Sonraki Bölümü Tam Dosya Olarak Önceden İndirme:* Mevcut sistem zaten `%88`'de `head+tail` ön ısıtması yaptığı için tam indirme SSD yazma ve bant genişliği adına ertelendi.
+- *Ek Doğrudan Altyazı REST Sağlayıcıları (`SubDL`, `SubSource`, `Wyzie`, `Jimaku`):* Stremio eklentileri ve OpenSubtitles REST API'nin yetmediği durumlar için modüler olarak eklenebilir.
+- *Harici Webhook Bildirim Servisi ve tam ekran 10-Foot TV Modu:* Tek süreçli masaüstü odaklı mimari nedeniyle kapsam dışında bırakıldı. (Gamepad desteği ise eklendi, bkz. `ozellikler.md` #39.)
 
 ---
 

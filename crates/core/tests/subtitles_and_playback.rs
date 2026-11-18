@@ -714,6 +714,16 @@ fn wave3_dalga3_shelves_local_scanner_schedule_and_socket() {
         assert_eq!(val["id"], 1);
         assert!(val["result"]["version"].is_string());
         assert_eq!(val["result"]["downloads"], 1);
+
+        // An endless line is refused instead of buffered.
+        let big = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        let (r2, mut w2) = big.into_split();
+        let junk = vec![b'x'; 200 * 1024];
+        let _ = w2.write_all(&junk).await;
+        let mut reader2 = BufReader::new(r2);
+        let mut reply = String::new();
+        reader2.read_line(&mut reply).await.unwrap();
+        assert!(reply.contains("request too large"), "got {reply}");
     });
 }
 

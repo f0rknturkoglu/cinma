@@ -11,6 +11,26 @@ Unmeasured outside local mocks / sandbox: real-swarm torrent TTFF/seek and live 
 
 ---
 
+## Review of the polish/refactor work (2026-11-19)
+Reviewed P1–P5 (`fad08d4`…`056abe2`) and Antigravity's audit (`~/.gemini/antigravity/brain/49e82e83…/polish_refactor_audit.md`). Fixes:
+- **Torrent rate limits change live** (`session.ratelimits`) instead of stopping the session, which cut off playback and failed active torrent downloads whenever a limit changed in Settings. Only a VPN interface change still restarts the session. Loopback test added.
+- **Download removal race:** a job that created its blob just as the download was removed left an orphaned data file. `Job::blob` and `Queue::remove` now close that gap. "Play Now" falls back to the finished file if the blob was moved at that instant.
+- **External players** open through URL schemes or Launch Services (an `.app`), never as Cinma's child process (§1.1).
+- **Home rails** get their height from the card height. Collection-view layout warnings dropped from 20 to 4; the rest come from the first layout pass.
+- **Local socket** requests are capped at 64 KiB.
+- **Flaky tests** (fixed sleeps) now wait for state. The full suite passed 147/147 three times.
+- **Docs:**
+  - ozellikler.md: #68 is marked removed; the #70 and #16 descriptions are corrected; paths updated after the refactor.
+  - README: benchmarks re-measured; unverifiable 7.x % CPU claims removed.
+  - 20 stale strings dropped.
+- **Measured** (Release, 2026-11-19):
+  - launch 173 ms;
+  - idle 34 MB;
+  - Home with artwork 135 MB at 0 % CPU;
+  - 4K HDR10 ~15 % CPU.
+- **4K HDR10 footprint depends on window size:** 590 MB in a 1280×800 window, 683–689 MB in a 1920×975 window on a 4K external display. Both are within the 700 MB limit; the higher figure is not a code regression.
+
+
 ## Post-Phase 9 — Player UX, Memory Trim & Harbor Settings Parity Waves 1–5 ✅ (2026-11-17 – 2026-11-18)
 
 ### Done after Phase 9 (`bf1dc3a`..`1ef7e4d`)

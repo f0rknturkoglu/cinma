@@ -62,14 +62,14 @@ extension SettingsView {
                         Text("IINA (iina://)").tag("iina")
                         Text("Infuse (infuse://)").tag("infuse")
                         Text("VLC (vlc://)").tag("vlc")
-                        Text(String(localized: "Custom Binary Path")).tag("custom")
+                        Text(String(localized: "Custom App")).tag("custom")
                     }
                     .onChange(of: playerPrefs.externalPlayerPreset) { _, _ in savePlayerPrefs() }
                     if playerPrefs.externalPlayerPreset == "auto" || playerPrefs.externalPlayerPreset == "custom" {
                         HStack {
-                            Text(String(localized: "External Player Binary Path"))
+                            Text(String(localized: "External Player App"))
                             Spacer()
-                            TextField("/opt/homebrew/bin/mpv", text: $externalPlayerPathText)
+                            TextField("/Applications/IINA.app", text: $externalPlayerPathText)
                                 .frame(width: 220)
                                 .onSubmit { savePlayerPrefs() }
                         }

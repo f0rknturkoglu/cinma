@@ -887,8 +887,24 @@ impl Core {
             return Ok(Arc::new(FileSource::open(path)?));
         }
         if let Some(blob_hex) = &row.blob_id {
-            let blob = self.blob_store()?.open_blob(&BlobId::parse(blob_hex)?)?;
-            return Ok(blob.source());
+            match self.blob_store()?.open_blob(&BlobId::parse(blob_hex)?) {
+                Ok(blob) => return Ok(blob.source()),
+                Err(e) => {
+                    // The download may have just finished and been moved into
+                    // its folder between reading the row and opening the blob.
+                    let moved = self
+                        .db
+                        .lock()
+                        .map_err(|_| CoreError::Poisoned)?
+                        .download(profile, id)?
+                        .and_then(|r| r.file_path)
+                        .filter(|p| Path::new(p).is_file());
+                    return match moved {
+                        Some(path) => Ok(Arc::new(FileSource::open(Path::new(&path))?)),
+                        None => Err(e.into()),
+                    };
+                }
+            }
         }
         if row.kind == DownloadKind::Torrent && row.state == DownloadState::Active {
             let spec: TorrentSourceSpec = serde_json::from_str(&row.source_json)

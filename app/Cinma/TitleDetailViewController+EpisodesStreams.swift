@@ -610,37 +610,30 @@ extension TitleDetailViewController {
                 return
             }
         }
+        // Hand the URL to another app through Launch Services. Never spawn a
+        // player binary as our child process (one-process rule, §1.1).
         let customPath = prefs?.externalPlayerPath
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let candidates = [
-            customPath,
-            "/Applications/IINA.app/Contents/MacOS/iina-cli",
-            "/opt/homebrew/bin/mpv",
-            "/usr/local/bin/mpv",
-        ].filter { !$0.isEmpty }
-        if let binary = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: binary)
-            proc.arguments = [urlStr]
-            do {
-                try proc.run()
-                let appName = URL(fileURLWithPath: binary).lastPathComponent
-                streamStatusLabel.stringValue = String(localized: "Opened stream in \(appName)")
-                return
-            } catch {
-                streamStatusLabel.stringValue = FriendlyError.explain(error)
-                return
-            }
+        if !customPath.isEmpty && !customPath.hasSuffix(".app") {
+            streamStatusLabel.stringValue = String(localized: "Choose an app (.app) as the external player in Settings.")
+            return
         }
-        if !customPath.isEmpty && customPath.hasSuffix(".app"),
-           FileManager.default.fileExists(atPath: customPath)
-        {
-            NSWorkspace.shared.open(
-                [url],
-                withApplicationAt: URL(fileURLWithPath: customPath),
-                configuration: NSWorkspace.OpenConfiguration()
-            )
-            streamStatusLabel.stringValue = String(localized: "Opened stream in external player")
+        let appCandidates = [
+            customPath,
+            "/Applications/IINA.app",
+            "/Applications/mpv.app",
+            "/Applications/VLC.app",
+            "/Applications/Infuse 7.app",
+        ].filter { !$0.isEmpty && FileManager.default.fileExists(atPath: $0) }
+        if let app = appCandidates.first {
+            let appURL = URL(fileURLWithPath: app)
+            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration()) { [weak self] _, error in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.streamStatusLabel.stringValue = error.map { FriendlyError.explain($0) }
+                        ?? String(localized: "Opened stream in \(appURL.deletingPathExtension().lastPathComponent)")
+                }
+            }
             return
         }
         if NSWorkspace.shared.open(url) {

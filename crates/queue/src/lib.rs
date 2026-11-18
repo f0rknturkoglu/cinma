@@ -58,6 +58,12 @@ impl Job {
             .lock()
             .map_err(|_| QueueError::Poisoned)?
             .set_download_blob(self.download.id, blob.id().as_str(), Some(size))?;
+        // Removed while we were creating it: `remove` cancels first and then
+        // reads the row's blob, so one of the two sides always deletes it.
+        if self.cancel.is_cancelled() {
+            let _ = self.store.remove(blob.id());
+            return Err(QueueError::Io(io::Error::other("download was removed")));
+        }
         Ok(blob)
     }
 
@@ -261,8 +267,10 @@ impl Queue {
 
     /// Removes the row and, if `delete_data`, its blob.
     pub fn remove(&self, profile: ProfileId, id: i64, delete_data: bool) -> Result<(), QueueError> {
-        let row = self.require(profile, id)?;
+        self.require(profile, id)?;
         self.stop_job(id)?;
+        // Read the blob after cancelling: a job may have just created it.
+        let row = self.require(profile, id)?;
         self.db()?.delete_download(profile, id)?;
         if delete_data && let Some(blob) = row.blob_id {
             self.inner.store.remove(&BlobId::parse(&blob)?)?;

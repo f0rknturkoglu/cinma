@@ -149,7 +149,13 @@ async fn pause_resume_and_failure() {
         )
         .unwrap();
     let id = queue.add(&new_download(1, "a", 0)).unwrap();
-    tokio::time::sleep(Duration::from_millis(40)).await;
+    // Wait for real progress instead of a fixed sleep (parallel test load).
+    for _ in 0..200 {
+        if queue.downloads(1).unwrap()[0].bytes_done > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     queue.pause(1, id).unwrap();
     // Resume right away while the old job may still be winding down
     // (regression: its finish() must not clobber the new job).
@@ -238,11 +244,18 @@ async fn removing_an_active_download_deletes_all_its_files() {
     let id = queue.add(&new_download(1, "a", 0)).unwrap();
     tokio::time::sleep(Duration::from_millis(40)).await;
     queue.remove(1, id, true).unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await; // engine notices cancel and checkpoints
-    let leftovers: Vec<_> = std::fs::read_dir(dir.path().join("blobs"))
-        .unwrap()
-        .map(|e| e.unwrap().file_name())
-        .collect();
+    // The engine notices the cancel and stops; nothing may be left behind.
+    let mut leftovers = Vec::new();
+    for _ in 0..100 {
+        leftovers = std::fs::read_dir(dir.path().join("blobs"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        if leftovers.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     assert!(leftovers.is_empty(), "orphaned files: {leftovers:?}");
 }
 

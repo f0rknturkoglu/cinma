@@ -99,6 +99,15 @@ final class CatalogRailView: NSView, NSCollectionViewDataSource, NSCollectionVie
         onUnpin?()
     }
 
+    /// Vertical space a rail needs besides its cards: the 20 pt heading
+    /// (~24 pt), the 14 pt gap, the 4+4 pt section insets and a little slack.
+    /// Smaller than this and the flow layout rejects the item height.
+    static let chromeHeight: CGFloat = 50
+
+    static func height(forItemHeight itemHeight: CGFloat) -> CGFloat {
+        itemHeight + chromeHeight
+    }
+
     func update(title: String? = nil, source: String? = nil, content: Content, style: PosterStyleContext? = nil) {
         if let title { headingLabel.stringValue = title }
         if let source { sourceLabel.stringValue = source }
@@ -509,7 +518,7 @@ final class HomeBrowserViewController: NSViewController {
     private func setupRails() {
         continueRail.translatesAutoresizingMaskIntoConstraints = false
         continueRail.onSelectContinue = { [weak self] entry in self?.onContinue(entry) }
-        let cwHeight = continueRail.heightAnchor.constraint(equalToConstant: 238)
+        let cwHeight = continueRail.heightAnchor.constraint(equalToConstant: CatalogRailView.height(forItemHeight: ContinueWatchingCardItem.itemSize.height))
         cwHeight.isActive = true
         continueHeight = cwHeight
         contentStack.addArrangedSubview(continueRail)
@@ -527,7 +536,7 @@ final class HomeBrowserViewController: NSViewController {
 
         for (idx, rail) in [trendingMoviesRail, trendingSeriesRail].enumerated() {
             rail.translatesAutoresizingMaskIntoConstraints = false
-            let h = rail.heightAnchor.constraint(equalToConstant: 344)
+            let h = rail.heightAnchor.constraint(equalToConstant: CatalogRailView.height(forItemHeight: PosterCardItem.itemSize.height))
             h.isActive = true
             if idx == 0 { moviesRailHeight = h } else { seriesRailHeight = h }
             rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
@@ -579,14 +588,14 @@ final class HomeBrowserViewController: NSViewController {
             let cwSeries = cw.filter { $0.mediaType != "movie" }
             continueRail.update(title: String(localized: "Continue Watching — Movies"), content: .continueWatching(cwMovies))
             continueRail.isHidden = cwMovies.isEmpty
-            continueHeight?.constant = cwMovies.isEmpty ? 0 : 238
+            continueHeight?.constant = cwMovies.isEmpty ? 0 : CatalogRailView.height(forItemHeight: ContinueWatchingCardItem.itemSize.height)
             continueSeriesRail.update(title: String(localized: "Continue Watching — Series"), content: .continueWatching(cwSeries))
             continueSeriesRail.isHidden = cwSeries.isEmpty
-            continueSeriesHeight?.constant = cwSeries.isEmpty ? 0 : 238
+            continueSeriesHeight?.constant = cwSeries.isEmpty ? 0 : CatalogRailView.height(forItemHeight: ContinueWatchingCardItem.itemSize.height)
         } else {
             continueRail.update(title: String(localized: "Continue Watching"), content: .continueWatching(Array(cw.prefix(12))))
             continueRail.isHidden = cw.isEmpty
-            continueHeight?.constant = cw.isEmpty ? 0 : 238
+            continueHeight?.constant = cw.isEmpty ? 0 : CatalogRailView.height(forItemHeight: ContinueWatchingCardItem.itemSize.height)
             continueSeriesRail.isHidden = true
             continueSeriesHeight?.constant = 0
         }
@@ -615,7 +624,7 @@ final class HomeBrowserViewController: NSViewController {
         syncContinueRailPosition(cwAtTop: prefs?.cwAtTop ?? true)
         let style = PosterStyleContext.load(from: core)
         let visContext = CatalogVisibilityContext.load(from: core)
-        let railH = style.itemSize.height + 42
+        let railH = CatalogRailView.height(forItemHeight: style.itemSize.height)
         moviesRailHeight?.constant = railH
         seriesRailHeight?.constant = railH
 
@@ -724,7 +733,7 @@ final class HomeBrowserViewController: NSViewController {
     private func appendPinnedShelfRail(_ shelf: PinnedShelfFfi, items: [MetaPreviewInfo], style: PosterStyleContext) {
         let rail = CatalogRailView(title: "📌 \(shelf.title)", source: String(localized: "Pinned Shelf"))
         rail.translatesAutoresizingMaskIntoConstraints = false
-        rail.heightAnchor.constraint(equalToConstant: style.itemSize.height + 42).isActive = true
+        rail.heightAnchor.constraint(equalToConstant: CatalogRailView.height(forItemHeight: style.itemSize.height)).isActive = true
         rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
         rail.onBuildContextMenu = { [weak self] item in self?.onBuildContextMenu?(item) }
         rail.onUnpin = { [weak self] in
@@ -742,7 +751,7 @@ final class HomeBrowserViewController: NSViewController {
         guard !visItems.isEmpty else { return }
         let rail = CatalogRailView(title: batch.catalogName, source: batch.addonName)
         rail.translatesAutoresizingMaskIntoConstraints = false
-        rail.heightAnchor.constraint(equalToConstant: style.itemSize.height + 42).isActive = true
+        rail.heightAnchor.constraint(equalToConstant: CatalogRailView.height(forItemHeight: style.itemSize.height)).isActive = true
         rail.onSelectPoster = { [weak self] item in self?.onOpenDetail(item) }
         rail.onBuildContextMenu = { [weak self] item in self?.onBuildContextMenu?(item) }
         rail.update(content: .posters(visItems), style: style)
