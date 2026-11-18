@@ -116,7 +116,7 @@ private final class PlayerRootView: NSView {
     }
 }
 
-private final class ClickCatcherView: NSView {
+final class ClickCatcherView: NSView {
     var onClick: (() -> Void)?
 
     override func mouseDown(with event: NSEvent) {
@@ -128,137 +128,138 @@ private final class ClickCatcherView: NSView {
 /// SDR 8-bit optimization, hover thumbnails, dual/encoded subtitles, chapters,
 /// next-episode prefetch/countdown, stream switcher & auto-recovery, stats/AB/sleep/shaders,
 /// media keys & power assertion.
+
 @MainActor
 final class PlayerViewController: NSViewController {
-    private let core: CinmaCore
-    private var request: PlayRequest
-    private let onClose: () -> Void
+    let core: CinmaCore
+    var request: PlayRequest
+    let onClose: () -> Void
 
-    private let videoView = NSView()
-    private let videoLayer = VideoLayer()
-    private let titlePill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 22)
-    private let infoLabel = NSTextField(labelWithString: "")
-    private let titleField = NSTextField(labelWithString: "")
-    private let subField = NSTextField(labelWithString: "")
-    private let bar = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 22)
-    private let statusPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 14)
-    private let statusLabel = NSTextField(labelWithString: "")
-    private let scrubBar = ScrubBarView()
-    private let playButton = NSButton()
-    private let speedButton = NSButton()
-    private let volumeButton = NSButton()
-    private let lockButton = NSButton()
-    private let p2pSpeedLabel = NSTextField(labelWithString: "")
-    private let clockPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
-    private let clockLabel = NSTextField(labelWithString: "")
-    private let unlockPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 18)
-    private let timeLabel = NSTextField(labelWithString: "--:-- / --:--")
+    let videoView = NSView()
+    let videoLayer = VideoLayer()
+    let titlePill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 22)
+    let infoLabel = NSTextField(labelWithString: "")
+    let titleField = NSTextField(labelWithString: "")
+    let subField = NSTextField(labelWithString: "")
+    let bar = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 22)
+    let statusPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 14)
+    let statusLabel = NSTextField(labelWithString: "")
+    let scrubBar = ScrubBarView()
+    let playButton = NSButton()
+    let speedButton = NSButton()
+    let volumeButton = NSButton()
+    let lockButton = NSButton()
+    let p2pSpeedLabel = NSTextField(labelWithString: "")
+    let clockPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
+    let clockLabel = NSTextField(labelWithString: "")
+    let unlockPill = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 18)
+    let timeLabel = NSTextField(labelWithString: "--:-- / --:--")
 
     // Hover thumbnail preview
-    private let thumbCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 12)
-    private let thumbImageView = NSImageView()
-    private let thumbTimeLabel = NSTextField(labelWithString: "00:00")
-    private var thumbCenterXConstraint: NSLayoutConstraint?
+    let thumbCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 12)
+    let thumbImageView = NSImageView()
+    let thumbTimeLabel = NSTextField(labelWithString: "00:00")
+    var thumbCenterXConstraint: NSLayoutConstraint?
 
     // Stats overlay & Skip intro / Next episode cards
-    private let statsCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 14)
-    private let statsText = NSTextField(wrappingLabelWithString: "")
-    private lazy var skipButton = CinemaTheme.makePillButton(title: "", symbol: "forward.end.fill", primary: true, target: self, action: #selector(skipCurrentSegment))
-    private var skipButtonTrailingConstraint: NSLayoutConstraint?
-    private let nextCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
-    private let nextTitleLabel = NSTextField(labelWithString: "")
-    private let nextSubtitleLabel = NSTextField(labelWithString: "")
-    private let nextCountdownLabel = NSTextField(labelWithString: "")
+    let statsCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 14)
+    let statsText = NSTextField(wrappingLabelWithString: "")
+    lazy var skipButton = CinemaTheme.makePillButton(title: "", symbol: "forward.end.fill", primary: true, target: self, action: #selector(skipCurrentSegment))
+    var skipButtonTrailingConstraint: NSLayoutConstraint?
+    let nextCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
+    let nextTitleLabel = NSTextField(labelWithString: "")
+    let nextSubtitleLabel = NSTextField(labelWithString: "")
+    let nextCountdownLabel = NSTextField(labelWithString: "")
 
-    private var session: PlaybackSession?
-    private var thumbCache: ThumbnailPreviewCache?
-    private let nowPlaying = NowPlayingBridge()
+    var session: PlaybackSession?
+    var thumbCache: ThumbnailPreviewCache?
+    let nowPlaying = NowPlayingBridge()
 
-    private var duration: Double = 0
-    private var position: Double = 0
-    private var paused = false
-    private var muted = false
-    private var volume: Double = 100
-    private var speed: Double = 1.0
-    private var subDelay: Double = 0
-    private var audioDelay: Double = 0
-    private var subtitlesEnabled = true
-    private var lastSelectedSid: Int64?
-    private var secondarySid: Int64?
-    private var abLoopA: Double?
-    private var abLoopB: Double?
-    private var tracks: [MediaTrackInfo] = []
-    private var chapters: [ChapterInfo] = []
-    private var apiSkipSegments: [SkipSegmentInfo] = []
-    private var appliedAutoTracks = false
-    private var onlineSubtitles: [SubtitleCandidateInfo] = []
-    private var searchingSubtitles = false
-    private var subtitleSearchStatus = ""
-    private var prefetchedTriggered = false
-    private var nextPlan: NextEpisodePrefetchInfo?
-    private var nextCountdownTask: Task<Void, Never>?
-    private var nextDismissed = false
-    private var loadingNextEpisode = false
-    private var sessionAudioLang: String?
-    private var sessionAudioTitle: String?
-    private var sessionSubEnabled: Bool?
-    private var sessionSubLang: String?
-    private var sessionSubTitle: String?
-    private var sessionSecondarySubEnabled: Bool?
-    private var sessionSecondarySubLang: String?
-    private var sessionSubDelay: Double?
-    private var sessionAudioDelay: Double?
-    private var statsVisible = false
-    private var statsTask: Task<Void, Never>?
-    private var hudHideTask: Task<Void, Never>?
-    private var statusClearTask: Task<Void, Never>?
-    private var popoverBackdrop: ClickCatcherView?
-    private var popoverCard: NSView?
-    private weak var activeSubtitlesHost: NSHostingView<SubtitleManagerPopoverView>?
-    private var didTrimInitialMalloc = false
-    private var sleepTimerTask: Task<Void, Never>?
-    private var activeSleepMinutes: Int = 0
-    private var stallRecoveryTask: Task<Void, Never>?
-    private var failedRetries = 0
-    private var currentStreamIndex = 0
-    private var pendingSwitchPosition: Double?
-    private var isHoveringScrub = false
-    private var hudVisible = true
-    private var baseSubtitlePos: UInt32 = 95
-    private var liftSubtitlesAboveControls = true
-    private var lastAutoSkippedSegmentStart: Double?
-    private var focusObservers: [NSObjectProtocol] = []
-    private var pausedBySystemEvent = false
-    private var isScreenLocked = false
-    private var autoPlayedEpisodesCount: UInt32 = 0
-    private var p2pChipTask: Task<Void, Never>?
-    private var moreButton: NSButton?
-    private var sleepEndOfEpisode = false
-    private var holdBoostTask: Task<Void, Never>?
-    private var holdBoostActive = false
-    private var holdBoostKeyWaiting: String?
-    private var speedBeforeHoldBoost: Double = 1.0
-    private var scrollAccumX: CGFloat = 0
-    private var scrollAccumY: CGFloat = 0
-    private var activeSubtitleFilePath: String?
-    private var manualSkipMarkers = ManualSkipMarkersFfi(introEndS: nil, outroLastS: nil)
-    private var audioRouteAddress = AudioObjectPropertyAddress(
+    var duration: Double = 0
+    var position: Double = 0
+    var paused = false
+    var muted = false
+    var volume: Double = 100
+    var speed: Double = 1.0
+    var subDelay: Double = 0
+    var audioDelay: Double = 0
+    var subtitlesEnabled = true
+    var lastSelectedSid: Int64?
+    var secondarySid: Int64?
+    var abLoopA: Double?
+    var abLoopB: Double?
+    var tracks: [MediaTrackInfo] = []
+    var chapters: [ChapterInfo] = []
+    var apiSkipSegments: [SkipSegmentInfo] = []
+    var appliedAutoTracks = false
+    var onlineSubtitles: [SubtitleCandidateInfo] = []
+    var searchingSubtitles = false
+    var subtitleSearchStatus = ""
+    var prefetchedTriggered = false
+    var nextPlan: NextEpisodePrefetchInfo?
+    var nextCountdownTask: Task<Void, Never>?
+    var nextDismissed = false
+    var loadingNextEpisode = false
+    var sessionAudioLang: String?
+    var sessionAudioTitle: String?
+    var sessionSubEnabled: Bool?
+    var sessionSubLang: String?
+    var sessionSubTitle: String?
+    var sessionSecondarySubEnabled: Bool?
+    var sessionSecondarySubLang: String?
+    var sessionSubDelay: Double?
+    var sessionAudioDelay: Double?
+    var statsVisible = false
+    var statsTask: Task<Void, Never>?
+    var hudHideTask: Task<Void, Never>?
+    var statusClearTask: Task<Void, Never>?
+    var popoverBackdrop: ClickCatcherView?
+    var popoverCard: NSView?
+    weak var activeSubtitlesHost: NSHostingView<SubtitleManagerPopoverView>?
+    var didTrimInitialMalloc = false
+    var sleepTimerTask: Task<Void, Never>?
+    var activeSleepMinutes: Int = 0
+    var stallRecoveryTask: Task<Void, Never>?
+    var failedRetries = 0
+    var currentStreamIndex = 0
+    var pendingSwitchPosition: Double?
+    var isHoveringScrub = false
+    var hudVisible = true
+    var baseSubtitlePos: UInt32 = 95
+    var liftSubtitlesAboveControls = true
+    var lastAutoSkippedSegmentStart: Double?
+    var focusObservers: [NSObjectProtocol] = []
+    var pausedBySystemEvent = false
+    var isScreenLocked = false
+    var autoPlayedEpisodesCount: UInt32 = 0
+    var p2pChipTask: Task<Void, Never>?
+    var moreButton: NSButton?
+    var sleepEndOfEpisode = false
+    var holdBoostTask: Task<Void, Never>?
+    var holdBoostActive = false
+    var holdBoostKeyWaiting: String?
+    var speedBeforeHoldBoost: Double = 1.0
+    var scrollAccumX: CGFloat = 0
+    var scrollAccumY: CGFloat = 0
+    var activeSubtitleFilePath: String?
+    var manualSkipMarkers = ManualSkipMarkersFfi(introEndS: nil, outroLastS: nil)
+    var audioRouteAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultOutputDevice,
         mScope: kAudioObjectPropertyScopeGlobal,
         mElement: kAudioObjectPropertyElementMain
     )
-    private var audioRouteListener: AudioObjectPropertyListenerBlock?
-    private var liveTextOverlay: ImageAnalysisOverlayView?
-    private var liveTextTask: Task<Void, Never>?
-    private var blackoutWindows: [NSWindow] = []
-    private var isInPiP = false
-    private var cachedPrefs: PlayerPreferencesFfi?
-    private var pendingStyleSettings: SubtitleSettingsFfi?
-    private var stylePersistTask: Task<Void, Never>?
-    private var pendingEqPrefs: (Int32, Int32, Int32, Int32)?
-    private var eqPersistTask: Task<Void, Never>?
+    var audioRouteListener: AudioObjectPropertyListenerBlock?
+    var liveTextOverlay: ImageAnalysisOverlayView?
+    var liveTextTask: Task<Void, Never>?
+    var blackoutWindows: [NSWindow] = []
+    var isInPiP = false
+    var cachedPrefs: PlayerPreferencesFfi?
+    var pendingStyleSettings: SubtitleSettingsFfi?
+    var stylePersistTask: Task<Void, Never>?
+    var pendingEqPrefs: (Int32, Int32, Int32, Int32)?
+    var eqPersistTask: Task<Void, Never>?
 
-    private static let clockFormatter: DateFormatter = {
+    static let clockFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f
@@ -268,33 +269,33 @@ final class PlayerViewController: NSViewController {
     var onPauseStateChanged: ((Bool) -> Void)?
     var isPausedForPiP: Bool { paused }
 
-    private var closing = false
-    private var appliedResume = false
-    private var lastSavedAt: ContinuousClock.Instant?
-    private var shutdownWaiter: CheckedContinuation<Void, Never>?
-    private var pendingSeeks = DevAutomation.autoSeeks
-    private var closeRequestedAt: ContinuousClock.Instant?
+    var closing = false
+    var appliedResume = false
+    var lastSavedAt: ContinuousClock.Instant?
+    var shutdownWaiter: CheckedContinuation<Void, Never>?
+    var pendingSeeks = DevAutomation.autoSeeks
+    var closeRequestedAt: ContinuousClock.Instant?
 
-    private var metadata: PlaybackMetadata? {
+    var metadata: PlaybackMetadata? {
         if case .stream(_, let meta) = request { return meta }
         return nil
     }
 
-    private func currentPrefs(reload: Bool = false) -> PlayerPreferencesFfi? {
+    func currentPrefs(reload: Bool = false) -> PlayerPreferencesFfi? {
         if reload || cachedPrefs == nil {
             cachedPrefs = try? core.playerPreferences()
         }
         return cachedPrefs
     }
 
-    private func updatePrefs(_ mutate: (inout PlayerPreferencesFfi) -> Void) {
+    func updatePrefs(_ mutate: (inout PlayerPreferencesFfi) -> Void) {
         guard var prefs = currentPrefs(reload: true) else { return }
         mutate(&prefs)
         cachedPrefs = prefs
         try? core.setPlayerPreferences(prefs: prefs)
     }
 
-    private func flushPendingPersistedSettings() {
+    func flushPendingPersistedSettings() {
         stylePersistTask?.cancel()
         stylePersistTask = nil
         if let pending = pendingStyleSettings {
@@ -314,7 +315,7 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    private var activeStreamRaw: String? {
+    var activeStreamRaw: String? {
         if case .stream(let s, _) = request { return s.raw }
         return nil
     }
@@ -434,7 +435,7 @@ final class PlayerViewController: NSViewController {
         view = root
     }
 
-    private func buildTopBars() {
+    func buildTopBars() {
         titlePill.translatesAutoresizingMaskIntoConstraints = false
         let backBtn = NSButton(
             image: NSImage(systemSymbolName: "chevron.left", accessibilityDescription: String(localized: "Close")) ?? NSImage(),
@@ -477,7 +478,7 @@ final class PlayerViewController: NSViewController {
         ])
     }
 
-    private func buildClockAndLockPills() {
+    func buildClockAndLockPills() {
         clockPill.translatesAutoresizingMaskIntoConstraints = false
         clockPill.isHidden = true
         clockLabel.font = .monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold)
@@ -511,7 +512,7 @@ final class PlayerViewController: NSViewController {
         ])
     }
 
-    private func buildBottomBar() {
+    func buildBottomBar() {
         bar.translatesAutoresizingMaskIntoConstraints = false
 
         scrubBar.translatesAutoresizingMaskIntoConstraints = false
@@ -623,7 +624,7 @@ final class PlayerViewController: NSViewController {
         ])
     }
 
-    private func buildThumbPreview() {
+    func buildThumbPreview() {
         thumbCard.translatesAutoresizingMaskIntoConstraints = false
         thumbCard.isHidden = true
 
@@ -653,7 +654,7 @@ final class PlayerViewController: NSViewController {
         ])
     }
 
-    private func buildStatsCard() {
+    func buildStatsCard() {
         statsCard.translatesAutoresizingMaskIntoConstraints = false
         statsCard.isHidden = true
         statsText.font = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
@@ -673,7 +674,7 @@ final class PlayerViewController: NSViewController {
         ])
     }
 
-    private func buildSkipAndNextCards() {
+    func buildSkipAndNextCards() {
         skipButton.translatesAutoresizingMaskIntoConstraints = false
         skipButton.target = self
         skipButton.action = #selector(skipCurrentSegment)
@@ -729,7 +730,7 @@ final class PlayerViewController: NSViewController {
         ])
     }
 
-    private func makeIconButton(_ symbol: String, tooltip: String, action: Selector) -> NSButton {
+    func makeIconButton(_ symbol: String, tooltip: String, action: Selector) -> NSButton {
         let btn = NSButton(
             image: NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip) ?? NSImage(),
             target: self,
@@ -744,7 +745,7 @@ final class PlayerViewController: NSViewController {
         return btn
     }
 
-    private func refreshTitles() {
+    func refreshTitles() {
         switch request {
         case .stream(let s, let meta):
             let seriesFirst = currentPrefs()?.playerTitleSeriesFirst ?? true
@@ -797,7 +798,7 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    private func installMediaKeys() {
+    func installMediaKeys() {
         nowPlaying.onTogglePause = { [weak self] in self?.togglePause() }
         nowPlaying.onPlay = { [weak self] in try? self?.session?.setPaused(paused: false) }
         nowPlaying.onPause = { [weak self] in try? self?.session?.setPaused(paused: true) }
@@ -806,7 +807,7 @@ final class PlayerViewController: NSViewController {
         nowPlaying.installCommands()
     }
 
-    private func installWindowFocusObservers() {
+    func installWindowFocusObservers() {
         guard focusObservers.isEmpty, let window = view.window else { return }
         let nc = NotificationCenter.default
         focusObservers = [
@@ -834,7 +835,7 @@ final class PlayerViewController: NSViewController {
         ]
     }
 
-    private func handlePauseOnSystemEvent(isMinimize: Bool) {
+    func handlePauseOnSystemEvent(isMinimize: Bool) {
         _ = endHoldBoost(triggerKey: nil)
         guard !closing, let session, !paused else { return }
         guard let prefs = try? core.playerPreferences() else { return }
@@ -844,13 +845,13 @@ final class PlayerViewController: NSViewController {
         try? session.togglePause()
     }
 
-    private func handleResumeAfterSystemEvent() {
+    func handleResumeAfterSystemEvent() {
         guard !closing, let session, paused, pausedBySystemEvent else { return }
         pausedBySystemEvent = false
         try? session.togglePause()
     }
 
-    private func start() {
+    func start() {
         showStatus(String(localized: "Starting player…"), autoHideAfter: 0)
         loadSkipSegmentsIfEnabled()
         let sink = PlaybackEventSink { [weak self] event in
@@ -1023,7 +1024,7 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    private func handle(_ event: PlaybackEvent) {
+    func handle(_ event: PlaybackEvent) {
         switch event {
         case .fileLoaded:
             loadingNextEpisode = false
@@ -1148,2049 +1149,6 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    // MARK: - Track / Subtitle / Offset Automation
-
-    private func applySavedStyleAndOffsets() {
-        guard let session else { return }
-        if let settings = try? core.subtitleSettings() {
-            applySubtitleStyle(settings, session: session)
-        }
-        if let prefs = currentPrefs(reload: true) {
-            let paths = (try? core.resolveShaderPaths(preset: prefs.shaderPreset)) ?? []
-            try? session.setGlslShaders(paths: paths)
-            try? session.setHdrTargetPeak(nits: prefs.hdrTargetPeak)
-            try? session.setVolumeMax(maxPct: prefs.volumeBoostMax)
-            volume = min(volume, Double(prefs.volumeBoostMax))
-            try? session.setCropMode(mode: prefs.cropMode)
-            try? session.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
-            try? session.setToneMapping(mode: prefs.hdrToneMapping)
-            try? session.setVideoEq(
-                brightness: prefs.eqBrightness,
-                contrast: prefs.eqContrast,
-                gamma: prefs.eqGamma,
-                saturation: prefs.eqSaturation
-            )
-            scrubBar.showChapterMarkers = prefs.seekBarChapters
-            lockButton.isHidden = !prefs.screenLockEnabled
-            view.window?.level = prefs.playerAlwaysOnTop ? .floating : .normal
-        }
-        refreshP2pSpeedChip()
-        updateClockPill()
-        try? session.setSpeed(speed: speed)
-        if abs(volume - 100.0) > 0.5 {
-            try? session.setVolume(volume: volume)
-        }
-        if muted {
-            try? session.setMuted(muted: true)
-        }
-        if let videoId = metadata?.videoId, let offsets = try? core.videoOffsets(videoId: videoId) {
-            subDelay = abs(offsets.subDelay) > 0.001 ? offsets.subDelay : (sessionSubDelay ?? 0)
-            audioDelay = abs(offsets.audioDelay) > 0.001 ? offsets.audioDelay : (sessionAudioDelay ?? 0)
-        } else {
-            subDelay = sessionSubDelay ?? 0
-            audioDelay = sessionAudioDelay ?? 0
-        }
-        try? session.setSubtitleDelay(seconds: subDelay)
-        try? session.setAudioDelay(seconds: audioDelay)
-    }
-
-    private func effectiveSubtitlePos(for settings: SubtitleSettingsFfi? = nil) -> UInt32 {
-        if let settings {
-            baseSubtitlePos = settings.srtPos
-            liftSubtitlesAboveControls = settings.liftAboveControls
-        }
-        return (liftSubtitlesAboveControls && hudVisible) ? min(baseSubtitlePos, 78) : baseSubtitlePos
-    }
-
-    private func syncSubtitlePosForHud() {
-        try? session?.setSubtitlePos(pos: effectiveSubtitlePos())
-    }
-
-    private func applySubtitleStyle(_ s: SubtitleSettingsFfi, session: PlaybackSession?) {
-        let pos = effectiveSubtitlePos(for: s)
-        try? session?.setSubtitleStyle(
-            font: s.srtFont,
-            fontSize: s.srtFontSize,
-            colorHex: s.srtColor,
-            borderSize: s.srtBorderSize,
-            borderColorHex: s.srtBorderColor,
-            backColorHex: s.srtBackColor,
-            bold: s.srtBold,
-            pos: pos,
-            assOverride: s.assOverride,
-            opacityPct: s.srtOpacity,
-            boxOpacityPct: s.srtBoxOpacity,
-            alignX: s.srtAlignX,
-            secondaryPos: s.secondaryPos,
-            scalePct: s.subScalePct,
-            assScaleWithWindow: s.assScaleWithWindow,
-            hdrPeakNits: s.subHdrPeakNits,
-            useMargins: s.subUseMargins
-        )
-    }
-
-    private func refreshTracksAndChapters() {
-        guard let session else { return }
-        tracks = (try? session.tracks()) ?? []
-        chapters = (try? session.chapters()) ?? []
-        scrubBar.chapters = chapters
-
-        guard !appliedAutoTracks, !tracks.isEmpty else { return }
-        appliedAutoTracks = true
-        autoSelectPreferredTracks()
-    }
-
-    private func autoSelectPreferredTracks() {
-        guard let session, let prefs = try? core.subtitleSettings() else { return }
-        let audioTracks = tracks.filter { $0.trackType == "audio" }
-        var matchedAudio: MediaTrackInfo?
-        if let wantLang = sessionAudioLang {
-            if let wantTitle = sessionAudioTitle, !wantTitle.isEmpty {
-                matchedAudio = audioTracks.first { trackMatchesLang($0, wantLang) && $0.title == wantTitle }
-            }
-            matchedAudio = matchedAudio ?? audioTracks.first { trackMatchesLang($0, wantLang) }
-        } else if let wantTitle = sessionAudioTitle, !wantTitle.isEmpty {
-            matchedAudio = audioTracks.first { $0.title == wantTitle }
-        }
-        if matchedAudio == nil {
-            for lang in prefs.audioLangs {
-                if let match = audioTracks.first(where: { trackMatchesLang($0, lang) }) {
-                    matchedAudio = match
-                    break
-                }
-            }
-        }
-        if let match = matchedAudio, !match.selected {
-            try? session.setAudioTrack(id: match.id)
-        }
-
-        let subTracks = tracks.filter { $0.trackType == "sub" }
-        let activeAudio = matchedAudio ?? audioTracks.first(where: { $0.selected })
-        let audioIsNative = activeAudio.map { tr in
-            prefs.audioLangs.contains(where: { trackMatchesLang(tr, $0) })
-        } ?? false
-
-        if sessionSubEnabled == false || (sessionSubLang == nil && prefs.offByDefault) {
-            subtitlesEnabled = false
-            try? session.setSubtitleTrack(id: nil)
-            try? session.setSecondarySubtitleTrack(id: nil)
-            return
-        }
-
-        var primaryId: Int64?
-        if let wantSubLang = sessionSubLang {
-            if let match = pickBestSubTrack(
-                in: subTracks,
-                lang: wantSubLang,
-                title: sessionSubTitle,
-                forcedOnly: false,
-                preferEmbedded: prefs.preferEmbedded,
-                hideSdh: prefs.hideSdh
-            ) {
-                primaryId = match.id
-                lastSelectedSid = match.id
-                subtitlesEnabled = true
-                try? session.setSubtitleTrack(id: match.id)
-            }
-        }
-        if primaryId == nil {
-            let needForcedOnly = prefs.forcedWhenNativeAudio && audioIsNative
-            let candidateLangs = needForcedOnly
-                ? (prefs.preferredLangs + [activeAudio?.lang].compactMap { $0 })
-                : prefs.preferredLangs
-            for lang in candidateLangs {
-                if let match = pickBestSubTrack(
-                    in: subTracks,
-                    lang: lang,
-                    title: nil,
-                    forcedOnly: needForcedOnly,
-                    preferEmbedded: prefs.preferEmbedded,
-                    hideSdh: prefs.hideSdh
-                ) {
-                    primaryId = match.id
-                    lastSelectedSid = match.id
-                    subtitlesEnabled = true
-                    try? session.setSubtitleTrack(id: match.id)
-                    break
-                }
-            }
-            if primaryId == nil && needForcedOnly {
-                subtitlesEnabled = false
-                try? session.setSubtitleTrack(id: nil)
-            }
-        }
-
-        if sessionSecondarySubEnabled == false {
-            secondarySid = nil
-            try? session.setSecondarySubtitleTrack(id: nil)
-        } else if let secLang = sessionSecondarySubLang ?? prefs.dualSecondaryLang, !secLang.isEmpty,
-                  let dualMatch = pickBestSubTrack(
-                      in: subTracks.filter { $0.id != primaryId },
-                      lang: secLang,
-                      title: nil,
-                      forcedOnly: false,
-                      preferEmbedded: prefs.preferEmbedded,
-                      hideSdh: prefs.hideSdh
-                  )
-        {
-            secondarySid = dualMatch.id
-            try? session.setSecondarySubtitleTrack(id: dualMatch.id)
-        }
-    }
-
-    private func pickBestSubTrack(
-        in subTracks: [MediaTrackInfo],
-        lang: String,
-        title: String?,
-        forcedOnly: Bool,
-        preferEmbedded: Bool,
-        hideSdh: Bool
-    ) -> MediaTrackInfo? {
-        let langMatches = subTracks.filter { trackMatchesLang($0, lang) }
-        guard !langMatches.isEmpty else { return nil }
-        let sdhPool = (hideSdh && langMatches.contains(where: { !$0.hearingImpaired }))
-            ? langMatches.filter { !$0.hearingImpaired }
-            : langMatches
-        if forcedOnly {
-            let forced = sdhPool.filter { $0.forced }
-            if preferEmbedded, let emb = forced.first(where: { !$0.external }) { return emb }
-            return forced.first
-        }
-        if let title, !title.isEmpty {
-            if let exact = sdhPool.first(where: { $0.title == title && (!preferEmbedded || !$0.external) })
-                ?? sdhPool.first(where: { $0.title == title })
-            {
-                return exact
-            }
-        }
-        let nonForced = sdhPool.filter { !$0.forced }
-        let orderedPool = nonForced.isEmpty ? sdhPool : nonForced
-        if preferEmbedded, let emb = orderedPool.first(where: { !$0.external }) {
-            return emb
-        }
-        return orderedPool.first
-    }
-
-    private func trackMatchesLang(_ track: MediaTrackInfo, _ pref: String) -> Bool {
-        let p = pref.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let l = track.lang?.lowercased() else { return false }
-        if l == p || l.hasPrefix(p) || p.hasPrefix(l) { return true }
-        let aliases: [String: Set<String>] = [
-            "tur": ["tr", "tur", "trk", "tr-tr"],
-            "eng": ["en", "eng", "en-us", "en-gb"],
-            "jpn": ["ja", "jpn"],
-        ]
-        for group in aliases.values where group.contains(p) && group.contains(l) {
-            return true
-        }
-        return false
-    }
-
-    private func scheduleOnlineSubtitleLookup() {
-        let meta = metadata
-        let core = core
-        Task { [weak self] in
-            // Allow torrent head+tail warmup a moment to compute the OpenSubtitles hash.
-            var identity = self?.session?.videoIdentity()
-            if identity?.hash == nil {
-                try? await Task.sleep(for: .seconds(1.5))
-                identity = self?.session?.videoIdentity()
-            }
-            guard let self, !self.closing else { return }
-            let input = SubtitleSearchInput(
-                mediaType: meta?.mediaType ?? "movie",
-                videoId: meta?.videoId ?? (identity?.filename ?? "local"),
-                imdbId: meta?.metaId.hasPrefix("tt") == true ? meta?.metaId : nil,
-                season: meta?.season.map { UInt32($0) },
-                episode: meta?.episode.map { UInt32($0) },
-                videoHash: identity?.hash,
-                videoSize: identity?.size,
-                filename: identity?.filename
-            )
-            self.searchingSubtitles = true
-            self.refreshSubtitlesPopoverIfVisible()
-            let results = (try? await core.fetchSubtitles(input: input)) ?? []
-            guard !self.closing else { return }
-            self.searchingSubtitles = false
-            self.onlineSubtitles = results
-            self.subtitleSearchStatus = identity?.hash != nil
-                ? String(localized: "Matched with OpenSubtitles hash")
-                : ""
-            self.refreshSubtitlesPopoverIfVisible()
-        }
-    }
-
-    private func loadSkipSegmentsIfEnabled() {
-        guard let meta = metadata else { return }
-        manualSkipMarkers = (try? core.manualSkipMarkers(metaId: meta.metaId))
-            ?? ManualSkipMarkersFfi(introEndS: nil, outroLastS: nil)
-        let core = core
-        Task { [weak self] in
-            let segs = (try? await core.skipSegments(
-                mediaType: meta.mediaType,
-                metaId: meta.metaId,
-                season: meta.season.map { UInt32($0) },
-                episode: meta.episode.map { UInt32($0) }
-            )) ?? []
-            await MainActor.run {
-                self?.apiSkipSegments = segs
-                self?.updateSkipSegmentVisibility()
-            }
-        }
-    }
-
-    // MARK: - Next Episode Prefetch & Autoplay (§5.9)
-
-    private func checkNextEpisodeTrigger() {
-        guard !loadingNextEpisode, !closing,
-              let meta = metadata, meta.mediaType == "series",
-              let season = meta.season, let ep = meta.episode,
-              duration > 30
-        else { return }
-
-        let prefs = currentPrefs()
-        let leadS = Double(max(10, min(90, prefs?.nextEpisodeLeadS ?? 35)))
-        let remaining = max(0, duration - position)
-        let progress = position / duration
-        let inOutro = chapters.last(where: { $0.startS <= position }).map { isOutroChapter($0.title) } ?? false
-        if !prefetchedTriggered && (remaining <= leadS + 20 || progress >= 0.88 || inOutro) {
-            prefetchedTriggered = true
-            session?.startNextEpisodePrefetch(
-                metaId: meta.metaId,
-                currentSeason: UInt32(max(1, season)),
-                currentEpisode: UInt32(max(0, ep)),
-                bingeGroup: meta.bingeGroup
-            )
-        }
-
-        if prefetchedTriggered && nextPlan == nil, let plan = session?.prefetchedNextEpisode() {
-            nextPlan = plan
-        }
-
-        if !sleepEndOfEpisode, !nextDismissed, (remaining <= leadS || progress >= 0.92 || inOutro), let plan = nextPlan {
-            showNextEpisodeCard(plan)
-        }
-    }
-
-    private func setNextCardVisible(_ visible: Bool) {
-        nextCard.isHidden = !visible
-        skipButtonTrailingConstraint?.constant = visible ? -360 : -28
-    }
-
-    private func showNextEpisodeCard(_ plan: NextEpisodePrefetchInfo) {
-        guard !loadingNextEpisode, !isScreenLocked, nextCard.isHidden else { return }
-        nextTitleLabel.stringValue = String(localized: "S\(plan.season) · E\(plan.episode) — \(plan.title)")
-        nextSubtitleLabel.stringValue = plan.bestStream != nil
-            ? String(localized: "Prefetched & ready")
-            : String(localized: "Ready to load")
-        setNextCardVisible(true)
-        showHudAndCancelTimer()
-
-        let prefs = currentPrefs()
-        guard prefs?.autoplayNext != false else {
-            nextCountdownLabel.stringValue = ""
-            return
-        }
-        let total = Int(prefs?.autoplayCountdownS ?? 10)
-        nextCountdownTask?.cancel()
-        nextCountdownTask = Task { [weak self] in
-            for remaining in stride(from: total, through: 1, by: -1) {
-                guard let self, !Task.isCancelled, !self.loadingNextEpisode, !self.nextDismissed, !self.closing else { return }
-                self.nextCountdownLabel.stringValue = String(localized: "Auto-playing in \(remaining)s…")
-                try? await Task.sleep(for: .seconds(1))
-            }
-            guard let self, !Task.isCancelled, !self.loadingNextEpisode, !self.nextDismissed, !self.closing else { return }
-            self.autoAdvanceToNextEpisode()
-        }
-    }
-
-    private func autoAdvanceToNextEpisode() {
-        let prefs = currentPrefs()
-        let limit = prefs?.stillWatchingAfterEpisodes ?? 0
-        if limit > 0, autoPlayedEpisodesCount >= limit {
-            autoPlayedEpisodesCount = 0
-            nextCountdownTask?.cancel()
-            nextCountdownTask = nil
-            if !paused { try? session?.setPaused(paused: true) }
-            setNextCardVisible(true)
-            showHudAndCancelTimer()
-            nextCountdownLabel.stringValue = String(localized: "Still watching? Click Play Next to continue.")
-            return
-        }
-        autoPlayedEpisodesCount += 1
-        playNextEpisodeNow()
-    }
-
-    @objc private func playNextEpisodeManually() {
-        autoPlayedEpisodesCount = 0
-        playNextEpisodeNow()
-    }
-
-    @objc private func playNextEpisodeNow() {
-        guard !loadingNextEpisode,
-              let plan = nextPlan ?? session?.prefetchedNextEpisode(),
-              let stream = plan.bestStream
-        else { return }
-        loadingNextEpisode = true
-        nextCountdownTask?.cancel()
-        nextCountdownTask = nil
-        setNextCardVisible(false)
-        nextCountdownLabel.stringValue = ""
-        skipButton.isHidden = true
-        nextPlan = nil
-        prefetchedTriggered = false
-        nextDismissed = false
-        pendingSwitchPosition = nil
-        appliedResume = true
-        failedRetries = 0
-        currentStreamIndex = 0
-        activeSubtitleFilePath = nil
-        position = 0
-        duration = 0
-        scrubBar.position = 0
-        scrubBar.duration = 0
-        updateTime()
-        chapters = []
-        scrubBar.chapters = []
-        apiSkipSegments = []
-        lastAutoSkippedSegmentStart = nil
-        onlineSubtitles = []
-
-        if let prev = metadata {
-            let nextBingeGroup: String? = {
-                guard let data = stream.raw.data(using: .utf8),
-                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let hints = obj["behaviorHints"] as? [String: Any]
-                else { return nil }
-                return hints["bingeGroup"] as? String
-            }()
-            let fallbackSummary = stream.name ?? stream.title ?? stream.addonName
-            let newMeta = PlaybackMetadata(
-                videoId: plan.videoId,
-                metaId: prev.metaId,
-                mediaType: prev.mediaType,
-                title: prev.title,
-                subtitle: String(localized: "S\(plan.season) · E\(plan.episode) — \(plan.title)"),
-                artwork: plan.still ?? prev.artwork,
-                season: Int64(plan.season),
-                episode: Int64(plan.episode),
-                resumePosition: nil,
-                streamSummary: fallbackSummary,
-                isHdr: false,
-                bingeGroup: nextBingeGroup,
-                rankedStreams: []
-            )
-            request = .stream(stream, metadata: newMeta)
-            refreshTitles()
-        }
-        showStatus(String(localized: "Loading next episode…"), autoHideAfter: 0)
-        armStallWatchdog()
-        let session = session
-        let core = core
-        let targetVideoId = plan.videoId
-        let targetMediaType = metadata?.mediaType ?? "series"
-        Task { [weak self] in
-            async let rankedTask: RankResultInfo? = {
-                guard let raw = try? await core.streams(mediaType: targetMediaType, id: targetVideoId),
-                      !raw.isEmpty
-                else { return nil }
-                return try? await core.rankStreamsWithDebrid(streams: raw, preferences: nil)
-            }()
-            do {
-                try await session?.play(stream: stream)
-                if let ranked = await rankedTask, !ranked.ranked.isEmpty {
-                    await MainActor.run {
-                        guard let self,
-                              case .stream(let activeStream, var meta) = self.request,
-                              meta?.videoId == targetVideoId
-                        else { return }
-                        meta?.rankedStreams = ranked.ranked
-                        if let idx = ranked.ranked.firstIndex(where: { $0.stream.raw == activeStream.raw }) {
-                            self.currentStreamIndex = idx
-                        }
-                        self.request = .stream(activeStream, metadata: meta)
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    self?.cancelStallWatchdog()
-                    self?.loadingNextEpisode = false
-                    self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
-                    self?.attemptStreamRecovery()
-                }
-            }
-        }
-    }
-
-    @objc private func cancelNextEpisode() {
-        nextDismissed = true
-        nextCountdownTask?.cancel()
-        setNextCardVisible(false)
-        session?.cancelPlaybackPrefetchIfNeeded()
-    }
-
-    // MARK: - Skip Intro / Outro Chapters
-
-    private func isRecapChapter(_ title: String) -> Bool {
-        let lower = title.lowercased()
-        return lower.contains("recap") || lower.contains("önceki")
-    }
-
-    private func isIntroChapter(_ title: String) -> Bool {
-        let lower = title.lowercased()
-        return lower.contains("intro") || lower.contains("opening") || lower == "op"
-    }
-
-    private func isOutroChapter(_ title: String) -> Bool {
-        let lower = title.lowercased()
-        return lower.contains("outro") || lower.contains("credits") || lower.contains("ending") || lower == "ed"
-    }
-
-    private func currentSkipSegment() -> (kind: String, startS: Double, endS: Double)? {
-        if let outroLast = manualSkipMarkers.outroLastS,
-           outroLast > 5,
-           duration > outroLast + 10
-        {
-            let outroStart = max(0, duration - outroLast)
-            if position >= outroStart && position < duration - 1.5 {
-                return ("outro", outroStart, duration)
-            }
-        }
-        if let seg = activeApiSkipSegment() {
-            return (seg.kind, seg.startS, seg.endS)
-        }
-        guard let idx = chapters.lastIndex(where: { $0.startS <= position }) else { return nil }
-        let ch = chapters[idx]
-        let nextStart = idx + 1 < chapters.count ? chapters[idx + 1].startS : max(position, duration - 1.0)
-        guard nextStart > position + 1.0 else { return nil }
-        if isRecapChapter(ch.title) {
-            return ("recap", ch.startS, nextStart)
-        }
-        if isIntroChapter(ch.title), idx + 1 < chapters.count {
-            return ("intro", ch.startS, nextStart)
-        }
-        if isOutroChapter(ch.title) {
-            return ("outro", ch.startS, nextStart)
-        }
-        return nil
-    }
-
-    private func updateSkipSegmentVisibility() {
-        guard !isScreenLocked, let seg = currentSkipSegment() else {
-            skipButton.isHidden = true
-            return
-        }
-        let prefs = currentPrefs()
-        let autoSkip: Bool = switch seg.kind {
-        case "outro": prefs?.autoSkipOutro ?? false
-        case "recap": prefs?.autoSkipRecap ?? false
-        default: prefs?.autoSkipIntro ?? false
-        }
-        if autoSkip && (lastAutoSkippedSegmentStart.map { abs($0 - seg.startS) > 2.0 } ?? true) {
-            lastAutoSkippedSegmentStart = seg.startS
-            seekAbsolute(seg.endS)
-            skipButton.isHidden = true
-            let toast: String = switch seg.kind {
-            case "outro": String(localized: "Auto-skipped Outro")
-            case "recap": String(localized: "Auto-skipped Recap")
-            default: String(localized: "Auto-skipped Intro")
-            }
-            showStatus(toast)
-            return
-        }
-        guard prefs?.showSkipButton ?? true else {
-            skipButton.isHidden = true
-            return
-        }
-        switch seg.kind {
-        case "outro": skipButton.title = String(localized: "Skip Outro")
-        case "recap": skipButton.title = String(localized: "Skip Recap")
-        default: skipButton.title = String(localized: "Skip Intro")
-        }
-        skipButton.isHidden = false
-    }
-
-    private func activeApiSkipSegment() -> SkipSegmentInfo? {
-        apiSkipSegments.first { position >= $0.startS && position < ($0.endS - 1.0) }
-    }
-
-    @objc private func skipCurrentSegment() {
-        guard let seg = currentSkipSegment() else { return }
-        lastAutoSkippedSegmentStart = seg.startS
-        seekAbsolute(seg.endS)
-        skipButton.isHidden = true
-    }
-
-    // MARK: - Stream Switching & Auto-Recovery (§5.2)
-
-    private func armStallWatchdog() {
-        cancelStallWatchdog()
-        let prefs = currentPrefs()
-        guard prefs?.autoNextStreamOnStall ?? true else { return }
-        let timeoutS = Int(max(5, min(30, prefs?.stallTimeoutS ?? 12)))
-        stallRecoveryTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(timeoutS))
-            guard let self, !Task.isCancelled, !self.closing else { return }
-            self.attemptStreamRecovery()
-        }
-    }
-
-    private func cancelStallWatchdog() {
-        stallRecoveryTask?.cancel()
-        stallRecoveryTask = nil
-    }
-
-    private func attemptStreamRecovery() {
-        guard !closing, let session else { return }
-        if failedRetries == 0, case .stream(let current, _) = request {
-            failedRetries = 1
-            pendingSwitchPosition = position > 5 ? position : nil
-            showStatus(String(localized: "Stream stalled, retrying…"), autoHideAfter: 0)
-            armStallWatchdog()
-            Task { [weak self] in
-                do {
-                    try await session.play(stream: current)
-                } catch {
-                    await MainActor.run {
-                        self?.cancelStallWatchdog()
-                        self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
-                        self?.attemptStreamRecovery()
-                    }
-                }
-            }
-            return
-        }
-        guard let meta = metadata, !meta.rankedStreams.isEmpty else { return }
-        let nextIndex = currentStreamIndex + 1
-        guard nextIndex < meta.rankedStreams.count else {
-            showStatus(String(localized: "No more fallback streams available."), autoHideAfter: 4.5)
-            return
-        }
-        currentStreamIndex = nextIndex
-        failedRetries = 0
-        let fallback = meta.rankedStreams[nextIndex].stream
-        showStatus(String(localized: "Switching to fallback stream…"), autoHideAfter: 0)
-        switchToStream(fallback)
-    }
-
-    private func switchToStream(_ stream: StreamInfo) {
-        pendingSwitchPosition = position > 5 ? position : nil
-        if case .stream(_, let meta) = request {
-            request = .stream(stream, metadata: meta)
-            refreshTitles()
-        }
-        guard let session else { return }
-        armStallWatchdog()
-        Task { [weak self] in
-            do {
-                try await session.play(stream: stream)
-            } catch {
-                await MainActor.run {
-                    self?.cancelStallWatchdog()
-                    self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
-                    self?.attemptStreamRecovery()
-                }
-            }
-        }
-    }
-
-    // MARK: - Hover Thumbnail Preview
-
-    private func handleScrubHover(seconds: Double?, localX: CGFloat) {
-        guard let seconds, duration > 0 else {
-            isHoveringScrub = false
-            thumbCard.isHidden = true
-            showHudAndResetTimer()
-            return
-        }
-        isHoveringScrub = true
-        showHudAndCancelTimer()
-        thumbCard.isHidden = false
-        let clampedX = min(max(localX, 88), max(88, bar.bounds.width - 88))
-        thumbCenterXConstraint?.constant = clampedX
-        let chName = chapters.last(where: { $0.startS <= seconds })?.title
-        if let chName, !chName.isEmpty {
-            thumbTimeLabel.stringValue = "\(Self.format(seconds)) · \(chName)"
-        } else {
-            thumbTimeLabel.stringValue = Self.format(seconds)
-        }
-        if let cached = thumbCache?.cachedImage(at: seconds) {
-            thumbImageView.image = cached
-            return
-        }
-        thumbCache?.requestThumbnail(at: seconds, session: session) { [weak self] img in
-            self?.thumbImageView.image = img
-        }
-    }
-
-    // MARK: - Popovers & Menus
-
-    @objc private func showStreamDetailsPopover(_ sender: NSButton) {
-        showHudAndCancelTimer()
-        let addon: String? = if case .stream(let s, _) = request { s.addonName } else { nil }
-        let view = StreamDetailsPopoverView(
-            session: session,
-            addonName: addon,
-            streamSummary: metadata?.streamSummary
-        )
-        presentFloatingPopover(view, relativeTo: sender)
-    }
-
-    @objc private func showStreamSwitcher(_ sender: NSButton) {
-        showHudAndCancelTimer()
-        let streams = metadata?.rankedStreams ?? []
-        let view = StreamSwitcherPopoverView(
-            streams: streams,
-            activeRaw: activeStreamRaw
-        ) { [weak self] selected in
-            self?.dismissFloatingPopover()
-            self?.switchToStream(selected)
-        }
-        presentFloatingPopover(view, relativeTo: sender)
-    }
-
-    @objc private func showSubtitlesPopover(_ sender: NSButton) {
-        showHudAndCancelTimer()
-        let host = presentFloatingPopover(makeSubtitlesPopoverView(), relativeTo: sender)
-        activeSubtitlesHost = host
-    }
-
-    private func refreshSubtitlesPopoverIfVisible() {
-        guard let host = activeSubtitlesHost else { return }
-        host.rootView = makeSubtitlesPopoverView()
-    }
-
-    private func makeSubtitlesPopoverView() -> SubtitleManagerPopoverView {
-        let settings = (try? core.subtitleSettings()) ?? SubtitleSettingsFfi(
-            preferredLangs: ["tur", "eng"],
-            audioLangs: ["eng"],
-            dualSecondaryLang: nil,
-            srtFont: nil,
-            srtFontSize: 46,
-            srtColor: "#FFFFFF",
-            srtBorderSize: 3,
-            srtBorderColor: "#000000",
-            srtBackColor: nil,
-            srtBold: false,
-            srtPos: 95,
-            assOverride: false,
-            srtOpacity: 100,
-            srtBoxOpacity: 0,
-            srtAlignX: "center",
-            secondaryPos: 12,
-            liftAboveControls: true,
-            offByDefault: false,
-            preferEmbedded: false,
-            forcedWhenNativeAudio: false,
-            hideSdh: false,
-            subScalePct: 100,
-            assScaleWithWindow: true,
-            enableOpensubtitles: true,
-            enableAddonSubtitles: true,
-            subHdrPeakNits: 0,
-            subUseMargins: true
-        )
-        return SubtitleManagerPopoverView(
-            candidates: onlineSubtitles,
-            loading: searchingSubtitles,
-            statusMessage: subtitleSearchStatus,
-            tracks: tracks,
-            secondaryId: secondarySid,
-            subDelay: subDelay,
-            settings: settings,
-            onSearchOnline: { [weak self] in
-                guard let self else { return }
-                self.searchingSubtitles = true
-                self.subtitleSearchStatus = String(localized: "Searching online subtitles…")
-                self.refreshSubtitlesPopoverIfVisible()
-                self.scheduleOnlineSubtitleLookup()
-            },
-            onSelectOnline: { [weak self] cand in
-                self?.dismissFloatingPopover()
-                self?.loadOnlineSubtitle(cand)
-            },
-            onLoadLocal: { [weak self] in
-                self?.dismissFloatingPopover()
-                self?.openLocalSubtitleFile()
-            },
-            onSelectPrimary: { [weak self] id in
-                guard let self else { return }
-                self.lastSelectedSid = id
-                self.subtitlesEnabled = id != nil
-                self.sessionSubEnabled = id != nil
-                if let id, let chosen = self.tracks.first(where: { $0.trackType == "sub" && $0.id == id }) {
-                    self.sessionSubLang = chosen.lang
-                    self.sessionSubTitle = chosen.title
-                    if !chosen.external {
-                        self.activeSubtitleFilePath = nil
-                    }
-                } else {
-                    self.activeSubtitleFilePath = nil
-                }
-                try? self.session?.setSubtitleTrack(id: id)
-                self.tracks = (try? self.session?.tracks()) ?? []
-                self.refreshSubtitlesPopoverIfVisible()
-            },
-            onSelectSecondary: { [weak self] id in
-                guard let self else { return }
-                self.secondarySid = id
-                self.sessionSecondarySubEnabled = id != nil
-                if let id, let chosen = self.tracks.first(where: { $0.trackType == "sub" && $0.id == id }) {
-                    self.sessionSecondarySubLang = chosen.lang
-                } else if id == nil {
-                    self.sessionSecondarySubLang = nil
-                }
-                try? self.session?.setSecondarySubtitleTrack(id: id)
-                self.refreshSubtitlesPopoverIfVisible()
-            },
-            onAdjustDelay: { [weak self] delta in
-                self?.adjustSubDelay(delta)
-                self?.refreshSubtitlesPopoverIfVisible()
-            },
-            onResetDelay: { [weak self] in
-                self?.setSubDelay(0)
-                self?.refreshSubtitlesPopoverIfVisible()
-            },
-            onUpdateStyle: { [weak self] updated in
-                guard let self else { return }
-                self.applySubtitleStyle(updated, session: self.session)
-                self.pendingStyleSettings = updated
-                self.stylePersistTask?.cancel()
-                self.stylePersistTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(for: .milliseconds(250))
-                    guard let self, !Task.isCancelled else { return }
-                    if let pending = self.pendingStyleSettings {
-                        self.pendingStyleSettings = nil
-                        try? self.core.setSubtitleSettings(settings: pending)
-                    }
-                }
-            }
-        )
-    }
-
-    /// Presents a Liquid Glass card inside `view` anchored above `anchor` and
-    /// clamped within `[leading + 20, trailing - 20]` so it never overflows off-screen.
-    @discardableResult
-    private func presentFloatingPopover<V: View>(_ rootView: V, relativeTo anchor: NSView) -> NSHostingView<V>? {
-        guard !isScreenLocked else { return nil }
-        dismissFloatingPopover()
-
-        let backdrop = ClickCatcherView()
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-        backdrop.onClick = { [weak self] in self?.dismissFloatingPopover() }
-
-        let card = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
-        card.translatesAutoresizingMaskIntoConstraints = false
-
-        let host = NSHostingView(rootView: rootView)
-        host.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(host)
-
-        view.addSubview(backdrop)
-        view.addSubview(card)
-
-        let centerAlign = card.centerXAnchor.constraint(equalTo: anchor.centerXAnchor)
-        centerAlign.priority = .defaultHigh
-
-        NSLayoutConstraint.activate([
-            backdrop.topAnchor.constraint(equalTo: view.topAnchor),
-            backdrop.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            backdrop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-
-            host.topAnchor.constraint(equalTo: card.topAnchor),
-            host.bottomAnchor.constraint(equalTo: card.bottomAnchor),
-            host.leadingAnchor.constraint(equalTo: card.leadingAnchor),
-            host.trailingAnchor.constraint(equalTo: card.trailingAnchor),
-
-            centerAlign,
-            card.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 20),
-            card.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -20),
-            card.topAnchor.constraint(greaterThanOrEqualTo: titlePill.bottomAnchor, constant: 12),
-            card.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -10),
-        ])
-        popoverBackdrop = backdrop
-        popoverCard = card
-        return host
-    }
-
-    private func dismissFloatingPopover() {
-        flushPendingPersistedSettings()
-        activeSubtitlesHost = nil
-        popoverCard?.removeFromSuperview()
-        popoverBackdrop?.removeFromSuperview()
-        popoverCard = nil
-        popoverBackdrop = nil
-        if !closing {
-            showHudAndResetTimer()
-        }
-    }
-
-    private func loadOnlineSubtitle(_ candidate: SubtitleCandidateInfo) {
-        showStatus(String(localized: "Loading subtitle…"), autoHideAfter: 0)
-        let core = core
-        let session = session
-        Task { [weak self] in
-            do {
-                let prepared = try await core.downloadAndPrepareSubtitle(candidate: candidate)
-                try session?.addSubtitle(
-                    path: prepared.localPath,
-                    title: candidate.title ?? candidate.provider,
-                    lang: candidate.lang,
-                    select: true
-                )
-                await MainActor.run {
-                    self?.subtitlesEnabled = true
-                    self?.sessionSubEnabled = true
-                    self?.activeSubtitleFilePath = prepared.localPath
-                    self?.sessionSubLang = candidate.lang
-                    self?.sessionSubTitle = candidate.title ?? candidate.provider
-                    self?.showStatus(String(localized: "Loaded \(candidate.lang.uppercased()) subtitle (\(prepared.detectedEncoding))"))
-                    self?.tracks = (try? session?.tracks()) ?? []
-                }
-            } catch {
-                await MainActor.run {
-                    self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
-                }
-            }
-        }
-    }
-
-    private func openLocalSubtitleFile() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [
-            UTType(filenameExtension: "srt"),
-            UTType(filenameExtension: "ass"),
-            UTType(filenameExtension: "ssa"),
-            UTType(filenameExtension: "vtt"),
-        ].compactMap { $0 }
-        panel.allowsOtherFileTypes = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        loadLocalSubtitle(url: url)
-    }
-
-    private func loadLocalSubtitle(url: URL) {
-        if let prepared = try? core.prepareLocalSubtitle(path: url.path) {
-            try? session?.addSubtitle(path: prepared.localPath, title: url.lastPathComponent, lang: nil, select: true)
-            activeSubtitleFilePath = prepared.localPath
-            subtitlesEnabled = true
-            sessionSubEnabled = true
-            tracks = (try? session?.tracks()) ?? []
-            showStatus(String(localized: "Loaded \(url.lastPathComponent) (\(prepared.detectedEncoding))"))
-        }
-    }
-
-    private func adjustSubDelay(_ delta: Double) {
-        setSubDelay(subDelay + delta)
-    }
-
-    private func setSubDelay(_ val: Double) {
-        subDelay = val
-        sessionSubDelay = val
-        try? session?.setSubtitleDelay(seconds: val)
-        persistOffsets()
-        showStatus(String(format: "%@ %+.1fs", String(localized: "Subtitle delay:"), val))
-    }
-
-    private func adjustAudioDelay(_ delta: Double) {
-        audioDelay += delta
-        sessionAudioDelay = audioDelay
-        try? session?.setAudioDelay(seconds: audioDelay)
-        persistOffsets()
-        showStatus(String(format: "%@ %+.1fs", String(localized: "Audio delay:"), audioDelay))
-    }
-
-    private func persistOffsets() {
-        guard let videoId = metadata?.videoId else { return }
-        try? core.setVideoOffsets(
-            videoId: videoId,
-            offsets: VideoOffsetsFfi(subDelay: subDelay, audioDelay: audioDelay)
-        )
-    }
-
-    @objc private func showAudioMenu(_ sender: NSButton) {
-        showHudAndCancelTimer()
-        let menu = NSMenu()
-        let audioTracks = tracks.filter { $0.trackType == "audio" }
-        if audioTracks.isEmpty {
-            menu.addItem(withTitle: String(localized: "No audio tracks"), action: nil, keyEquivalent: "")
-        } else {
-            for t in audioTracks {
-                let label = [t.lang?.uppercased(), t.title, t.codec].compactMap { $0 }.joined(separator: " · ")
-                let item = NSMenuItem(
-                    title: label.isEmpty ? "Track \(t.id)" : label,
-                    action: #selector(selectAudioTrackItem(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = self
-                item.tag = Int(t.id)
-                item.state = t.selected ? .on : .off
-                menu.addItem(item)
-            }
-        }
-        menu.addItem(.separator())
-        for (title, delta) in [(String(localized: "Audio Delay -0.1s"), -0.1), (String(localized: "Audio Delay +0.1s"), 0.1)] {
-            let item = NSMenuItem(title: title, action: #selector(adjustAudioDelayItem(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = delta
-            menu.addItem(item)
-        }
-        let reset = NSMenuItem(title: String(localized: "Reset Audio Delay"), action: #selector(resetAudioDelayItem), keyEquivalent: "")
-        reset.target = self
-        menu.addItem(reset)
-
-        menu.addItem(.separator())
-        let prefs = currentPrefs()
-        let normItem = NSMenuItem(title: String(localized: "Audio Normalization (Dynaudnorm)"), action: #selector(toggleAudioNormalize), keyEquivalent: "")
-        normItem.target = self
-        normItem.state = (prefs?.audioNormalize ?? false) ? .on : .off
-        menu.addItem(normItem)
-
-        let stereoItem = NSMenuItem(title: String(localized: "Downmix to Stereo (2.0)"), action: #selector(toggleDownmixStereo), keyEquivalent: "")
-        stereoItem.target = self
-        stereoItem.state = (prefs?.downmixStereo ?? false) ? .on : .off
-        menu.addItem(stereoItem)
-
-        if let devices = try? session?.audioDevices(), !devices.isEmpty {
-            let currentDev = (try? session?.currentAudioDevice()) ?? "auto"
-            let devMenu = NSMenu()
-            for dev in devices {
-                let item = NSMenuItem(title: dev.description, action: #selector(selectAudioDeviceItem(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = dev.name
-                item.state = currentDev == dev.name ? .on : .off
-                devMenu.addItem(item)
-            }
-            let devHolder = NSMenuItem(title: String(localized: "Audio Output Device"), action: nil, keyEquivalent: "")
-            devHolder.submenu = devMenu
-            menu.addItem(.separator())
-            menu.addItem(devHolder)
-        }
-
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
-    }
-
-    @objc private func selectAudioDeviceItem(_ sender: NSMenuItem) {
-        guard let devName = sender.representedObject as? String else { return }
-        try? session?.setAudioDevice(name: devName)
-        showStatus("\(String(localized: "Audio Output")): \(sender.title)")
-    }
-
-    @objc private func toggleAudioNormalize() {
-        guard var prefs = try? core.playerPreferences() else { return }
-        prefs.audioNormalize.toggle()
-        cachedPrefs = prefs
-        try? core.setPlayerPreferences(prefs: prefs)
-        try? session?.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
-        showStatus(prefs.audioNormalize ? String(localized: "Audio normalization on") : String(localized: "Audio normalization off"))
-    }
-
-    @objc private func toggleDownmixStereo() {
-        guard var prefs = try? core.playerPreferences() else { return }
-        prefs.downmixStereo.toggle()
-        cachedPrefs = prefs
-        try? core.setPlayerPreferences(prefs: prefs)
-        try? session?.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
-        showStatus(prefs.downmixStereo ? String(localized: "Stereo downmix on") : String(localized: "Stereo downmix off"))
-    }
-
-    @objc private func selectAudioTrackItem(_ sender: NSMenuItem) {
-        let tid = Int64(sender.tag)
-        if let chosen = tracks.first(where: { $0.trackType == "audio" && $0.id == tid }) {
-            sessionAudioLang = chosen.lang
-            sessionAudioTitle = chosen.title
-        }
-        try? session?.setAudioTrack(id: tid)
-        tracks = (try? session?.tracks()) ?? []
-    }
-
-    @objc private func adjustAudioDelayItem(_ sender: NSMenuItem) {
-        if let d = sender.representedObject as? Double { adjustAudioDelay(d) }
-    }
-
-    @objc private func resetAudioDelayItem() {
-        audioDelay = 0
-        sessionAudioDelay = 0
-        try? session?.setAudioDelay(seconds: 0)
-        persistOffsets()
-    }
-
-    @objc private func showChaptersMenu(_ sender: NSButton) {
-        showHudAndCancelTimer()
-        let menu = NSMenu()
-        if chapters.isEmpty {
-            menu.addItem(withTitle: String(localized: "No chapters"), action: nil, keyEquivalent: "")
-        } else {
-            for ch in chapters {
-                let item = NSMenuItem(
-                    title: "\(Self.format(ch.startS))  \(ch.title)",
-                    action: #selector(jumpToChapter(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = self
-                item.representedObject = ch.startS
-                menu.addItem(item)
-            }
-        }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
-    }
-
-    @objc private func jumpToChapter(_ sender: NSMenuItem) {
-        if let t = sender.representedObject as? Double { seekAbsolute(t) }
-    }
-
-    @objc private func showSpeedMenu(_ sender: NSButton) {
-        let menu = NSMenu()
-        for val in [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] {
-            let item = NSMenuItem(
-                title: String(format: "%.2g×", val),
-                action: #selector(selectSpeedItem(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = val
-            item.state = abs(speed - val) < 0.01 ? .on : .off
-            menu.addItem(item)
-        }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
-    }
-
-    @objc private func selectSpeedItem(_ sender: NSMenuItem) {
-        if let val = sender.representedObject as? Double { setSpeed(val) }
-    }
-
-    @objc private func openCastSheet(_ sender: NSButton) {
-        showHudAndCancelTimer()
-        let titleText = titleField.stringValue.isEmpty ? "Cinma" : titleField.stringValue
-        presentSheetView { dismiss in
-            CastDeviceSheetView(core: core, request: request, title: titleText, onDismiss: dismiss)
-        }
-    }
-
-    @objc private func showMoreMenu(_ sender: NSButton) {
-        showHudAndCancelTimer()
-        let menu = NSMenu()
-
-        // A/B Loop
-        let abTitle: String
-        if abLoopA == nil {
-            abTitle = String(localized: "A/B Loop: Set Point A")
-        } else if abLoopB == nil {
-            abTitle = String(localized: "A/B Loop: Set Point B")
-        } else {
-            abTitle = String(localized: "A/B Loop: Clear")
-        }
-        let abItem = NSMenuItem(title: abTitle, action: #selector(cycleAbLoop), keyEquivalent: "")
-        abItem.target = self
-        menu.addItem(abItem)
-
-        let eqItem = NSMenuItem(title: String(localized: "Video EQ & Color…"), action: #selector(showVideoEqPopoverFromMenu), keyEquivalent: "")
-        eqItem.target = self
-        menu.addItem(eqItem)
-
-        let searchItem = NSMenuItem(title: String(localized: "Search Dialogue… (⌘F)"), action: #selector(showDialogueSearchPopover), keyEquivalent: "")
-        searchItem.target = self
-        menu.addItem(searchItem)
-
-        let liveTextItem = NSMenuItem(title: String(localized: "Scan Frame Text (Live Text · T)"), action: #selector(toggleLiveTextOverlay), keyEquivalent: "")
-        liveTextItem.target = self
-        liveTextItem.state = liveTextOverlay != nil ? .on : .off
-        menu.addItem(liveTextItem)
-
-        if let meta = metadata {
-            let skipMenu = NSMenu()
-            let curPos = Self.format(position)
-            skipMenu.addItem(ClosureMenuProxy.item(title: String(localized: "Mark Intro End Here (\(curPos))"), systemSymbol: "forward.frame") { [weak self] in
-                guard let self else { return }
-                self.manualSkipMarkers.introEndS = max(5, self.position)
-                try? self.core.setManualSkipMarkers(metaId: meta.metaId, markers: self.manualSkipMarkers)
-                self.loadSkipSegmentsIfEnabled()
-                self.showStatus(String(localized: "Saved manual intro end: \(Self.format(self.position))"))
-            })
-            skipMenu.addItem(ClosureMenuProxy.item(title: String(localized: "Mark Outro Start Here (\(curPos))"), systemSymbol: "forward.end") { [weak self] in
-                guard let self, self.duration > self.position + 5 else { return }
-                self.manualSkipMarkers.outroLastS = max(10, self.duration - self.position)
-                try? self.core.setManualSkipMarkers(metaId: meta.metaId, markers: self.manualSkipMarkers)
-                self.updateSkipSegmentVisibility()
-                self.showStatus(String(localized: "Saved manual outro offset"))
-            })
-            if manualSkipMarkers.introEndS != nil || manualSkipMarkers.outroLastS != nil {
-                skipMenu.addItem(.separator())
-                skipMenu.addItem(ClosureMenuProxy.item(title: String(localized: "Clear Manual Skip Markers"), systemSymbol: "trash") { [weak self] in
-                    guard let self else { return }
-                    self.manualSkipMarkers = ManualSkipMarkersFfi(introEndS: nil, outroLastS: nil)
-                    try? self.core.setManualSkipMarkers(metaId: meta.metaId, markers: self.manualSkipMarkers)
-                    self.loadSkipSegmentsIfEnabled()
-                    self.showStatus(String(localized: "Manual skip markers cleared"))
-                })
-            }
-            let skipHolder = NSMenuItem(title: String(localized: "Skip Markers (Series)"), action: nil, keyEquivalent: "")
-            skipHolder.submenu = skipMenu
-            menu.addItem(skipHolder)
-        }
-
-        let prefs = currentPrefs()
-        let onTopItem = NSMenuItem(title: String(localized: "Always on Top"), action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
-        onTopItem.target = self
-        onTopItem.state = (prefs?.playerAlwaysOnTop ?? false) ? .on : .off
-        menu.addItem(onTopItem)
-
-        let blackoutItem = NSMenuItem(title: String(localized: "Black Out Other Monitors (Fullscreen)"), action: #selector(toggleBlackoutOtherScreens), keyEquivalent: "")
-        blackoutItem.target = self
-        blackoutItem.state = (prefs?.blackoutOtherScreens ?? false) ? .on : .off
-        menu.addItem(blackoutItem)
-
-        // Aspect / Crop submenu
-        let currentCrop = prefs?.cropMode ?? "fit"
-        let cropMenu = NSMenu()
-        for (label, mode) in [
-            (String(localized: "Fit (Original)"), "fit"),
-            (String(localized: "Fill Screen (Crop)"), "fill"),
-            ("16:9", "16:9"),
-            ("21:9 (Ultrawide)", "21:9"),
-            ("4:3", "4:3"),
-        ] {
-            let item = NSMenuItem(title: label, action: #selector(selectCropMode(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode
-            item.state = currentCrop == mode ? .on : .off
-            cropMenu.addItem(item)
-        }
-        let cropHolder = NSMenuItem(title: String(localized: "Aspect / Crop"), action: nil, keyEquivalent: "")
-        cropHolder.submenu = cropMenu
-        menu.addItem(cropHolder)
-
-        // Tone Mapping submenu
-        let currentTm = prefs?.hdrToneMapping ?? "auto"
-        let tmMenu = NSMenu()
-        for (label, mode) in [
-            (String(localized: "Auto"), "auto"),
-            ("BT.2390", "bt.2390"),
-            ("Reinhard", "reinhard"),
-            ("Hable", "hable"),
-            ("Clip", "clip"),
-        ] {
-            let item = NSMenuItem(title: label, action: #selector(selectToneMapping(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode
-            item.state = currentTm == mode ? .on : .off
-            tmMenu.addItem(item)
-        }
-        let tmHolder = NSMenuItem(title: String(localized: "HDR Tone Mapping"), action: nil, keyEquivalent: "")
-        tmHolder.submenu = tmMenu
-        menu.addItem(tmHolder)
-
-        // Shaders submenu
-        let currentShader = prefs?.shaderPreset ?? "none"
-        let shaderMenu = NSMenu()
-        for (label, preset) in [(String(localized: "Off"), "none"), (String(localized: "Adaptive Sharpen (CAS)"), "sharpen")] {
-            let item = NSMenuItem(title: label, action: #selector(selectShaderPreset(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = preset
-            item.state = currentShader == preset ? .on : .off
-            shaderMenu.addItem(item)
-        }
-        let shaderHolder = NSMenuItem(title: String(localized: "Upscaling / Shader"), action: nil, keyEquivalent: "")
-        shaderHolder.submenu = shaderMenu
-        menu.addItem(shaderHolder)
-
-        // HDR Target Peak submenu
-        let currentPeak = prefs?.hdrTargetPeak
-        let peakMenu = NSMenu()
-        for nits: UInt32? in [nil, 400, 600, 1000, 1600] {
-            let title = nits.map { "\($0) nits" } ?? String(localized: "Auto")
-            let item = NSMenuItem(title: title, action: #selector(selectHdrPeak(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = nits.map { NSNumber(value: $0) }
-            item.state = currentPeak == nits ? .on : .off
-            peakMenu.addItem(item)
-        }
-        let peakHolder = NSMenuItem(title: String(localized: "HDR Target Peak"), action: nil, keyEquivalent: "")
-        peakHolder.submenu = peakMenu
-        menu.addItem(peakHolder)
-
-        // Sleep timer submenu
-        let sleepMenu = NSMenu()
-        var sleepOptions: [(String, Int)] = [
-            (String(localized: "Off"), 0),
-            (String(localized: "End of Episode"), -1),
-            ("15m", 15),
-            ("30m", 30),
-            ("60m", 60),
-        ]
-        let customMins = Int(prefs?.customSleepMinutes ?? 45)
-        if customMins > 0 && ![15, 30, 60].contains(customMins) {
-            sleepOptions.append((String(localized: "Custom (\(customMins)m)"), customMins))
-        }
-        for (label, mins) in sleepOptions {
-            let item = NSMenuItem(title: label, action: #selector(setSleepTimerMinutes(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = mins
-            if mins == -1 && sleepEndOfEpisode {
-                item.state = .on
-            } else if mins > 0 && !sleepEndOfEpisode && activeSleepMinutes == mins {
-                item.state = .on
-            } else if mins == 0 && !sleepEndOfEpisode && activeSleepMinutes == 0 {
-                item.state = .on
-            }
-            sleepMenu.addItem(item)
-        }
-        let sleepHolder = NSMenuItem(title: String(localized: "Sleep Timer"), action: nil, keyEquivalent: "")
-        sleepHolder.submenu = sleepMenu
-        menu.addItem(sleepHolder)
-
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 6), in: sender)
-    }
-
-    @objc private func toggleAlwaysOnTop() {
-        guard var prefs = try? core.playerPreferences() else { return }
-        prefs.playerAlwaysOnTop.toggle()
-        cachedPrefs = prefs
-        try? core.setPlayerPreferences(prefs: prefs)
-        view.window?.level = prefs.playerAlwaysOnTop ? .floating : .normal
-        showStatus(prefs.playerAlwaysOnTop ? String(localized: "Always on top enabled") : String(localized: "Always on top disabled"))
-    }
-
-    @objc private func selectToneMapping(_ sender: NSMenuItem) {
-        guard let mode = sender.representedObject as? String else { return }
-        if var prefs = try? core.playerPreferences() {
-            prefs.hdrToneMapping = mode
-            cachedPrefs = prefs
-        try? core.setPlayerPreferences(prefs: prefs)
-        }
-        try? session?.setToneMapping(mode: mode)
-        showStatus("\(String(localized: "Tone Mapping")): \(sender.title)")
-    }
-
-    @objc private func selectCropMode(_ sender: NSMenuItem) {
-        guard let mode = sender.representedObject as? String else { return }
-        if var prefs = try? core.playerPreferences() {
-            prefs.cropMode = mode
-            cachedPrefs = prefs
-        try? core.setPlayerPreferences(prefs: prefs)
-        }
-        try? session?.setCropMode(mode: mode)
-        showStatus("\(String(localized: "Aspect")): \(sender.title)")
-    }
-
-    @objc private func selectShaderPreset(_ sender: NSMenuItem) {
-        guard let preset = sender.representedObject as? String else { return }
-        if var prefs = try? core.playerPreferences() {
-            prefs.shaderPreset = preset
-            cachedPrefs = prefs
-        try? core.setPlayerPreferences(prefs: prefs)
-        }
-        let paths = (try? core.resolveShaderPaths(preset: preset)) ?? []
-        try? session?.setGlslShaders(paths: paths)
-        showStatus(String(localized: "Shader: \(preset)"))
-    }
-
-    @objc private func selectHdrPeak(_ sender: NSMenuItem) {
-        let nits = (sender.representedObject as? NSNumber)?.uint32Value
-        if var prefs = try? core.playerPreferences() {
-            prefs.hdrTargetPeak = nits
-            cachedPrefs = prefs
-        try? core.setPlayerPreferences(prefs: prefs)
-        }
-        try? session?.setHdrTargetPeak(nits: nits)
-        showStatus(nits.map { "HDR peak: \($0) nits" } ?? "HDR peak: Auto")
-    }
-
-    @objc private func setSleepTimerMinutes(_ sender: NSMenuItem) {
-        sleepTimerTask?.cancel()
-        sleepTimerTask = nil
-        let mins = sender.tag
-        if mins == -1 {
-            activeSleepMinutes = 0
-            sleepEndOfEpisode = true
-            nextCountdownTask?.cancel()
-            setNextCardVisible(false)
-            showStatus(String(localized: "Sleep timer: stop after this episode"))
-            return
-        }
-        sleepEndOfEpisode = false
-        guard mins > 0 else {
-            activeSleepMinutes = 0
-            showStatus(String(localized: "Sleep timer off"))
-            return
-        }
-        activeSleepMinutes = mins
-        showStatus(String(localized: "Sleep timer set for \(mins) min"))
-        sleepTimerTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(mins * 60))
-            guard let self, !Task.isCancelled, !self.closing else { return }
-            self.activeSleepMinutes = 0
-            self.close()
-        }
-    }
-
-    @objc private func showVideoEqPopoverFromMenu() {
-        guard let anchor = moreButton else { return }
-        let prefs = currentPrefs()
-        let root = VideoEqPopoverView(
-            brightness: prefs?.eqBrightness ?? 0,
-            contrast: prefs?.eqContrast ?? 0,
-            gamma: prefs?.eqGamma ?? 0,
-            saturation: prefs?.eqSaturation ?? 0
-        ) { [weak self] b, c, g, s in
-            guard let self else { return }
-            try? self.session?.setVideoEq(brightness: b, contrast: c, gamma: g, saturation: s)
-            self.pendingEqPrefs = (b, c, g, s)
-            self.eqPersistTask?.cancel()
-            self.eqPersistTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .milliseconds(250))
-                guard let self, !Task.isCancelled else { return }
-                if let eq = self.pendingEqPrefs {
-                    self.pendingEqPrefs = nil
-                    self.updatePrefs { prefs in
-                        prefs.eqBrightness = eq.0
-                        prefs.eqContrast = eq.1
-                        prefs.eqGamma = eq.2
-                        prefs.eqSaturation = eq.3
-                    }
-                }
-            }
-        }
-        presentFloatingPopover(root, relativeTo: anchor)
-    }
-
-    // MARK: - Actions & Keyboard Shortcuts
-
-    @objc private func toggleStats() {
-        statsVisible.toggle()
-        statsCard.isHidden = !statsVisible
-        statsTask?.cancel()
-        guard statsVisible else { return }
-        statsTask = Task { [weak self] in
-            while let self, self.statsVisible, !Task.isCancelled {
-                if let s = self.session?.stats() {
-                    let ab = (s.abLoopA, s.abLoopB)
-                    let abStr = (ab.0 != nil || ab.1 != nil)
-                        ? "A: \(ab.0.map(Self.format) ?? "—")  B: \(ab.1.map(Self.format) ?? "—")"
-                        : String(localized: "Off")
-                    self.statsText.stringValue = """
-                    Video: \(s.videoCodec) (\(s.width)×\(s.height)) · hwdec: \(s.hwdec)
-                    FPS: \(String(format: "%.2f", s.fps)) (est \(String(format: "%.2f", s.estimatedFps))) · Gamma: \(s.gamma)
-                    Audio: \(s.audioCodec) (\(s.audioChannels)ch)
-                    Cache: \(String(format: "%.1fs", s.cacheSeconds)) · Drops: \(s.droppedFrames)
-                    Speed: \(String(format: "%.2gx", s.speed)) · A/B: \(abStr)
-                    Delays: Sub \(String(format: "%+.2fs", s.subDelay)) · Audio \(String(format: "%+.2fs", s.audioDelay))
-                    """
-                }
-                try? await Task.sleep(for: .milliseconds(500))
-            }
-        }
-    }
-
-    @objc private func takeScreenshot() {
-        guard let session else { return }
-        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        let formatter = ISO8601DateFormatter()
-        let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let out = desktop.appendingPathComponent("Cinma-\(stamp).png")
-        let includeSubs = currentPrefs()?.screenshotIncludeSubtitles ?? true
-        try? session.screenshotToFileMode(path: out.path, includeSubtitles: includeSubs)
-        showStatus(String(localized: "Saved screenshot: \(out.lastPathComponent)"))
-    }
-
-    @objc private func cycleAbLoop() {
-        if abLoopA == nil {
-            abLoopA = position
-            try? session?.setAbLoopA(seconds: position)
-            performHaptic(.alignment)
-            showStatus(String(localized: "A/B loop: A = \(Self.format(position))"))
-        } else if abLoopB == nil {
-            abLoopB = position
-            try? session?.setAbLoopB(seconds: position)
-            performHaptic(.alignment)
-            showStatus(String(localized: "A/B loop: A = \(Self.format(abLoopA ?? 0)), B = \(Self.format(position))"))
-        } else {
-            abLoopA = nil
-            abLoopB = nil
-            try? session?.setAbLoopA(seconds: nil)
-            try? session?.setAbLoopB(seconds: nil)
-            showStatus(String(localized: "A/B Loop cleared"))
-        }
-        scrubBar.abLoopA = abLoopA
-        scrubBar.abLoopB = abLoopB
-    }
-
-    @objc private func toggleFullscreen() {
-        view.window?.toggleFullScreen(nil)
-    }
-
-    private func setSpeed(_ val: Double) {
-        speed = min(max(val, 0.25), 4.0)
-        speedButton.title = String(format: "%.2g×", speed)
-        try? session?.setSpeed(speed: speed)
-        pushNowPlaying()
-    }
-
-    @objc private func toggleMute() {
-        guard !isScreenLocked else { return }
-        muted.toggle()
-        try? session?.setMuted(muted: muted)
-        volumeButton.image = NSImage(
-            systemSymbolName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-            accessibilityDescription: nil
-        )
-        showVolumeHudIfEnabled()
-    }
-
-    private func showVolumeHudIfEnabled() {
-        guard currentPrefs()?.volumeHud ?? true else { return }
-        let msg = muted
-            ? String(localized: "Muted")
-            : String(localized: "Volume: \(Int(volume.rounded()))%")
-        showStatus(msg, autoHideAfter: 1.8)
-    }
-
-    private func toggleSubtitlesVisibility() {
-        subtitlesEnabled.toggle()
-        sessionSubEnabled = subtitlesEnabled
-        if subtitlesEnabled {
-            let target = lastSelectedSid ?? tracks.first(where: { $0.trackType == "sub" })?.id
-            if let target, let chosen = tracks.first(where: { $0.trackType == "sub" && $0.id == target }) {
-                sessionSubLang = chosen.lang
-                sessionSubTitle = chosen.title
-            }
-            try? session?.setSubtitleTrack(id: target)
-            if let secondarySid {
-                try? session?.setSecondarySubtitleTrack(id: secondarySid)
-            }
-        } else {
-            lastSelectedSid = tracks.first(where: { $0.trackType == "sub" && $0.selected })?.id ?? lastSelectedSid
-            try? session?.setSubtitleTrack(id: nil)
-            try? session?.setSecondarySubtitleTrack(id: nil)
-        }
-        showStatus(subtitlesEnabled ? String(localized: "Subtitles on") : String(localized: "Subtitles off"))
-    }
-
-    private func cycleTrack(type: String, isSub: Bool) {
-        let group = tracks.filter { $0.trackType == type }
-        guard !group.isEmpty else { return }
-        let idx = group.firstIndex(where: { $0.selected }) ?? -1
-        let next = group[(idx + 1) % group.count]
-        if isSub {
-            lastSelectedSid = next.id
-            subtitlesEnabled = true
-            sessionSubEnabled = true
-            sessionSubLang = next.lang
-            sessionSubTitle = next.title
-            if !next.external {
-                activeSubtitleFilePath = nil
-            }
-            try? session?.setSubtitleTrack(id: next.id)
-        } else {
-            sessionAudioLang = next.lang
-            sessionAudioTitle = next.title
-            try? session?.setAudioTrack(id: next.id)
-        }
-        tracks = (try? session?.tracks()) ?? []
-        showStatus("\(type.uppercased()): \(next.lang ?? next.title ?? "Track \(next.id)")")
-    }
-
-    private func handleKey(_ event: NSEvent) -> Bool {
-        showHudAndResetTimer()
-        guard let combo = KeyCombo.from(event) else { return false }
-        let resolvedCommand = try? core.resolveKey(context: "player", combo: combo)
-        if isScreenLocked {
-            if resolvedCommand == "player.screen_lock" {
-                toggleScreenLock()
-            }
-            return true
-        }
-        autoPlayedEpisodesCount = 0
-        guard let command = resolvedCommand else {
-            if combo == "p" {
-                enterPiPClicked()
-                return true
-            }
-            return false
-        }
-        if event.isARepeat && command == "player.toggle_pause" {
-            return true
-        }
-        switch command {
-        case "player.toggle_pause":
-            if currentPrefs()?.holdToBoostEnabled ?? true {
-                holdBoostKeyWaiting = combo
-                beginHoldBoostCandidate(triggerKey: combo)
-            } else {
-                togglePause()
-            }
-        case "player.seek_back": seekBack10()
-        case "player.seek_forward": seekForward10()
-        case "player.close":
-            if popoverBackdrop != nil {
-                dismissFloatingPopover()
-            } else if view.window?.styleMask.contains(.fullScreen) == true {
-                toggleFullscreen()
-            } else {
-                requestClose()
-            }
-        case "player.fullscreen": toggleFullscreen()
-        case "player.toggle_subtitles": toggleSubtitlesVisibility()
-        case "player.cycle_subtitle": cycleTrack(type: "sub", isSub: true)
-        case "player.cycle_audio": cycleTrack(type: "audio", isSub: false)
-        case "player.screenshot": takeScreenshot()
-        case "player.stats": toggleStats()
-        case "player.ab_loop": cycleAbLoop()
-        case "player.speed_up": setSpeed(speed + 0.25)
-        case "player.speed_down": setSpeed(speed - 0.25)
-        case "player.frame_step":
-            removeLiveTextOverlay()
-            try? session?.frameStep(forward: true)
-        case "player.frame_back_step":
-            removeLiveTextOverlay()
-            try? session?.frameStep(forward: false)
-        case "player.sub_seek_prev": try? session?.subSeek(offset: -1)
-        case "player.sub_seek_next": try? session?.subSeek(offset: 1)
-        case "player.search_dialogue": showDialogueSearchPopover()
-        case "player.live_text": toggleLiveTextOverlay()
-        case "player.screen_lock":
-            if currentPrefs()?.screenLockEnabled ?? true {
-                toggleScreenLock()
-            }
-        case "player.volume_up": adjustVolume(by: 10)
-        case "player.volume_down": adjustVolume(by: -10)
-        case "player.mute": toggleMute()
-        case "player.next_episode": playNextEpisodeManually()
-        default: return false
-        }
-        return true
-    }
-
-    private func handleKeyUp(_ event: NSEvent) -> Bool {
-        guard let expected = holdBoostKeyWaiting,
-              let combo = KeyCombo.from(event),
-              combo == expected
-        else { return false }
-        let boosted = endHoldBoost(triggerKey: combo)
-        if !boosted && !isScreenLocked {
-            togglePause()
-        }
-        return true
-    }
-
-    private func adjustVolume(by delta: Double) {
-        let maxVol = Double(currentPrefs()?.volumeBoostMax ?? 150)
-        let prev = volume
-        volume = min(maxVol, max(0, prev + delta))
-        if (prev < 100 && volume >= 100) || (prev > 100 && volume <= 100) {
-            performHaptic(.levelChange)
-        }
-        try? session?.setVolumeMax(maxPct: UInt32(maxVol))
-        try? session?.setVolume(volume: volume)
-        showVolumeHudIfEnabled()
-    }
-
-    private func isPointOnHud(_ point: NSPoint) -> Bool {
-        if popoverBackdrop != nil { return true }
-        let interactiveViews: [NSView] = [titlePill, bar, skipButton, nextCard, unlockPill, clockPill, statsCard]
-        return interactiveViews.contains { !$0.isHidden && $0.frame.contains(point) }
-    }
-
-    private func beginHoldBoostCandidate(triggerKey: String?) {
-        holdBoostTask?.cancel()
-        guard !isScreenLocked, !closing, !holdBoostActive else { return }
-        let prefs = currentPrefs()
-        guard prefs?.holdToBoostEnabled ?? true else { return }
-        let boostPct = prefs?.holdBoostSpeedPct ?? 200
-        holdBoostTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(260))
-            guard let self, !Task.isCancelled, !self.closing, !self.isScreenLocked else { return }
-            self.speedBeforeHoldBoost = self.speed
-            self.holdBoostActive = true
-            let boostSpeed = Double(max(125, min(300, boostPct))) / 100.0
-            self.setSpeed(boostSpeed)
-            self.performHaptic(.alignment)
-            self.showStatus("⏩ \(String(format: "%.2g×", boostSpeed))", autoHideAfter: 0)
-        }
-    }
-
-    private func endHoldBoost(triggerKey: String?) -> Bool {
-        holdBoostTask?.cancel()
-        holdBoostTask = nil
-        if triggerKey == nil || holdBoostKeyWaiting == triggerKey {
-            holdBoostKeyWaiting = nil
-        }
-        guard holdBoostActive else { return false }
-        holdBoostActive = false
-        setSpeed(speedBeforeHoldBoost)
-        showStatus("", autoHideAfter: 0)
-        return true
-    }
-
-    private func handleScrollGesture(_ event: NSEvent) {
-        if event.phase == .ended || event.phase == .cancelled {
-            scrollAccumX = 0
-            scrollAccumY = 0
-            return
-        }
-        guard event.momentumPhase == [] else { return }
-        guard !isScreenLocked, !closing, popoverBackdrop == nil else { return }
-        let prefs = currentPrefs()
-        guard prefs?.trackpadGesturesEnabled ?? true else { return }
-
-        let dx = event.scrollingDeltaX
-        let dy = event.scrollingDeltaY
-        if event.hasPreciseScrollingDeltas, abs(dx) > abs(dy) * 1.35 {
-            let signedDx = event.isDirectionInvertedFromDevice ? dx : -dx
-            scrollAccumX += signedDx
-            let threshold: CGFloat = 24
-            if abs(scrollAccumX) >= threshold {
-                let steps = Int(scrollAccumX / threshold)
-                scrollAccumX -= CGFloat(steps) * threshold
-                let exact = prefs?.exactSeek ?? true
-                let deltaS = Double(steps) * 2.0
-                removeLiveTextOverlay()
-                try? session?.seekRelativeMode(seconds: deltaS, exact: exact)
-                saveProgressIfNeeded(force: false)
-                showStatus(deltaS >= 0 ? "+\(Int(deltaS))s" : "\(Int(deltaS))s", autoHideAfter: 1.2)
-            }
-        } else if abs(dy) > 0.1 {
-            if event.hasPreciseScrollingDeltas {
-                let signedDy = event.isDirectionInvertedFromDevice ? -dy : dy
-                scrollAccumY += signedDy
-                let threshold: CGFloat = 14
-                if abs(scrollAccumY) >= threshold {
-                    let steps = Int(scrollAccumY / threshold)
-                    scrollAccumY -= CGFloat(steps) * threshold
-                    adjustVolume(by: Double(steps) * 3.0)
-                }
-            } else {
-                adjustVolume(by: (dy > 0 ? 1 : -1) * 5.0)
-            }
-        }
-    }
-
-    private func handleDroppedFile(_ url: URL) {
-        guard !closing, !isScreenLocked else { return }
-        let ext = url.pathExtension.lowercased()
-        if ["srt", "ass", "ssa", "vtt"].contains(ext) {
-            loadLocalSubtitle(url: url)
-            return
-        }
-        request = .file(url)
-        thumbCache?.clear()
-        thumbCache = ThumbnailPreviewCache(localURL: url)
-        duration = 0
-        position = 0
-        appliedAutoTracks = false
-        abLoopA = nil
-        abLoopB = nil
-        scrubBar.abLoopA = nil
-        scrubBar.abLoopB = nil
-        chapters = []
-        scrubBar.chapters = []
-        activeSubtitleFilePath = nil
-        nextPlan = nil
-        setNextCardVisible(false)
-        nextDismissed = false
-        sleepEndOfEpisode = false
-        refreshTitles()
-        showStatus(String(localized: "Loading \(url.lastPathComponent)…"), autoHideAfter: 0)
-        let session = session
-        Task { [weak self] in
-            do {
-                try session?.playUrl(url: url.path)
-            } catch {
-                await MainActor.run {
-                    self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
-                }
-            }
-        }
-    }
-
-    private func performHaptic(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .generic) {
-        guard currentPrefs()?.hapticFeedbackEnabled ?? true else { return }
-        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .default)
-    }
-
-    @objc private func showDialogueSearchPopover() {
-        guard let anchor = moreButton else { return }
-        let root = DialogueSearchPopoverView(
-            core: core,
-            subtitlePath: activeSubtitleFilePath,
-            subDelay: subDelay,
-            onSeek: { [weak self] secs in
-                self?.seekAbsolute(secs)
-            },
-            onSubSeek: { [weak self] offset in
-                try? self?.session?.subSeek(offset: offset)
-            },
-            onDismiss: { [weak self] in
-                self?.dismissFloatingPopover()
-            }
-        )
-        presentFloatingPopover(root, relativeTo: anchor)
-    }
-
-    @objc private func toggleBlackoutOtherScreens() {
-        guard var prefs = try? core.playerPreferences() else { return }
-        prefs.blackoutOtherScreens.toggle()
-        cachedPrefs = prefs
-        try? core.setPlayerPreferences(prefs: prefs)
-        syncMonitorBlackout()
-        showStatus(prefs.blackoutOtherScreens
-            ? String(localized: "Other monitors dimmed in fullscreen")
-            : String(localized: "Monitor blackout off"))
-    }
-
-    private func syncMonitorBlackout() {
-        clearBlackoutWindows()
-        guard !closing,
-              let window = view.window,
-              window.styleMask.contains(.fullScreen),
-              currentPrefs()?.blackoutOtherScreens == true
-        else { return }
-        for screen in NSScreen.screens where screen != window.screen {
-            let win = NSWindow(
-                contentRect: screen.frame,
-                styleMask: .borderless,
-                backing: .buffered,
-                defer: false
-            )
-            win.backgroundColor = .black
-            win.isOpaque = true
-            win.ignoresMouseEvents = true
-            win.level = .floating
-            win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            win.orderFront(nil)
-            blackoutWindows.append(win)
-        }
-    }
-
-    private func clearBlackoutWindows() {
-        for win in blackoutWindows {
-            win.orderOut(nil)
-        }
-        blackoutWindows.removeAll()
-    }
-
-    private func handleWindowOcclusionChanged() {
-        guard !closing, !paused, !isInPiP,
-              let window = view.window,
-              !window.isMiniaturized,
-              !window.occlusionState.contains(.visible),
-              currentPrefs()?.autoPipOnOcclusion == true
-        else { return }
-        clearBlackoutWindows()
-        enterPiPClicked()
-    }
-
-    private func installAudioRouteObserver() {
-        guard audioRouteListener == nil else { return }
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            Task { @MainActor in
-                guard let self, !self.closing, !self.paused,
-                      self.currentPrefs()?.pauseOnAudioOutputChange ?? true
-                else { return }
-                try? self.session?.setPaused(paused: true)
-                self.showStatus(String(localized: "Paused — audio output changed"))
-            }
-        }
-        audioRouteListener = block
-        AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject),
-            &audioRouteAddress,
-            DispatchQueue.main,
-            block
-        )
-    }
-
-    private func removeAudioRouteObserver() {
-        guard let block = audioRouteListener else { return }
-        AudioObjectRemovePropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject),
-            &audioRouteAddress,
-            DispatchQueue.main,
-            block
-        )
-        audioRouteListener = nil
-    }
-
-    @objc private func toggleLiveTextOverlay() {
-        if liveTextOverlay != nil {
-            removeLiveTextOverlay()
-            return
-        }
-        guard !closing, !isScreenLocked, ImageAnalyzer.isSupported, let session else {
-            showStatus(String(localized: "Live Text unavailable on this frame"))
-            return
-        }
-        if !paused {
-            try? session.setPaused(paused: true)
-        }
-        liveTextTask?.cancel()
-        showStatus(String(localized: "Scanning text in frame…"), autoHideAfter: 0)
-        liveTextTask = Task { [weak self] in
-            let cgImage: CGImage? = await Task.detached(priority: .userInitiated) {
-                guard let frame = try? session.captureRawFrame() else { return nil }
-                return Self.makeCGImage(from: frame)
-            }.value
-            guard let self, !Task.isCancelled, !self.closing else { return }
-            guard let cgImage else {
-                self.showStatus(String(localized: "Could not capture paused frame for Live Text"))
-                return
-            }
-            let analyzer = ImageAnalyzer()
-            let analysis = try? await analyzer.analyze(
-                cgImage,
-                orientation: .up,
-                configuration: ImageAnalyzer.Configuration([.text])
-            )
-            guard !Task.isCancelled, !self.closing else { return }
-            guard let analysis, analysis.hasResults(for: .text) else {
-                self.showStatus(String(localized: "No text detected in paused frame"))
-                return
-            }
-            let targetRect = Self.aspectFitRect(
-                content: CGSize(width: cgImage.width, height: cgImage.height),
-                in: self.videoView.bounds
-            )
-            let overlay = ImageAnalysisOverlayView(frame: targetRect)
-            overlay.autoresizingMask = [.width, .height, .minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
-            overlay.analysis = analysis
-            overlay.preferredInteractionTypes = .textSelection
-            self.videoView.addSubview(overlay)
-            self.liveTextOverlay = overlay
-            self.showStatus(String(localized: "Live Text ready — drag to select text (Press T to clear)"))
-        }
-    }
-
-    private static func aspectFitRect(content: CGSize, in bounds: CGRect) -> CGRect {
-        guard content.width > 0, content.height > 0, bounds.width > 0, bounds.height > 0 else {
-            return bounds
-        }
-        let scale = min(bounds.width / content.width, bounds.height / content.height)
-        let w = content.width * scale
-        let h = content.height * scale
-        return CGRect(
-            x: bounds.midX - w * 0.5,
-            y: bounds.midY - h * 0.5,
-            width: w,
-            height: h
-        )
-    }
-
-    private func removeLiveTextOverlay() {
-        liveTextTask?.cancel()
-        liveTextTask = nil
-        liveTextOverlay?.removeFromSuperview()
-        liveTextOverlay = nil
-    }
-
-    nonisolated private static func makeCGImage(from frame: RawFrameFfi) -> CGImage? {
-        let w = Int(frame.width)
-        let h = Int(frame.height)
-        let stride = Int(frame.stride)
-        guard w > 0, h > 0, stride >= w * 4, frame.bgr0.count >= h * stride else { return nil }
-        let cfData = Data(frame.bgr0) as CFData
-        guard let provider = CGDataProvider(data: cfData) else { return nil }
-        let bitmapInfo = CGBitmapInfo(
-            rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.noneSkipFirst.rawValue
-        )
-        return CGImage(
-            width: w,
-            height: h,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: stride,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: bitmapInfo,
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: true,
-            intent: .defaultIntent
-        )
-    }
-
-    @objc private func toggleScreenLock() {
-        isScreenLocked.toggle()
-        lockButton.image = NSImage(
-            systemSymbolName: isScreenLocked ? "lock.fill" : "lock.open",
-            accessibilityDescription: isScreenLocked ? String(localized: "Unlock Screen (⇧L)") : String(localized: "Lock Screen (⇧L)")
-        )
-        if isScreenLocked {
-            dismissFloatingPopover()
-            thumbCard.isHidden = true
-            skipButton.isHidden = true
-            setNextCardVisible(false)
-            titlePill.isHidden = true
-            bar.isHidden = true
-            clockPill.isHidden = true
-            unlockPill.isHidden = false
-            unlockPill.alphaValue = 1.0
-            showHudAndResetTimer()
-        } else {
-            unlockPill.isHidden = true
-            showHudAndResetTimer()
-            updateSkipSegmentVisibility()
-            updateClockPill()
-        }
-    }
-
-    @objc private func requestClose() {
-        guard !closing else { return }
-        let shouldConfirm = currentPrefs()?.confirmOnLeave ?? false
-        guard shouldConfirm, !paused, duration > 0 else {
-            close()
-            return
-        }
-        let alert = NSAlert()
-        alert.messageText = String(localized: "Leave Playback?")
-        alert.informativeText = String(localized: "Are you sure you want to close active playback?")
-        alert.addButton(withTitle: String(localized: "Leave"))
-        alert.addButton(withTitle: String(localized: "Continue Watching"))
-        if let window = view.window {
-            Task { @MainActor in
-                let resp = await alert.beginSheetModal(for: window)
-                if resp == .alertFirstButtonReturn { self.close() }
-            }
-        } else if alert.runModal() == .alertFirstButtonReturn {
-            close()
-        }
-    }
-
-    @objc private func togglePause() {
-        guard !isScreenLocked else { return }
-        pausedBySystemEvent = false
-        try? session?.togglePause()
-    }
-
-    @objc private func seekBack10() {
-        guard !isScreenLocked else { return }
-        autoPlayedEpisodesCount = 0
-        removeLiveTextOverlay()
-        let p = currentPrefs()
-        let exact = p?.exactSeek ?? true
-        let step = Double(max(3, min(60, p?.seekBackStepS ?? 10)))
-        try? session?.seekRelativeMode(seconds: -step, exact: exact)
-        saveProgressIfNeeded(force: true)
-    }
-
-    @objc private func seekForward10() {
-        guard !isScreenLocked else { return }
-        autoPlayedEpisodesCount = 0
-        removeLiveTextOverlay()
-        let p = currentPrefs()
-        let exact = p?.exactSeek ?? true
-        let step = Double(max(3, min(60, p?.seekForwardStepS ?? 10)))
-        try? session?.seekRelativeMode(seconds: step, exact: exact)
-        saveProgressIfNeeded(force: true)
-    }
-
-    private func seekAbsolute(_ seconds: Double) {
-        removeLiveTextOverlay()
-        position = seconds
-        scrubBar.position = seconds
-        try? session?.seekAbsolute(seconds: seconds)
-        saveProgressIfNeeded(force: true)
-        pushNowPlaying()
-    }
 
     // MARK: - HUD Auto-Hide & Persistence
 
@@ -3290,12 +1248,12 @@ final class PlayerViewController: NSViewController {
         showHudAndResetTimer()
     }
 
-    @objc private func enterPiPClicked() {
+    @objc func enterPiPClicked() {
         showHudAndCancelTimer()
         onEnterPiP?()
     }
 
-    private func showHudAndResetTimer() {
+    func showHudAndResetTimer() {
         setHudAlpha(1.0)
         hudHideTask?.cancel()
         guard !paused, !isHoveringScrub, popoverBackdrop == nil else { return }
@@ -3306,12 +1264,12 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    private func showHudAndCancelTimer() {
+    func showHudAndCancelTimer() {
         hudHideTask?.cancel()
         setHudAlpha(1.0)
     }
 
-    private func setHudAlpha(_ alpha: CGFloat) {
+    func setHudAlpha(_ alpha: CGFloat) {
         let nowVisible = alpha > 0
         if hudVisible != nowVisible {
             hudVisible = nowVisible
@@ -3332,7 +1290,7 @@ final class PlayerViewController: NSViewController {
         animatePills(pills, alpha: alpha)
     }
 
-    private func animatePills(_ pills: [NSView], alpha: CGFloat) {
+    func animatePills(_ pills: [NSView], alpha: CGFloat) {
         if alpha > 0 {
             for p in pills { p.isHidden = false }
         }
@@ -3357,7 +1315,7 @@ final class PlayerViewController: NSViewController {
         })
     }
 
-    private func pushNowPlaying() {
+    func pushNowPlaying() {
         nowPlaying.update(
             title: titleField.stringValue,
             subtitle: subField.isHidden ? nil : subField.stringValue,
@@ -3383,7 +1341,7 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    private func saveProgressIfNeeded(force: Bool) {
+    func saveProgressIfNeeded(force: Bool) {
         guard let meta = metadata, duration > 0, position >= 0 else { return }
         if !force, let last = lastSavedAt, last.duration(to: .now) < .seconds(10) {
             return
@@ -3403,7 +1361,7 @@ final class PlayerViewController: NSViewController {
     }
 
     /// Drives CINMA_AUTOSEEK / CINMA_AUTOQUIT (see DevAutomation).
-    private func continueAutomation() {
+    func continueAutomation() {
         guard !pendingSeeks.isEmpty || DevAutomation.autoQuit else { return }
         Task {
             try? await Task.sleep(for: .seconds(pendingSeeks.isEmpty ? 5 : 2))
@@ -3429,12 +1387,12 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    private func updateTime() {
+    func updateTime() {
         timeLabel.stringValue = "\(Self.format(position)) / \(Self.format(duration))"
         updateClockPill()
     }
 
-    private func updateClockPill() {
+    func updateClockPill() {
         guard !isScreenLocked else {
             clockPill.isHidden = true
             return
@@ -3456,7 +1414,7 @@ final class PlayerViewController: NSViewController {
         clockPill.isHidden = !hudVisible
     }
 
-    private func refreshP2pSpeedChip() {
+    func refreshP2pSpeedChip() {
         p2pChipTask?.cancel()
         p2pChipTask = nil
         let showChip = currentPrefs()?.showP2pSpeedChip ?? true
@@ -3493,14 +1451,14 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    private static func format(_ seconds: Double) -> String {
+    static func format(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "--:--" }
         let total = Int(seconds)
         let (h, m, s) = (total / 3600, total / 60 % 60, total % 60)
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s)
     }
 
-    private func showStatus(_ text: String, autoHideAfter seconds: TimeInterval = 3.0) {
+    func showStatus(_ text: String, autoHideAfter seconds: TimeInterval = 3.0) {
         statusClearTask?.cancel()
         statusClearTask = nil
         statusLabel.stringValue = text
@@ -3514,7 +1472,7 @@ final class PlayerViewController: NSViewController {
         }
     }
 
-    @objc private func close() {
+    @objc func close() {
         guard !closing else { return }
         closing = true
         flushPendingPersistedSettings()
@@ -3570,7 +1528,7 @@ final class PlayerViewController: NSViewController {
     }
 }
 
-private extension PlaybackSession {
+extension PlaybackSession {
     func cancelPlaybackPrefetchIfNeeded() {
         cancelPrefetch()
     }
