@@ -69,6 +69,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         true
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        if let core {
+            Task { try? await core.clearDiscordPresence() }
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         ImagePipeline.shared.clearMemoryCache()
         // When keeping Cinma in the menu bar with no open window, release heavy

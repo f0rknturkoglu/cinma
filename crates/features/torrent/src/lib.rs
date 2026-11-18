@@ -308,7 +308,9 @@ impl RqbitEngine {
         let reset_session = {
             let mut g = self.policy.lock().await;
             let changed = g.bind_device_name != policy.bind_device_name
-                || g.vpn_kill_switch != policy.vpn_kill_switch;
+                || g.vpn_kill_switch != policy.vpn_kill_switch
+                || g.upload_bps != policy.upload_bps
+                || g.download_bps != policy.download_bps;
             *g = policy;
             changed
         };

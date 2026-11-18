@@ -6135,6 +6135,16 @@
         }
       }
     },
+    "Next Week": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gelecek Hafta"
+          }
+        }
+      }
+    },
     "No Chromecast or DLNA devices responded on your LAN.": {
       "localizations": {
         "tr": {
@@ -7030,6 +7040,16 @@
         }
       }
     },
+    "Owner-only permissions (0600). Send newline-delimited JSON-RPC such as {\"id\":1,\"method\":\"status\"}.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yalnızca sahip izinli (0600). Satır sonlu JSON-RPC gönderin, örn: {\"id\":1,\"method\":\"status\"}."
+          }
+        }
+      }
+    },
     "PIN": {
       "localizations": {
         "tr": {
@@ -7149,6 +7169,7 @@
       }
     },
     "Pause Trakt / Simkl Scrobble When Paused": {
+      "extractionState": "stale",
       "localizations": {
         "tr": {
           "stringUnit": {
@@ -10343,6 +10364,16 @@
         }
       }
     },
+    "This Week": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bu Hafta"
+          }
+        }
+      }
+    },
     "This catalog returned no titles.": {
       "localizations": {
         "en": {
@@ -11318,6 +11349,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "WebDAV Adresi (https://...)"
+          }
+        }
+      }
+    },
+    "Week of": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hafta:"
           }
         }
       }

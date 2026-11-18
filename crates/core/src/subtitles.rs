@@ -255,8 +255,6 @@ pub struct PlayerPreferences {
     pub external_player_path: String,
     /// Prompt for confirmation before installing `stremio://` addon links.
     pub confirm_stremio_deeplink: bool,
-    /// Pause Trakt / Simkl scrobble state updates when playback is paused.
-    pub pause_scrobble_on_pause: bool,
     /// Count rewatches when syncing progress with MyAnimeList / AniList.
     pub mal_count_rewatches: bool,
     /// Hold Space or mouse press to temporarily boost playback speed.
@@ -389,7 +387,6 @@ impl Default for PlayerPreferences {
             external_player_enabled: false,
             external_player_path: String::new(),
             confirm_stremio_deeplink: true,
-            pause_scrobble_on_pause: true,
             mal_count_rewatches: false,
             hold_to_boost_enabled: true,
             hold_boost_speed_pct: 200,

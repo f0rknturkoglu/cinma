@@ -429,7 +429,6 @@ fn wave4_lightweight_settings_persist_and_subtitle_provider_toggles_work() {
         external_player_enabled: true,
         external_player_path: "/opt/homebrew/bin/mpv".into(),
         confirm_stremio_deeplink: false,
-        pause_scrobble_on_pause: false,
         mal_count_rewatches: true,
         ..Default::default()
     };
@@ -698,6 +697,12 @@ fn wave3_dalga3_shelves_local_scanner_schedule_and_socket() {
             tokio::time::sleep(std::time::Duration::from_millis(25)).await;
         }
         let stream = tokio::net::UnixStream::connect(&sock_path).await.unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&sock_path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600, "socket permissions must be 0600, got {mode:o}");
+        }
         let (r, mut w) = stream.into_split();
         w.write_all(b"{\"id\":1,\"method\":\"status\"}\n")
             .await

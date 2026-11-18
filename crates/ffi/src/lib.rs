@@ -1159,7 +1159,6 @@ pub struct PlayerPreferencesFfi {
     pub external_player_enabled: bool,
     pub external_player_path: String,
     pub confirm_stremio_deeplink: bool,
-    pub pause_scrobble_on_pause: bool,
     pub mal_count_rewatches: bool,
     pub hold_to_boost_enabled: bool,
     pub hold_boost_speed_pct: u32,
@@ -1267,7 +1266,6 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             external_player_enabled: p.external_player_enabled,
             external_player_path: p.external_player_path,
             confirm_stremio_deeplink: p.confirm_stremio_deeplink,
-            pause_scrobble_on_pause: p.pause_scrobble_on_pause,
             mal_count_rewatches: p.mal_count_rewatches,
             hold_to_boost_enabled: p.hold_to_boost_enabled,
             hold_boost_speed_pct: p.hold_boost_speed_pct,
@@ -1377,7 +1375,6 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             external_player_enabled: p.external_player_enabled,
             external_player_path: p.external_player_path,
             confirm_stremio_deeplink: p.confirm_stremio_deeplink,
-            pause_scrobble_on_pause: p.pause_scrobble_on_pause,
             mal_count_rewatches: p.mal_count_rewatches,
             hold_to_boost_enabled: p.hold_to_boost_enabled,
             hold_boost_speed_pct: p.hold_boost_speed_pct,
@@ -2325,41 +2322,12 @@ impl CinmaCore {
         current.series_folder.clone_from(&video);
         current.ytdlp_folder = video;
         current.audio_folder = Some(s.audio_folder.trim().to_owned()).filter(|p| !p.is_empty());
-        current.cache_quota_mb = s.cache_quota_mb;
-        current.keep_watched_global = s.keep_watched_global;
         current.seeding_mode = s.seeding_mode;
         current.seeding_ratio = s.seeding_ratio;
         current.seeding_minutes = s.seeding_minutes;
         current.upload_limit_kbps = s.upload_limit_kbps;
         current.download_limit_kbps = s.download_limit_kbps;
         Ok(self.inner.set_disk_policy_settings(&current)?)
-    }
-
-    pub fn set_item_keep_watched(
-        &self,
-        meta_id: String,
-        media_type: String,
-        keep: bool,
-    ) -> Result<(), CinmaError> {
-        Ok(self
-            .inner
-            .set_item_keep_watched(&meta_id, &media_type, keep)?)
-    }
-
-    pub fn item_keep_watched(
-        &self,
-        meta_id: String,
-        media_type: String,
-    ) -> Result<bool, CinmaError> {
-        Ok(self.inner.item_keep_watched(&meta_id, &media_type)?)
-    }
-
-    pub fn disk_usage_summary(&self) -> Result<DiskUsageSummaryInfo, CinmaError> {
-        Ok(self.inner.disk_usage_summary()?.into())
-    }
-
-    pub fn enforce_disk_quota(&self) -> Result<u64, CinmaError> {
-        Ok(self.inner.enforce_disk_quota()?)
     }
 
     // ---- Phase 6: Casting & Tracking Integrations ----
@@ -3119,8 +3087,6 @@ pub struct DiskPolicySettingsInfo {
     pub video_folder: String,
     /// Folder for audio-only downloads (resolved default if unset).
     pub audio_folder: String,
-    pub cache_quota_mb: u64,
-    pub keep_watched_global: bool,
     pub seeding_mode: String,
     pub seeding_ratio: f64,
     pub seeding_minutes: u64,
@@ -3138,32 +3104,11 @@ impl From<cinma_core::DiskPolicySettings> for DiskPolicySettingsInfo {
         Self {
             video_folder: folder(&s.movie_folder, cinma_core::default_video_folder()),
             audio_folder: folder(&s.audio_folder, cinma_core::default_audio_folder()),
-            cache_quota_mb: s.cache_quota_mb,
-            keep_watched_global: s.keep_watched_global,
             seeding_mode: s.seeding_mode,
             seeding_ratio: s.seeding_ratio,
             seeding_minutes: s.seeding_minutes,
             upload_limit_kbps: s.upload_limit_kbps,
             download_limit_kbps: s.download_limit_kbps,
-        }
-    }
-}
-
-#[derive(uniffi::Record)]
-pub struct DiskUsageSummaryInfo {
-    pub total_bytes: u64,
-    pub kept_bytes: u64,
-    pub evictable_bytes: u64,
-    pub entry_count: u32,
-}
-
-impl From<cinma_core::DiskUsageSummary> for DiskUsageSummaryInfo {
-    fn from(s: cinma_core::DiskUsageSummary) -> Self {
-        Self {
-            total_bytes: s.total_bytes,
-            kept_bytes: s.kept_bytes,
-            evictable_bytes: s.evictable_bytes,
-            entry_count: s.entry_count,
         }
     }
 }

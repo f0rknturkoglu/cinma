@@ -447,7 +447,32 @@ final class CalendarViewController: NSViewController {
             v.removeFromSuperview()
         }
         let weekMonday = (try? core.playerPreferences())?.weekStartsMonday ?? true
+        var cal = Calendar.current
+        cal.firstWeekday = weekMonday ? 2 : 1
+        var lastWeekStart: Date?
         for ep in entries {
+            if let date = Self.isoDateParser.date(from: ep.airDate),
+               let interval = cal.dateInterval(of: .weekOfYear, for: date),
+               interval.start != lastWeekStart
+            {
+                lastWeekStart = interval.start
+                let headerText: String
+                if let currentWeek = cal.dateInterval(of: .weekOfYear, for: Date()),
+                   interval.start == currentWeek.start
+                {
+                    headerText = String(localized: "This Week")
+                } else if let nextWeekStart = cal.date(byAdding: .weekOfYear, value: 1, to: cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()),
+                          interval.start == nextWeekStart
+                {
+                    headerText = String(localized: "Next Week")
+                } else {
+                    headerText = "\(String(localized: "Week of")) \(Self.isoDateParser.string(from: interval.start))"
+                }
+                let weekLabel = NSTextField(labelWithString: headerText)
+                weekLabel.font = .systemFont(ofSize: 13, weight: .bold)
+                weekLabel.textColor = CinemaTheme.accent
+                listStack.addArrangedSubview(weekLabel)
+            }
             let formattedDate = Self.formattedAirDate(ep.airDate, weekStartsMonday: weekMonday)
             let row = NSButton(title: "", target: self, action: #selector(openEntry(_:)))
             row.identifier = NSUserInterfaceItemIdentifier("\(ep.showId)|\(ep.showName)")

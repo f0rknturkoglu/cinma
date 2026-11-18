@@ -937,7 +937,6 @@ final class PlayerViewController: NSViewController {
                 externalPlayerEnabled: false,
                 externalPlayerPath: "",
                 confirmStremioDeeplink: true,
-                pauseScrobbleOnPause: true,
                 malCountRewatches: false,
                 holdToBoostEnabled: true,
                 holdBoostSpeedPct: 200,

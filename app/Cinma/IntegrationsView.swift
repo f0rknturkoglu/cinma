@@ -186,7 +186,12 @@ struct IntegrationsSheetView: View {
                     }
                 Toggle(String(localized: "Discord Rich Presence"), isOn: $discordEnabled)
                     .onChange(of: discordEnabled) { _, val in
-                        Task { try? await core.setFeatureEnabled(name: "discord", enabled: val) }
+                        Task {
+                            try? await core.setFeatureEnabled(name: "discord", enabled: val)
+                            if !val {
+                                try? await core.clearDiscordPresence()
+                            }
+                        }
                     }
             }
 

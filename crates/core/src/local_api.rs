@@ -46,6 +46,12 @@ impl Core {
             let Ok(listener) = UnixListener::bind(&sock_path) else {
                 return;
             };
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ =
+                    std::fs::set_permissions(&sock_path, std::fs::Permissions::from_mode(0o600));
+            }
             loop {
                 tokio::select! {
                     biased;

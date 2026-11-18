@@ -496,8 +496,6 @@ struct SettingsView: View {
     @State private var diskPolicy = DiskPolicySettingsInfo(
         videoFolder: "",
         audioFolder: "",
-        cacheQuotaMb: 10_240,
-        keepWatchedGlobal: false,
         seedingMode: "off",
         seedingRatio: 1.0,
         seedingMinutes: 60,
@@ -612,7 +610,6 @@ struct SettingsView: View {
         externalPlayerEnabled: false,
         externalPlayerPath: "",
         confirmStremioDeeplink: true,
-        pauseScrobbleOnPause: true,
         malCountRewatches: false,
         holdToBoostEnabled: true,
         holdBoostSpeedPct: 200,
@@ -922,7 +919,12 @@ struct SettingsView: View {
                 Toggle(String(localized: "Show Discord Status When Paused"), isOn: $playerPrefs.discordShowWhenPaused)
                     .onChange(of: playerPrefs.discordShowWhenPaused) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Show Discord Status While Browsing Home"), isOn: $playerPrefs.discordShowWhenBrowsing)
-                    .onChange(of: playerPrefs.discordShowWhenBrowsing) { _, _ in savePlayerPrefs() }
+                    .onChange(of: playerPrefs.discordShowWhenBrowsing) { _, enabled in
+                        savePlayerPrefs()
+                        if !enabled {
+                            Task { try? await core.clearDiscordPresence() }
+                        }
+                    }
             }
 
             Section(String(localized: "Theme, Glass & Navigation")) {
@@ -946,8 +948,6 @@ struct SettingsView: View {
             Section(String(localized: "Integrations & Deep Links")) {
                 Toggle(String(localized: "Ask Confirmation Before Installing stremio:// Addons"), isOn: $playerPrefs.confirmStremioDeeplink)
                     .onChange(of: playerPrefs.confirmStremioDeeplink) { _, _ in savePlayerPrefs() }
-                Toggle(String(localized: "Pause Trakt / Simkl Scrobble When Paused"), isOn: $playerPrefs.pauseScrobbleOnPause)
-                    .onChange(of: playerPrefs.pauseScrobbleOnPause) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Count Rewatches in MyAnimeList / AniList"), isOn: $playerPrefs.malCountRewatches)
                     .onChange(of: playerPrefs.malCountRewatches) { _, _ in savePlayerPrefs() }
             }
@@ -1476,6 +1476,9 @@ struct SettingsView: View {
                             status = String(localized: "Socket path copied")
                         }
                     }
+                    Text(String(localized: "Owner-only permissions (0600). Send newline-delimited JSON-RPC such as {\"id\":1,\"method\":\"status\"}."))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             }
 

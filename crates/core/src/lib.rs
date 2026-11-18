@@ -68,7 +68,7 @@ pub use cinma_tracking::{TraktDeviceCode, TraktRecommendation, letterboxd::Lette
 pub use commands::{
     COMMANDS, CommandContext, CommandSpec, Invocation, command, normalize_combo, parse_deep_link,
 };
-pub use disk::{DiskPolicySettings, DiskUsageSummary};
+pub use disk::DiskPolicySettings;
 pub use downloads::{
     YtdlpSourceSpec, default_audio_folder, default_video_folder, within_download_schedule,
 };

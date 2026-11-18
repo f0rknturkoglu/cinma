@@ -46,8 +46,10 @@ enum CalendarNotifications {
         let items = (try? await core.calendarEntries()) ?? []
         center.removeAllPendingNotificationRequests()
 
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withFullDate]
+        let parser = DateFormatter()
+        parser.dateFormat = "yyyy-MM-dd"
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = .current
         let now = Date()
         let horizon = now.addingTimeInterval(14 * 86_400)
 
