@@ -75,7 +75,7 @@ pub use downloads::{
 pub use events::{CoreEvent, CoreEventListener};
 pub use integrations::{AdapterStatus, StremioImportResult};
 pub use library::WatchProgressInput;
-pub use local_library::LocalMediaEntry;
+pub use local_library::{LocalMediaEntry, parse_local_media_filename};
 pub use metadata::RichMetaResult;
 pub use phase9::{
     DebridProviderStatus, DiscordPresenceInput, ManualSkipMarkers, OAuthStartResult, PinnedShelf,

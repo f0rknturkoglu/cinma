@@ -1033,17 +1033,15 @@ impl Core {
         debrid_cached_hashes: &HashSet<String>,
         prefs: Option<cinma_ranker::RankerPreferences>,
     ) -> RankResult {
-        let raw = candidates
-            .into_iter()
-            .map(|c| (c.addon_name, c.stream))
-            .collect();
+        let raw = self.filter_blocked_candidates(candidates);
         let caps = crate::addons::machine_capabilities_pub();
-        cinma_ranker::rank_streams_with_debrid(
+        let result = cinma_ranker::rank_streams_with_debrid(
             raw,
             debrid_cached_hashes,
             &prefs.unwrap_or_default(),
             &caps,
-        )
+        );
+        self.finalize_rank_result(result)
     }
 
     // =========================================================================
@@ -1139,4 +1137,81 @@ pub struct PinnedShelf {
     pub media_type: String,
     pub catalog_id: String,
     pub genre: Option<String>,
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod p1_debrid_ranker_tests {
+    use super::*;
+    use crate::PlayerPreferences;
+
+    #[test]
+    fn rank_streams_for_debrid_applies_block_words_debrid_only_and_sort() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let core = Core::open(dir.path()).expect("open core");
+        let prefs = PlayerPreferences {
+            track_block_words: vec!["camrip".to_owned()],
+            debrid_only_mode: true,
+            stream_sort: "size_asc".to_owned(),
+            ..Default::default()
+        };
+        core.set_player_preferences(&prefs).expect("set prefs");
+
+        let cached_big = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let cached_small = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let uncached_hash = "cccccccccccccccccccccccccccccccccccccccc";
+        let candidates = vec![
+            StreamCandidate {
+                addon_name: "Torrentio".to_owned(),
+                stream: cinma_stremio::Stream {
+                    name: Some("1080p".to_owned()),
+                    title: Some("Show 1080p 💾 5.0 GB".to_owned()),
+                    info_hash: Some(cached_big.to_owned()),
+                    ..Default::default()
+                },
+            },
+            StreamCandidate {
+                addon_name: "Torrentio".to_owned(),
+                stream: cinma_stremio::Stream {
+                    name: Some("1080p".to_owned()),
+                    title: Some("Show 1080p 💾 1.5 GB".to_owned()),
+                    info_hash: Some(cached_small.to_owned()),
+                    ..Default::default()
+                },
+            },
+            StreamCandidate {
+                addon_name: "TorrentioCAM".to_owned(),
+                stream: cinma_stremio::Stream {
+                    name: Some("720p CAMRip".to_owned()),
+                    title: Some("Show CAMRip 💾 500 MB".to_owned()),
+                    info_hash: Some(cached_small.to_owned()),
+                    ..Default::default()
+                },
+            },
+            StreamCandidate {
+                addon_name: "P2P".to_owned(),
+                stream: cinma_stremio::Stream {
+                    name: Some("4K".to_owned()),
+                    title: Some("Show 2160p 👤 999 💾 2.0 GB".to_owned()),
+                    info_hash: Some(uncached_hash.to_owned()),
+                    ..Default::default()
+                },
+            },
+        ];
+
+        let mut cached = HashSet::new();
+        cached.insert(cached_big.to_owned());
+        cached.insert(cached_small.to_owned());
+
+        let ranked = core.rank_streams_for_debrid(candidates, &cached, None);
+        assert_eq!(ranked.ranked.len(), 2);
+        assert_eq!(
+            ranked.ranked[0].stream.info_hash.as_deref(),
+            Some(cached_small)
+        );
+        assert_eq!(
+            ranked.ranked[1].stream.info_hash.as_deref(),
+            Some(cached_big)
+        );
+    }
 }

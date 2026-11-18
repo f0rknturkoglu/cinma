@@ -711,3 +711,100 @@ fn wave3_dalga3_shelves_local_scanner_schedule_and_socket() {
         assert_eq!(val["result"]["downloads"], 1);
     });
 }
+
+#[test]
+fn p1_stream_serialization_local_year_titles_and_debrid_ranker() {
+    // #26: `Stream::file_idx: None` must omit `"fileIdx"` so hosts do not treat null as batch item.
+    let single = Stream {
+        info_hash: Some("deadbeef".to_owned()),
+        file_idx: None,
+        ..Default::default()
+    };
+    let single_json = serde_json::to_string(&single).unwrap();
+    assert!(!single_json.contains("fileIdx"), "got {single_json}");
+
+    let batch = Stream {
+        info_hash: Some("deadbeef".to_owned()),
+        file_idx: Some(2),
+        ..Default::default()
+    };
+    let batch_json = serde_json::to_string(&batch).unwrap();
+    assert!(batch_json.contains("\"fileIdx\":2"), "got {batch_json}");
+
+    // #13: Year-titled movies like `1917` / `2001` / `Blade Runner 2049` parse cleanly.
+    let a = cinma_core::parse_local_media_filename(
+        std::path::Path::new("1917.2019.1080p.BluRay.mkv"),
+        1024,
+    );
+    assert_eq!(a.title, "1917");
+    assert_eq!(a.year.as_deref(), Some("2019"));
+
+    let b = cinma_core::parse_local_media_filename(
+        std::path::Path::new("2001.A.Space.Odyssey.1968.2160p.mkv"),
+        1024,
+    );
+    assert_eq!(b.title, "2001 A Space Odyssey");
+    assert_eq!(b.year.as_deref(), Some("1968"));
+
+    let c = cinma_core::parse_local_media_filename(
+        std::path::Path::new("Blade.Runner.2049.2017.1080p.mkv"),
+        1024,
+    );
+    assert_eq!(c.title, "Blade Runner 2049");
+    assert_eq!(c.year.as_deref(), Some("2017"));
+
+    let d = cinma_core::parse_local_media_filename(std::path::Path::new("1917.mkv"), 1024);
+    assert_eq!(d.title, "1917");
+    assert_eq!(d.year, None);
+
+    // #20/#21/#25: `rank_streams_with_debrid` respects `track_block_words`, `debrid_only_mode`, and `stream_sort`.
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(dir.path()).unwrap();
+    let prefs = PlayerPreferences {
+        track_block_words: vec!["camrip".to_owned()],
+        debrid_only_mode: true,
+        stream_sort: "seeds".to_owned(),
+        ..Default::default()
+    };
+    core.set_player_preferences(&prefs).unwrap();
+
+    let candidates = vec![
+        StreamCandidate {
+            addon_name: "Direct".to_owned(),
+            stream: Stream {
+                name: Some("1080p Direct".to_owned()),
+                title: Some("Movie 1080p.mp4".to_owned()),
+                url: Some("https://example.com/movie.mp4".to_owned()),
+                ..Default::default()
+            },
+        },
+        StreamCandidate {
+            addon_name: "DirectCAM".to_owned(),
+            stream: Stream {
+                name: Some("720p CAMRip".to_owned()),
+                title: Some("Movie CAMRip.mp4".to_owned()),
+                url: Some("https://example.com/cam.mp4".to_owned()),
+                ..Default::default()
+            },
+        },
+        StreamCandidate {
+            addon_name: "P2P".to_owned(),
+            stream: Stream {
+                name: Some("4K Torrent".to_owned()),
+                title: Some("Movie 2160p 👤 999".to_owned()),
+                info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_owned()),
+                ..Default::default()
+            },
+        },
+    ];
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let ranked = rt
+        .block_on(core.rank_streams_with_debrid(candidates, None))
+        .unwrap();
+    assert_eq!(ranked.ranked.len(), 1);
+    assert_eq!(ranked.ranked[0].addon_name, "Direct");
+}

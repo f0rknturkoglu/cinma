@@ -214,6 +214,7 @@ final class HomeBrowserViewController: NSViewController {
     private var seriesRailHeight: NSLayoutConstraint?
     private let trendingMoviesRail = CatalogRailView(title: String(localized: "Trending Movies"))
     private let trendingSeriesRail = CatalogRailView(title: String(localized: "Trending Series"))
+    private let pinnedRailsStack = NSStackView()
     private let dynamicRailsStack = NSStackView()
     private let emptyHintLabel = NSTextField(wrappingLabelWithString: "")
 
@@ -513,7 +514,7 @@ final class HomeBrowserViewController: NSViewController {
         continueHeight = cwHeight
         contentStack.addArrangedSubview(continueRail)
         continueRail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
-        contentStack.setCustomSpacing(-44, after: heroContainer)
+        contentStack.setCustomSpacing(28, after: heroContainer)
 
         continueSeriesRail.translatesAutoresizingMaskIntoConstraints = false
         continueSeriesRail.isHidden = true
@@ -535,12 +536,14 @@ final class HomeBrowserViewController: NSViewController {
             rail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
         }
 
-        dynamicRailsStack.orientation = .vertical
-        dynamicRailsStack.alignment = .leading
-        dynamicRailsStack.spacing = 28
-        dynamicRailsStack.translatesAutoresizingMaskIntoConstraints = false
-        contentStack.addArrangedSubview(dynamicRailsStack)
-        dynamicRailsStack.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+        for stack in [pinnedRailsStack, dynamicRailsStack] {
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 28
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            contentStack.addArrangedSubview(stack)
+            stack.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+        }
 
         emptyHintLabel.font = .systemFont(ofSize: 14, weight: .regular)
         emptyHintLabel.textColor = CinemaTheme.textMuted
@@ -587,6 +590,7 @@ final class HomeBrowserViewController: NSViewController {
             continueSeriesRail.isHidden = true
             continueSeriesHeight?.constant = 0
         }
+        syncContinueRailPosition(cwAtTop: (try? core.playerPreferences())?.cwAtTop ?? true)
 
         let cachedMovies = (try? core.cachedTrending(mediaType: "movie")) ?? []
         let cachedSeries = (try? core.cachedTrending(mediaType: "series")) ?? []
@@ -652,8 +656,8 @@ final class HomeBrowserViewController: NSViewController {
             let safeIdx = min(targetIdx, contentStack.arrangedSubviews.count)
             contentStack.insertArrangedSubview(continueRail, at: safeIdx)
             continueRail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
-            contentStack.setCustomSpacing(cwAtTop ? -44 : 28, after: heroContainer)
         }
+        contentStack.setCustomSpacing((cwAtTop && !continueRail.isHidden) ? -44 : 28, after: heroContainer)
         let targetSeriesIdx = min((contentStack.arrangedSubviews.firstIndex(of: continueRail) ?? 0) + 1, contentStack.arrangedSubviews.count)
         if contentStack.arrangedSubviews.firstIndex(of: continueSeriesRail) != targetSeriesIdx {
             contentStack.removeArrangedSubview(continueSeriesRail)
@@ -670,9 +674,11 @@ final class HomeBrowserViewController: NSViewController {
                 self?.appendAddonRail(batch)
             }
         }
-        for view in dynamicRailsStack.arrangedSubviews {
-            dynamicRailsStack.removeArrangedSubview(view)
-            view.removeFromSuperview()
+        for stack in [pinnedRailsStack, dynamicRailsStack] {
+            for view in stack.arrangedSubviews {
+                stack.removeArrangedSubview(view)
+                view.removeFromSuperview()
+            }
         }
         let pinned = (try? core.pinnedShelves()) ?? []
         Task {
@@ -708,8 +714,8 @@ final class HomeBrowserViewController: NSViewController {
             self?.loadAddonCatalogRails()
         }
         rail.update(content: .posters(items), style: style)
-        dynamicRailsStack.addArrangedSubview(rail)
-        rail.widthAnchor.constraint(equalTo: dynamicRailsStack.widthAnchor).isActive = true
+        pinnedRailsStack.addArrangedSubview(rail)
+        rail.widthAnchor.constraint(equalTo: pinnedRailsStack.widthAnchor).isActive = true
     }
 
     private func appendAddonRail(_ batch: CatalogBatchInfo) {

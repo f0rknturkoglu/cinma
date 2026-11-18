@@ -181,14 +181,19 @@ impl DebridClient {
             return Ok(HashSet::new());
         }
 
-        match provider {
-            DebridProvider::RealDebrid => self.rd_check_cache(key, &clean).await,
-            DebridProvider::AllDebrid => self.ad_check_cache(key, &clean).await,
-            DebridProvider::Premiumize => self.pm_check_cache(key, &clean).await,
-            DebridProvider::TorBox => self.tb_check_cache(key, &clean).await,
-            DebridProvider::EasyDebrid => self.ed_check_cache(key, &clean).await,
-            DebridProvider::DebridLink => self.dl_check_cache(key, &clean).await,
+        let mut cached = HashSet::new();
+        for chunk in clean.chunks(40) {
+            let hits = match provider {
+                DebridProvider::RealDebrid => self.rd_check_cache(key, chunk).await?,
+                DebridProvider::AllDebrid => self.ad_check_cache(key, chunk).await?,
+                DebridProvider::Premiumize => self.pm_check_cache(key, chunk).await?,
+                DebridProvider::TorBox => self.tb_check_cache(key, chunk).await?,
+                DebridProvider::EasyDebrid => self.ed_check_cache(key, chunk).await?,
+                DebridProvider::DebridLink => self.dl_check_cache(key, chunk).await?,
+            };
+            cached.extend(hits);
         }
+        Ok(cached)
     }
 
     /// Resolves an info hash (and optional file index) into a direct HTTPS URL.

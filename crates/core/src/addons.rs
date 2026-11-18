@@ -536,13 +536,10 @@ impl Core {
 
     /// Ranks stream candidates using machine capabilities (e.g. M3+ AV1 decode),
     /// active block-word filters, stream sort order, and the provided or default preferences.
-    pub fn rank_streams(
+    pub(crate) fn filter_blocked_candidates(
         &self,
         candidates: Vec<StreamCandidate>,
-        prefs: Option<RankerPreferences>,
-    ) -> RankResult {
-        let caps = machine_capabilities();
-        let prefs = prefs.unwrap_or_default();
+    ) -> Vec<(String, Stream)> {
         let player_prefs = self.player_preferences().unwrap_or_default();
         let block_words: Vec<String> = player_prefs
             .track_block_words
@@ -550,7 +547,7 @@ impl Core {
             .map(|w| w.trim().to_ascii_lowercase())
             .filter(|w| !w.is_empty())
             .collect();
-        let raw = candidates
+        candidates
             .into_iter()
             .filter(|c| {
                 if block_words.is_empty() {
@@ -573,8 +570,11 @@ impl Core {
                 !block_words.iter().any(|w| combined.contains(w))
             })
             .map(|c| (c.addon_name, c.stream))
-            .collect();
-        let mut result = rank_streams(raw, &prefs, &caps);
+            .collect()
+    }
+
+    pub(crate) fn finalize_rank_result(&self, mut result: RankResult) -> RankResult {
+        let player_prefs = self.player_preferences().unwrap_or_default();
         if player_prefs.debrid_only_mode {
             result
                 .ranked
@@ -605,6 +605,18 @@ impl Core {
             _ => {}
         }
         result
+    }
+
+    pub fn rank_streams(
+        &self,
+        candidates: Vec<StreamCandidate>,
+        prefs: Option<RankerPreferences>,
+    ) -> RankResult {
+        let caps = machine_capabilities();
+        let prefs = prefs.unwrap_or_default();
+        let raw = self.filter_blocked_candidates(candidates);
+        let result = rank_streams(raw, &prefs, &caps);
+        self.finalize_rank_result(result)
     }
 
     pub fn hardware_av1_supported(&self) -> bool {

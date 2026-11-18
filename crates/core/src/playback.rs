@@ -50,6 +50,8 @@ pub struct NextEpisodePrefetch {
     pub best_stream: Option<StreamCandidate>,
 }
 
+type PrefetchedSource = (String, Option<u32>, Arc<dyn ByteSource>);
+
 /// One player bound to a host view. Dropping it (or `stop`) destroys mpv and
 /// cancels all background prefetch/thumbnail state.
 pub struct Playback {
@@ -61,7 +63,7 @@ pub struct Playback {
     thumbs: Mutex<Option<Arc<ThumbnailExtractor>>>,
     cached_identity: Mutex<Option<VideoFileIdentity>>,
     prefetch_abort: Mutex<Option<AbortHandle>>,
-    prefetch_source: Mutex<Option<Arc<dyn ByteSource>>>,
+    prefetch_source: Mutex<Option<PrefetchedSource>>,
     prefetched_next: Mutex<Option<NextEpisodePrefetch>>,
 }
 
@@ -123,15 +125,33 @@ impl Core {
         current_season: u32,
         current_episode: u32,
     ) -> Result<Option<NextEpisodePrefetch>, CoreError> {
+        let prefs = self.player_preferences().unwrap_or_default();
+        let filler_eps: std::collections::HashSet<u32> = if prefs.auto_skip_anime_fillers {
+            self.anime_filler_episodes(meta_id.to_owned())
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
         let eps = self
             .season_episodes("series".to_owned(), meta_id.to_owned(), current_season)
             .await
             .unwrap_or_default();
+        let check_fillers = !filler_eps.is_empty()
+            && (current_season <= 1
+                || eps
+                    .iter()
+                    .filter_map(|e| e.episode.or(e.number))
+                    .min()
+                    .unwrap_or(1)
+                    > 1);
         if let Some(next_ep) = eps
             .into_iter()
             .filter(|e| {
                 let n = e.episode.or(e.number).unwrap_or(0);
-                n > current_episode
+                n > current_episode && (!check_fillers || !filler_eps.contains(&n))
             })
             .min_by_key(|e| e.episode.or(e.number).unwrap_or(u32::MAX))
         {
@@ -192,28 +212,51 @@ fn wrap_archive_if_needed(source: Arc<dyn ByteSource>) -> Arc<dyn ByteSource> {
 }
 
 impl Playback {
+    fn take_matching_prefetch_source(
+        &self,
+        info_hash: &str,
+        file_idx: Option<u32>,
+    ) -> Option<Arc<dyn ByteSource>> {
+        let mut guard = self.prefetch_source.lock().ok()?;
+        let matches = guard
+            .as_ref()
+            .is_some_and(|(h, idx, _)| h.eq_ignore_ascii_case(info_hash) && *idx == file_idx);
+        if matches {
+            guard.take().map(|(_, _, src)| src)
+        } else {
+            None
+        }
+    }
+
     /// Resolves `stream` (debrid instant cache if configured, else torrent →
     /// byte source, or URL → direct) and starts it.
     pub async fn play(&self, stream: Stream) -> Result<(), CoreError> {
+        let reused_prefetch = stream
+            .info_hash
+            .as_deref()
+            .and_then(|hash| self.take_matching_prefetch_source(hash, stream.file_idx));
         self.reset_media_state();
         self.player.begin_load();
         if let Ok(Some(debrid_url)) = self.core.try_resolve_debrid_stream(&stream).await {
             return self.play_url(&debrid_url);
         }
         if let Some(info_hash) = stream.info_hash.clone() {
-            let engine = self.core.torrents()?;
-            let request = TorrentFileRequest {
-                info_hash,
-                file_idx: stream.file_idx.map(|i| i as usize),
-                trackers: stream.trackers(),
+            let source = if let Some(src) = reused_prefetch {
+                src
+            } else {
+                let engine = self.core.torrents()?;
+                let request = TorrentFileRequest {
+                    info_hash,
+                    file_idx: stream.file_idx.map(|i| i as usize),
+                    trackers: stream.trackers(),
+                };
+                self.core
+                    .spawn(async move {
+                        let src = engine.open_file(request).await?;
+                        Ok(wrap_archive_if_needed(src))
+                    })
+                    .await?
             };
-            let source = self
-                .core
-                .spawn(async move {
-                    let src = engine.open_file(request).await?;
-                    Ok(wrap_archive_if_needed(src))
-                })
-                .await?;
             if let Ok(mut guard) = self.source.lock() {
                 *guard = Some(Arc::clone(&source));
             }
@@ -381,11 +424,11 @@ impl Playback {
                 if let Ok(streams) = core
                     .streams("series".to_owned(), plan.video_id.clone())
                     .await
+                    && let Ok(ranked) = core.rank_streams_with_debrid(streams, None).await
                 {
-                    let ranked = core.rank_streams(streams, None);
                     let prefs = core.player_preferences().unwrap_or_default();
                     let saved_src = core.series_source(&meta_id).unwrap_or_default();
-                    let chosen = if prefs.keep_source_next_episode {
+                    let chosen_ranked = if prefs.keep_source_next_episode {
                         let target_bg = binge_group.as_deref().or(saved_src.binge_group.as_deref());
                         let binge_match = target_bg.and_then(|bg| {
                             ranked.ranked.iter().find(|r| {
@@ -411,17 +454,17 @@ impl Playback {
                             .or(addon_res_match)
                             .or(addon_match)
                             .or_else(|| ranked.ranked.first())
-                            .map(|r| StreamCandidate {
-                                addon_name: r.addon_name.clone(),
-                                stream: r.stream.clone(),
-                            })
                     } else {
-                        ranked.ranked.first().map(|r| StreamCandidate {
-                            addon_name: r.addon_name.clone(),
-                            stream: r.stream.clone(),
-                        })
+                        ranked.ranked.first()
                     };
-                    if let Some(cand) = &chosen
+                    let chosen_cached_debrid =
+                        chosen_ranked.is_some_and(|r| r.parsed.cached_debrid);
+                    let chosen = chosen_ranked.map(|r| StreamCandidate {
+                        addon_name: r.addon_name.clone(),
+                        stream: r.stream.clone(),
+                    });
+                    if !chosen_cached_debrid
+                        && let Some(cand) = &chosen
                         && let Some(hash) = &cand.stream.info_hash
                         && let Ok(engine) = core.torrents()
                     {
@@ -434,7 +477,11 @@ impl Playback {
                             && let Some(this) = weak_self.upgrade()
                             && let Ok(mut g) = this.prefetch_source.lock()
                         {
-                            *g = Some(src);
+                            *g = Some((
+                                hash.to_ascii_lowercase(),
+                                cand.stream.file_idx,
+                                wrap_archive_if_needed(src),
+                            ));
                         }
                     }
                     plan.best_stream = chosen;

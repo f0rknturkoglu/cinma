@@ -153,6 +153,7 @@ final class PlayerViewController: NSViewController {
     private let statsCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 14)
     private let statsText = NSTextField(wrappingLabelWithString: "")
     private lazy var skipButton = CinemaTheme.makePillButton(title: "", symbol: "forward.end.fill", primary: true, target: self, action: #selector(skipCurrentSegment))
+    private var skipButtonTrailingConstraint: NSLayoutConstraint?
     private let nextCard = CinemaTheme.makeGlassView(kind: .hud, cornerRadius: 16)
     private let nextTitleLabel = NSTextField(labelWithString: "")
     private let nextSubtitleLabel = NSTextField(labelWithString: "")
@@ -358,7 +359,6 @@ final class PlayerViewController: NSViewController {
             statsCard.topAnchor.constraint(equalTo: titlePill.bottomAnchor, constant: 12),
             statsCard.leadingAnchor.constraint(equalTo: titlePill.leadingAnchor),
 
-            skipButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
             skipButton.bottomAnchor.constraint(equalTo: bar.topAnchor, constant: -16),
             skipButton.heightAnchor.constraint(equalToConstant: 36),
 
@@ -376,6 +376,9 @@ final class PlayerViewController: NSViewController {
             statusPill.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: 24),
             statusPill.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -24),
         ])
+        let skipTrailing = skipButton.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28)
+        skipTrailing.isActive = true
+        skipButtonTrailingConstraint = skipTrailing
         view = root
     }
 
@@ -527,8 +530,8 @@ final class PlayerViewController: NSViewController {
         let moreBtn = makeIconButton("ellipsis.circle", tooltip: String(localized: "Video, A/B Loop & Sleep Timer"), action: #selector(showMoreMenu(_:)))
         self.moreButton = moreBtn
         lockButton.isBordered = false
-        lockButton.image = NSImage(systemSymbolName: "lock.open", accessibilityDescription: String(localized: "Lock Screen (L)"))
-        lockButton.toolTip = String(localized: "Lock Screen (L)")
+        lockButton.image = NSImage(systemSymbolName: "lock.open", accessibilityDescription: String(localized: "Lock Screen (⇧L)"))
+        lockButton.toolTip = String(localized: "Lock Screen (⇧L)")
         lockButton.contentTintColor = CinemaTheme.textPrimary
         lockButton.target = self
         lockButton.action = #selector(toggleScreenLock)
@@ -744,8 +747,8 @@ final class PlayerViewController: NSViewController {
 
     private func installMediaKeys() {
         nowPlaying.onTogglePause = { [weak self] in self?.togglePause() }
-        nowPlaying.onPlay = { [weak self] in try? self?.session?.togglePause() }
-        nowPlaying.onPause = { [weak self] in try? self?.session?.togglePause() }
+        nowPlaying.onPlay = { [weak self] in try? self?.session?.setPaused(paused: false) }
+        nowPlaying.onPause = { [weak self] in try? self?.session?.setPaused(paused: true) }
         nowPlaying.onNextEpisode = { [weak self] in self?.playNextEpisodeNow() }
         nowPlaying.onSeekAbsolute = { [weak self] secs in self?.seekAbsolute(secs) }
         nowPlaying.installCommands()
@@ -942,6 +945,11 @@ final class PlayerViewController: NSViewController {
                             if let idx = meta.rankedStreams.firstIndex(where: { $0.stream.raw == stream.raw }) {
                                 self.currentStreamIndex = idx
                             }
+                            self.armStallWatchdog()
+                        }
+                    } else {
+                        await MainActor.run {
+                            self.armStallWatchdog()
                         }
                     }
                     try await session.play(stream: stream)
@@ -954,7 +962,11 @@ final class PlayerViewController: NSViewController {
                 }
             } catch {
                 await MainActor.run {
+                    self.cancelStallWatchdog()
                     self.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
+                    if case .stream = self.request {
+                        self.attemptStreamRecovery()
+                    }
                 }
             }
         }
@@ -966,7 +978,7 @@ final class PlayerViewController: NSViewController {
             loadingNextEpisode = false
             nextCountdownTask?.cancel()
             nextCountdownTask = nil
-            nextCard.isHidden = true
+            setNextCardVisible(false)
             nextCountdownLabel.stringValue = ""
             showStatus("", autoHideAfter: 0)
             failedRetries = 0
@@ -1127,8 +1139,8 @@ final class PlayerViewController: NSViewController {
             subDelay = sessionSubDelay ?? 0
             audioDelay = sessionAudioDelay ?? 0
         }
-        if abs(subDelay) > 0.001 { try? session.setSubtitleDelay(seconds: subDelay) }
-        if abs(audioDelay) > 0.001 { try? session.setAudioDelay(seconds: audioDelay) }
+        try? session.setSubtitleDelay(seconds: subDelay)
+        try? session.setAudioDelay(seconds: audioDelay)
     }
 
     private func effectiveSubtitlePos(for settings: SubtitleSettingsFfi? = nil) -> UInt32 {
@@ -1407,13 +1419,18 @@ final class PlayerViewController: NSViewController {
         }
     }
 
+    private func setNextCardVisible(_ visible: Bool) {
+        nextCard.isHidden = !visible
+        skipButtonTrailingConstraint?.constant = visible ? -360 : -28
+    }
+
     private func showNextEpisodeCard(_ plan: NextEpisodePrefetchInfo) {
         guard !loadingNextEpisode, !isScreenLocked, nextCard.isHidden else { return }
         nextTitleLabel.stringValue = String(localized: "S\(plan.season) · E\(plan.episode) — \(plan.title)")
         nextSubtitleLabel.stringValue = plan.bestStream != nil
             ? String(localized: "Prefetched & ready")
             : String(localized: "Ready to load")
-        nextCard.isHidden = false
+        setNextCardVisible(true)
         showHudAndCancelTimer()
 
         let prefs = try? core.playerPreferences()
@@ -1441,8 +1458,8 @@ final class PlayerViewController: NSViewController {
             autoPlayedEpisodesCount = 0
             nextCountdownTask?.cancel()
             nextCountdownTask = nil
-            if !paused { try? session?.togglePause() }
-            nextCard.isHidden = false
+            if !paused { try? session?.setPaused(paused: true) }
+            setNextCardVisible(true)
             showHudAndCancelTimer()
             nextCountdownLabel.stringValue = String(localized: "Still watching? Click Play Next to continue.")
             return
@@ -1464,7 +1481,7 @@ final class PlayerViewController: NSViewController {
         loadingNextEpisode = true
         nextCountdownTask?.cancel()
         nextCountdownTask = nil
-        nextCard.isHidden = true
+        setNextCardVisible(false)
         nextCountdownLabel.stringValue = ""
         skipButton.isHidden = true
         nextPlan = nil
@@ -1472,6 +1489,9 @@ final class PlayerViewController: NSViewController {
         nextDismissed = false
         pendingSwitchPosition = nil
         appliedResume = true
+        failedRetries = 0
+        currentStreamIndex = 0
+        activeSubtitleFilePath = nil
         position = 0
         duration = 0
         scrubBar.position = 0
@@ -1484,6 +1504,14 @@ final class PlayerViewController: NSViewController {
         onlineSubtitles = []
 
         if let prev = metadata {
+            let nextBingeGroup: String? = {
+                guard let data = stream.raw.data(using: .utf8),
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let hints = obj["behaviorHints"] as? [String: Any]
+                else { return nil }
+                return hints["bingeGroup"] as? String
+            }()
+            let fallbackSummary = stream.name ?? stream.title ?? stream.addonName
             let newMeta = PlaybackMetadata(
                 videoId: plan.videoId,
                 metaId: prev.metaId,
@@ -1494,23 +1522,48 @@ final class PlayerViewController: NSViewController {
                 season: Int64(plan.season),
                 episode: Int64(plan.episode),
                 resumePosition: nil,
-                streamSummary: prev.streamSummary,
-                isHdr: prev.isHdr,
-                bingeGroup: prev.bingeGroup,
+                streamSummary: fallbackSummary,
+                isHdr: false,
+                bingeGroup: nextBingeGroup,
                 rankedStreams: []
             )
             request = .stream(stream, metadata: newMeta)
             refreshTitles()
         }
         showStatus(String(localized: "Loading next episode…"), autoHideAfter: 0)
+        armStallWatchdog()
         let session = session
+        let core = core
+        let targetVideoId = plan.videoId
+        let targetMediaType = metadata?.mediaType ?? "series"
         Task { [weak self] in
+            async let rankedTask: RankResultInfo? = {
+                guard let raw = try? await core.streams(mediaType: targetMediaType, id: targetVideoId),
+                      !raw.isEmpty
+                else { return nil }
+                return try? await core.rankStreamsWithDebrid(streams: raw, preferences: nil)
+            }()
             do {
                 try await session?.play(stream: stream)
+                if let ranked = await rankedTask, !ranked.ranked.isEmpty {
+                    await MainActor.run {
+                        guard let self,
+                              case .stream(let activeStream, var meta) = self.request,
+                              meta?.videoId == targetVideoId
+                        else { return }
+                        meta?.rankedStreams = ranked.ranked
+                        if let idx = ranked.ranked.firstIndex(where: { $0.stream.raw == activeStream.raw }) {
+                            self.currentStreamIndex = idx
+                        }
+                        self.request = .stream(activeStream, metadata: meta)
+                    }
+                }
             } catch {
                 await MainActor.run {
+                    self?.cancelStallWatchdog()
                     self?.loadingNextEpisode = false
                     self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
+                    self?.attemptStreamRecovery()
                 }
             }
         }
@@ -1519,7 +1572,7 @@ final class PlayerViewController: NSViewController {
     @objc private func cancelNextEpisode() {
         nextDismissed = true
         nextCountdownTask?.cancel()
-        nextCard.isHidden = true
+        setNextCardVisible(false)
         session?.cancelPlaybackPrefetchIfNeeded()
     }
 
@@ -1541,9 +1594,6 @@ final class PlayerViewController: NSViewController {
     }
 
     private func currentSkipSegment() -> (kind: String, startS: Double, endS: Double)? {
-        if let seg = activeApiSkipSegment() {
-            return (seg.kind, seg.startS, seg.endS)
-        }
         if let outroLast = manualSkipMarkers.outroLastS,
            outroLast > 5,
            duration > outroLast + 10
@@ -1552,6 +1602,9 @@ final class PlayerViewController: NSViewController {
             if position >= outroStart && position < duration - 1.5 {
                 return ("outro", outroStart, duration)
             }
+        }
+        if let seg = activeApiSkipSegment() {
+            return (seg.kind, seg.startS, seg.endS)
         }
         guard let idx = chapters.lastIndex(where: { $0.startS <= position }) else { return nil }
         let ch = chapters[idx]
@@ -1635,18 +1688,31 @@ final class PlayerViewController: NSViewController {
     }
 
     private func attemptStreamRecovery() {
-        guard !closing else { return }
+        guard !closing, let session else { return }
         if failedRetries == 0, case .stream(let current, _) = request {
             failedRetries = 1
             pendingSwitchPosition = position > 5 ? position : nil
             showStatus(String(localized: "Stream stalled, retrying…"), autoHideAfter: 0)
-            let session = session
-            Task { try? await session?.play(stream: current) }
+            armStallWatchdog()
+            Task { [weak self] in
+                do {
+                    try await session.play(stream: current)
+                } catch {
+                    await MainActor.run {
+                        self?.cancelStallWatchdog()
+                        self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
+                        self?.attemptStreamRecovery()
+                    }
+                }
+            }
             return
         }
         guard let meta = metadata, !meta.rankedStreams.isEmpty else { return }
         let nextIndex = currentStreamIndex + 1
-        guard nextIndex < meta.rankedStreams.count else { return }
+        guard nextIndex < meta.rankedStreams.count else {
+            showStatus(String(localized: "No more fallback streams available."), autoHideAfter: 4.5)
+            return
+        }
         currentStreamIndex = nextIndex
         failedRetries = 0
         let fallback = meta.rankedStreams[nextIndex].stream
@@ -1660,9 +1726,18 @@ final class PlayerViewController: NSViewController {
             request = .stream(stream, metadata: meta)
             refreshTitles()
         }
-        let session = session
-        Task {
-            try? await session?.play(stream: stream)
+        guard let session else { return }
+        armStallWatchdog()
+        Task { [weak self] in
+            do {
+                try await session.play(stream: stream)
+            } catch {
+                await MainActor.run {
+                    self?.cancelStallWatchdog()
+                    self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
+                    self?.attemptStreamRecovery()
+                }
+            }
         }
     }
 
@@ -1780,6 +1855,11 @@ final class PlayerViewController: NSViewController {
                 if let id, let chosen = self.tracks.first(where: { $0.trackType == "sub" && $0.id == id }) {
                     self.sessionSubLang = chosen.lang
                     self.sessionSubTitle = chosen.title
+                    if !chosen.external {
+                        self.activeSubtitleFilePath = nil
+                    }
+                } else {
+                    self.activeSubtitleFilePath = nil
                 }
                 try? self.session?.setSubtitleTrack(id: id)
                 self.tracks = (try? self.session?.tracks()) ?? []
@@ -2328,7 +2408,7 @@ final class PlayerViewController: NSViewController {
         if mins == -1 {
             sleepEndOfEpisode = true
             nextCountdownTask?.cancel()
-            nextCard.isHidden = true
+            setNextCardVisible(false)
             showStatus(String(localized: "Sleep timer: stop after this episode"))
             return
         }
@@ -2469,9 +2549,13 @@ final class PlayerViewController: NSViewController {
                 sessionSubTitle = chosen.title
             }
             try? session?.setSubtitleTrack(id: target)
+            if let secondarySid {
+                try? session?.setSecondarySubtitleTrack(id: secondarySid)
+            }
         } else {
             lastSelectedSid = tracks.first(where: { $0.trackType == "sub" && $0.selected })?.id ?? lastSelectedSid
             try? session?.setSubtitleTrack(id: nil)
+            try? session?.setSecondarySubtitleTrack(id: nil)
         }
         showStatus(subtitlesEnabled ? String(localized: "Subtitles on") : String(localized: "Subtitles off"))
     }
@@ -2487,6 +2571,9 @@ final class PlayerViewController: NSViewController {
             sessionSubEnabled = true
             sessionSubLang = next.lang
             sessionSubTitle = next.title
+            if !next.external {
+                activeSubtitleFilePath = nil
+            }
             try? session?.setSubtitleTrack(id: next.id)
         } else {
             sessionAudioLang = next.lang
@@ -2500,15 +2587,15 @@ final class PlayerViewController: NSViewController {
     private func handleKey(_ event: NSEvent) -> Bool {
         showHudAndResetTimer()
         guard let combo = KeyCombo.from(event) else { return false }
-        if combo == "l", (try? core.playerPreferences())?.screenLockEnabled ?? true {
-            toggleScreenLock()
-            return true
-        }
+        let resolvedCommand = try? core.resolveKey(context: "player", combo: combo)
         if isScreenLocked {
+            if resolvedCommand == "player.screen_lock" {
+                toggleScreenLock()
+            }
             return true
         }
         autoPlayedEpisodesCount = 0
-        guard let command = try? core.resolveKey(context: "player", combo: combo) else {
+        guard let command = resolvedCommand else {
             if combo == "p" {
                 enterPiPClicked()
                 return true
@@ -2551,6 +2638,10 @@ final class PlayerViewController: NSViewController {
         case "player.sub_seek_next": try? session?.subSeek(offset: 1)
         case "player.search_dialogue": showDialogueSearchPopover()
         case "player.live_text": toggleLiveTextOverlay()
+        case "player.screen_lock":
+            if (try? core.playerPreferences())?.screenLockEnabled ?? true {
+                toggleScreenLock()
+            }
         case "player.volume_up": adjustVolume(by: 10)
         case "player.volume_down": adjustVolume(by: -10)
         case "player.mute": toggleMute()
@@ -2679,8 +2770,9 @@ final class PlayerViewController: NSViewController {
         scrubBar.abLoopB = nil
         chapters = []
         scrubBar.chapters = []
+        activeSubtitleFilePath = nil
         nextPlan = nil
-        nextCard.isHidden = true
+        setNextCardVisible(false)
         nextDismissed = false
         sleepEndOfEpisode = false
         refreshTitles()
@@ -2881,13 +2973,13 @@ final class PlayerViewController: NSViewController {
         isScreenLocked.toggle()
         lockButton.image = NSImage(
             systemSymbolName: isScreenLocked ? "lock.fill" : "lock.open",
-            accessibilityDescription: isScreenLocked ? String(localized: "Unlock Screen (L)") : String(localized: "Lock Screen (L)")
+            accessibilityDescription: isScreenLocked ? String(localized: "Unlock Screen (⇧L)") : String(localized: "Lock Screen (⇧L)")
         )
         if isScreenLocked {
             dismissFloatingPopover()
             thumbCard.isHidden = true
             skipButton.isHidden = true
-            nextCard.isHidden = true
+            setNextCardVisible(false)
             titlePill.isHidden = true
             bar.isHidden = true
             clockPill.isHidden = true

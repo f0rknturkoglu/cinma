@@ -3660,6 +3660,14 @@ impl PlaybackSession {
         Ok(self.inner.play_download(download_id)?)
     }
 
+    pub fn set_paused(&self, paused: bool) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_paused(paused)
+            .map_err(CoreError::from)?)
+    }
+
     pub fn toggle_pause(&self) -> Result<(), CinmaError> {
         Ok(self
             .inner

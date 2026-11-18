@@ -11,13 +11,13 @@ pub struct Stream {
     pub description: Option<String>,
     #[serde(default)]
     pub url: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub info_hash: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_idx: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sources: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub behavior_hints: Option<BehaviorHints>,
 }
 

@@ -1,4 +1,5 @@
 import AppKit
+@preconcurrency import CoreSpotlight
 import UserNotifications
 
 @MainActor
@@ -30,6 +31,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate()
         self.home = home
         self.window = window
+
+        NotificationCenter.default.addObserver(
+            forName: .cinmaExternalRoute,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            if let url = note.object as? URL {
+                Task { @MainActor in
+                    guard let self else { return }
+                    if self.core != nil {
+                        self.handleLink(url)
+                    } else {
+                        self.pendingLinks.append(url)
+                    }
+                }
+            }
+        }
 
         // Runs after this run-loop pass commits the first frame.
         DispatchQueue.main.async {
@@ -135,15 +153,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             GamepadController.shared.configure(core: core)
             rebuildMenu()
             showBrowse()
-            NotificationCenter.default.addObserver(
-                forName: .cinmaExternalRoute,
-                object: nil,
-                queue: .main
-            ) { [weak self] note in
-                if let url = note.object as? URL {
-                    Task { @MainActor in self?.handleLink(url) }
-                }
-            }
             CalendarNotifications.refreshScheduleIfEnabled(core: core)
             SpotlightLibraryIndexer.indexLibraryIfEnabled(core: core)
             let links = pendingLinks + [DevAutomation.openURL].compactMap { $0 }
@@ -188,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .profileChanged: shell?.handleProfileChanged()
         case .libraryChanged:
             shell?.handleLibraryChanged()
-            if let core {
+            if let core, !(window?.contentViewController is PlayerViewController) {
                 SpotlightLibraryIndexer.indexLibraryIfEnabled(core: core)
                 CalendarNotifications.refreshScheduleIfEnabled(core: core)
             }
@@ -319,6 +328,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         urls.forEach(handleLink)
+    }
+
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType,
+              let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String
+        else {
+            return false
+        }
+        let parts = identifier.split(separator: ":", maxSplits: 2)
+        guard parts.count == 3, parts[0] == "cinma",
+              let url = URL(string: "cinma://open/\(parts[1])/\(parts[2])")
+        else {
+            return false
+        }
+        if core != nil {
+            handleLink(url)
+        } else {
+            pendingLinks.append(url)
+        }
+        return true
     }
 
     private func handleLink(_ url: URL) {

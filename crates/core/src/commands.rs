@@ -96,6 +96,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     player("player.sub_seek_next", "alt+right"),
     player("player.search_dialogue", "cmd+f"),
     player("player.live_text", "t"),
+    player("player.screen_lock", "shift+l"),
     // Reached through deep links only.
     global("addon.install", None),
 ];

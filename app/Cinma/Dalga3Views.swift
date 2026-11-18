@@ -19,9 +19,13 @@ enum Dalga3StreamHelpers {
 
     static func isBatchTorrent(_ stream: StreamInfo) -> Bool {
         guard let hash = stream.infoHash, !hash.isEmpty else { return false }
+        if stream.fileIdx != nil {
+            return false
+        }
         if let data = stream.raw.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           obj["fileIdx"] != nil
+           let rawIdx = obj["fileIdx"],
+           !(rawIdx is NSNull)
         {
             return false
         }
@@ -301,23 +305,29 @@ struct WebDavBrowserSheetView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 } else {
                     List(entries, id: \.subPath) { entry in
+                        let ext = (entry.name as NSString).pathExtension.lowercased()
+                        let isSubtitle = !entry.isDir && ["srt", "ass", "ssa", "vtt"].contains(ext)
                         Button {
                             if entry.isDir {
                                 subPath = entry.subPath
                                 browseCurrent()
-                            } else {
+                            } else if !isSubtitle {
                                 onDismiss()
                                 onPlayUrl(entry.streamUrl, entry.name)
                             }
                         } label: {
                             HStack(spacing: 10) {
-                                Image(systemName: entry.isDir ? "folder.fill" : "play.rectangle.fill")
+                                Image(systemName: entry.isDir ? "folder.fill" : (isSubtitle ? "captions.bubble" : "play.rectangle.fill"))
                                     .foregroundStyle(entry.isDir ? Color.accentColor : Color.secondary)
                                 Text(entry.name)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                 Spacer()
-                                if !entry.isDir && entry.sizeBytes > 0 {
+                                if isSubtitle {
+                                    Text(String(localized: "Subtitle"))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                } else if !entry.isDir && entry.sizeBytes > 0 {
                                     Text(ByteCountFormatter.string(fromByteCount: Int64(entry.sizeBytes), countStyle: .file))
                                         .font(.caption.monospacedDigit())
                                         .foregroundStyle(.secondary)
@@ -326,6 +336,7 @@ struct WebDavBrowserSheetView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .disabled(isSubtitle)
                     }
                     .listStyle(.inset)
                 }

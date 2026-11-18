@@ -58,13 +58,26 @@ enum QuickPlayHelper {
                         )
                     } else if let rich = try? await core.richMeta(mediaType: item.mediaType, id: item.id) {
                         resolvedMeta = rich.meta
-                        let firstSeason = rich.seasonNumbers.sorted().first ?? 1
-                        if let first = rich.meta.videos.first(where: { $0.season == firstSeason }) ?? rich.meta.videos.first {
-                            targetEpisode = first
-                        } else if let eps = try? await core.seasonEpisodes(mediaType: "series", metaId: rich.meta.id, season: firstSeason),
-                                  let first = eps.first
-                        {
-                            targetEpisode = first
+                        let watchedIds = Set(progressRows.filter(\.watched).map(\.videoId))
+                        let orderedVideos = rich.meta.videos
+                            .filter { ($0.season ?? 1) > 0 }
+                            .sorted {
+                                let sa = $0.season ?? 1
+                                let sb = $1.season ?? 1
+                                if sa != sb { return sa < sb }
+                                return ($0.episode ?? $0.number ?? 0) < ($1.episode ?? $1.number ?? 0)
+                            }
+                        if let nextUnwatched = orderedVideos.first(where: { !watchedIds.contains($0.id) }) {
+                            targetEpisode = nextUnwatched
+                        } else {
+                            let firstSeason = rich.seasonNumbers.sorted().first ?? 1
+                            if let first = rich.meta.videos.first(where: { $0.season == firstSeason }) ?? rich.meta.videos.first {
+                                targetEpisode = first
+                            } else if let eps = try? await core.seasonEpisodes(mediaType: "series", metaId: rich.meta.id, season: firstSeason),
+                                      let first = eps.first
+                            {
+                                targetEpisode = first
+                            }
                         }
                     }
                 }

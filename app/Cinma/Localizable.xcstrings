@@ -5368,11 +5368,22 @@
       }
     },
     "Lock Screen (L)": {
+      "extractionState": "stale",
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ekranı Kilitle (L)"
+          }
+        }
+      }
+    },
+    "Lock Screen (⇧L)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ekranı Kilitle (⇧L)"
           }
         }
       }
@@ -6146,6 +6157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kütüphanende eşleşen içerik yok."
+          }
+        }
+      }
+    },
+    "No more fallback streams available.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kullanılabilir başka yedek akış kalmadı."
           }
         }
       }
@@ -9417,6 +9438,16 @@
         }
       }
     },
+    "Subtitle": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazı"
+          }
+        }
+      }
+    },
     "Subtitle Priority": {
       "localizations": {
         "en": {
@@ -10279,11 +10310,22 @@
       }
     },
     "Unlock Screen (L)": {
+      "extractionState": "stale",
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ekran Kilidini Aç (L)"
+          }
+        }
+      }
+    },
+    "Unlock Screen (⇧L)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ekran Kilidini Aç (⇧L)"
           }
         }
       }

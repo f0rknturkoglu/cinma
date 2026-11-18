@@ -54,22 +54,29 @@ pub fn parse_local_media_filename(path: &Path, size_bytes: u64) -> LocalMediaEnt
     let mut year: Option<String> = None;
 
     for token in normalized.split_whitespace() {
+        if token == "-" || token == "–" {
+            continue;
+        }
         let lower = token.to_ascii_lowercase();
         let (ep_s, _) = cinma_torrent::parse_episode_from_filename(&lower);
         if ep_s.is_some() {
-            break;
-        }
-        if lower.len() == 4
-            && lower.bytes().all(|b| b.is_ascii_digit())
-            && (lower.starts_with("19") || lower.starts_with("20"))
-        {
-            year = Some(token.to_owned());
             break;
         }
         if NOISE_TOKENS.iter().any(|n| *n == lower) {
             break;
         }
         title_words.push(token);
+    }
+    if title_words.len() >= 2 {
+        if let Some(last) = title_words.last().copied() {
+            if last.len() == 4
+                && last.bytes().all(|b| b.is_ascii_digit())
+                && (last.starts_with("19") || last.starts_with("20"))
+            {
+                year = Some(last.to_owned());
+                title_words.pop();
+            }
+        }
     }
 
     let title = if title_words.is_empty() {
