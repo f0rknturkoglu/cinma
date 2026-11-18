@@ -146,6 +146,22 @@
         }
       }
     },
+    "%@ › %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@ › %2$@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ › %@"
+          }
+        }
+      }
+    },
     "%@: %@": {
       "localizations": {
         "en": {
@@ -390,6 +406,16 @@
         }
       }
     },
+    "%u nits": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%u nit"
+          }
+        }
+      }
+    },
     "%u px": {
       "localizations": {
         "tr": {
@@ -526,6 +552,16 @@
         }
       }
     },
+    "150 nits": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "150 nit"
+          }
+        }
+      }
+    },
     "150%": {
       "localizations": {
         "tr": {
@@ -576,6 +612,36 @@
         }
       }
     },
+    "2.0×": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2.0×"
+          }
+        }
+      }
+    },
+    "2.5×": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2.5×"
+          }
+        }
+      }
+    },
+    "200 nits": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "200 nit"
+          }
+        }
+      }
+    },
     "200%": {
       "localizations": {
         "tr": {
@@ -592,6 +658,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "21:9"
+          }
+        }
+      }
+    },
+    "250 nits": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "250 nit"
           }
         }
       }
@@ -642,6 +718,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "3. Tercihler"
+          }
+        }
+      }
+    },
+    "3.0×": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "3.0×"
+          }
+        }
+      }
+    },
+    "300 nits": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "300 nit"
           }
         }
       }
@@ -1508,6 +1604,16 @@
         }
       }
     },
+    "Auto Detect": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Otomatik Algıla"
+          }
+        }
+      }
+    },
     "Auto-Play Countdown": {
       "localizations": {
         "en": {
@@ -1750,6 +1856,16 @@
         }
       }
     },
+    "Backup & Sync": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yedekleme ve Eşitleme"
+          }
+        }
+      }
+    },
     "Backup saved to": {
       "localizations": {
         "tr": {
@@ -1844,6 +1960,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alt"
+          }
+        }
+      }
+    },
+    "Brightness": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parlaklık"
           }
         }
       }
@@ -2475,12 +2601,42 @@
         }
       }
     },
+    "Continue Watching — Movies": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzlemeye Devam Et — Filmler"
+          }
+        }
+      }
+    },
+    "Continue Watching — Series": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzlemeye Devam Et — Diziler"
+          }
+        }
+      }
+    },
     "Continue from %@ or start from the beginning?": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ konumundan devam edilsin mi yoksa baştan mı başlatılsın?"
+          }
+        }
+      }
+    },
+    "Contrast": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kontrast"
           }
         }
       }
@@ -2563,6 +2719,16 @@
         }
       }
     },
+    "Custom Binary Path": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Özel İkili Dosya Yolu"
+          }
+        }
+      }
+    },
     "Custom Sleep Timer": {
       "localizations": {
         "tr": {
@@ -2601,6 +2767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Camgöbeği"
+          }
+        }
+      }
+    },
+    "Dark Scene Boost": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Karanlık Sahne Aydınlatma"
           }
         }
       }
@@ -2988,6 +3164,16 @@
         }
       }
     },
+    "End of Episode": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bölüm Bitince"
+          }
+        }
+      }
+    },
     "Ends %@": {
       "localizations": {
         "tr": {
@@ -3158,6 +3344,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Harici Oynatıcı Uygulama Yolu"
+          }
+        }
+      }
+    },
+    "External Player Mode": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Harici Oynatıcı Modu"
           }
         }
       }
@@ -3338,6 +3534,16 @@
         }
       }
     },
+    "Filter library…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kütüphanede filtrele…"
+          }
+        }
+      }
+    },
     "Fit (Original)": {
       "localizations": {
         "tr": {
@@ -3392,6 +3598,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "SDR’da 16-bit HDR Yüzeyini Zorla"
+          }
+        }
+      }
+    },
+    "Force Touch Haptic Feedback": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Force Touch Haptik Geri Bildirim"
           }
         }
       }
@@ -3452,6 +3668,16 @@
         }
       }
     },
+    "Gamma": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gama"
+          }
+        }
+      }
+    },
     "General": {
       "localizations": {
         "en": {
@@ -3480,6 +3706,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Grup: %@"
+          }
+        }
+      }
+    },
+    "HDR Brightness": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HDR Parlaklığı"
+          }
+        }
+      }
+    },
+    "HDR Subtitle Peak": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HDR Altyazı Pik Parlaklığı"
           }
         }
       }
@@ -3678,6 +3924,26 @@
         }
       }
     },
+    "Hold Boost Speed": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Basılı Tutma Hızı"
+          }
+        }
+      }
+    },
+    "Hold Space / Mouse for Speed Boost": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hızlandırmak İçin Space / Fare Basılı Tut"
+          }
+        }
+      }
+    },
     "Home": {
       "localizations": {
         "en": {
@@ -3726,6 +3992,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sunucu"
+          }
+        }
+      }
+    },
+    "IINA (iina://)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IINA (iina://)"
           }
         }
       }
@@ -3838,6 +4114,16 @@
         }
       }
     },
+    "Include Subtitles in Screenshots": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ekran Görüntülerine Altyazıyı Dahil Et"
+          }
+        }
+      }
+    },
     "Incorrect PIN": {
       "localizations": {
         "tr": {
@@ -3854,6 +4140,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kitaplığı macOS Spotlight'ta Dizinle"
+          }
+        }
+      }
+    },
+    "Infuse (infuse://)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Infuse (infuse://)"
           }
         }
       }
@@ -4066,6 +4362,16 @@
         }
       }
     },
+    "Keyboard Shortcuts": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Klavye Kısayolları"
+          }
+        }
+      }
+    },
     "LAN Casting (Chromecast / DLNA)": {
       "localizations": {
         "tr": {
@@ -4088,6 +4394,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dil: %@"
+          }
+        }
+      }
+    },
+    "Languages & Search": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diller ve Arama"
           }
         }
       }
@@ -4218,6 +4534,16 @@
         }
       }
     },
+    "Live subtitle preview line.\nSample bilingual text rendering.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canlı altyazı önizleme satırı.\nÖrnek çift dilli metin görünümü."
+          }
+        }
+      }
+    },
     "Load File…": {
       "localizations": {
         "en": {
@@ -4318,6 +4644,16 @@
         }
       }
     },
+    "Loading %@…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ yükleniyor…"
+          }
+        }
+      }
+    },
     "Loading next episode…": {
       "localizations": {
         "en": {
@@ -4402,6 +4738,16 @@
         }
       }
     },
+    "Margins": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kenar Boşlukları"
+          }
+        }
+      }
+    },
     "Matched with OpenSubtitles hash": {
       "localizations": {
         "en": {
@@ -4434,6 +4780,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Maksimum Ses Artışı"
+          }
+        }
+      }
+    },
+    "Metadata": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meta Veriler"
           }
         }
       }
@@ -4881,6 +5237,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "“%@” için eşleşme bulunamadı."
+          }
+        }
+      }
+    },
+    "No matching settings found.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eşleşen ayar bulunamadı."
+          }
+        }
+      }
+    },
+    "No matching titles in your library.": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kütüphanende eşleşen içerik yok."
           }
         }
       }
@@ -5473,6 +5849,16 @@
         }
       }
     },
+    "Place Subtitles in Black Bars (Margins)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altyazıları Siyah Barlara (Kenar Boşluğuna) Yerleştir"
+          }
+        }
+      }
+    },
     "Play": {
       "localizations": {
         "en": {
@@ -5532,6 +5918,7 @@
       }
     },
     "Playback & Video": {
+      "extractionState": "stale",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -5647,6 +6034,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gömülü Altyazıları Tercih Et"
+          }
+        }
+      }
+    },
+    "Preferred Languages": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tercih Edilen Diller"
           }
         }
       }
@@ -5913,6 +6310,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Real-Debrid"
+          }
+        }
+      }
+    },
+    "Recent": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En Son"
           }
         }
       }
@@ -6330,6 +6737,16 @@
         }
       }
     },
+    "Saturation": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Doygunluk"
+          }
+        }
+      }
+    },
     "Save": {
       "localizations": {
         "en": {
@@ -6492,6 +6909,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Film, dizi ara…"
+          }
+        }
+      }
+    },
+    "Search settings…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ayarlarda ara…"
           }
         }
       }
@@ -7130,6 +7557,16 @@
         }
       }
     },
+    "Sleep timer finished": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uyku zamanlayıcısı tamamlandı"
+          }
+        }
+      }
+    },
     "Sleep timer off": {
       "localizations": {
         "en": {
@@ -7158,6 +7595,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Uyku zamanlayıcısı %lld dk ayarlandı"
+          }
+        }
+      }
+    },
+    "Sleep timer: stop after this episode": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uyku zamanlayıcısı: bu bölüm bitince durdur"
           }
         }
       }
@@ -7244,6 +7691,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sıra: Boyut ↓"
+          }
+        }
+      }
+    },
+    "Split Continue Watching into Movies & Series": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "İzlemeye Devam Et Satırını Film ve Dizi Olarak Ayır"
           }
         }
       }
@@ -7943,12 +8400,32 @@
         }
       }
     },
+    "Title A → Z": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Başlık A → Z"
+          }
+        }
+      }
+    },
     "Title ID (e.g. tt0133093)": {
       "localizations": {
         "tr": {
           "stringUnit": {
             "state": "translated",
             "value": "İçerik Kimliği (ör. tt0133093)"
+          }
+        }
+      }
+    },
+    "Title Z → A": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Başlık Z → A"
           }
         }
       }
@@ -8003,6 +8480,16 @@
         }
       }
     },
+    "Torrent & VPN": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Torrent ve VPN"
+          }
+        }
+      }
+    },
     "Torrent Seeding Policy": {
       "localizations": {
         "tr": {
@@ -8019,6 +8506,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Torrent trafiği %@ arayüzüne bağlandı"
+          }
+        }
+      }
+    },
+    "Trackpad Two-Finger Seek & Volume Gestures": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trackpad İki Parmakla Sarma ve Ses Jestleri"
           }
         }
       }
@@ -8408,6 +8905,26 @@
         }
       }
     },
+    "VLC (vlc://)": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VLC (vlc://)"
+          }
+        }
+      }
+    },
+    "VPN Interface Binding": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VPN Arayüz Bağlama"
+          }
+        }
+      }
+    },
     "VPN Interface Binding & Kill Switch": {
       "localizations": {
         "tr": {
@@ -8480,6 +8997,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Video İndirmeleri"
+          }
+        }
+      }
+    },
+    "Video EQ": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video EQ"
+          }
+        }
+      }
+    },
+    "Video EQ & Color…": {
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video EQ ve Renk…"
           }
         }
       }

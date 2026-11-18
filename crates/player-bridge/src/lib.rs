@@ -677,6 +677,8 @@ impl Player {
         secondary_pos: u32,
         scale_pct: u32,
         ass_scale_with_window: bool,
+        hdr_peak_nits: u32,
+        use_margins: bool,
     ) -> Result<(), PlayerError> {
         if let Some(font) = font.filter(|s| !s.trim().is_empty()) {
             self.set_property_str("sub-font", font)?;
@@ -735,10 +737,40 @@ impl Player {
             "sub-ass-scale-with-window",
             if ass_scale_with_window { "yes" } else { "no" },
         )?;
+        let hdr_peak = if hdr_peak_nits == 0 {
+            "auto".to_owned()
+        } else {
+            hdr_peak_nits.clamp(50, 1000).to_string()
+        };
+        self.set_property_str("sub-hdr-peak", &hdr_peak)?;
+        let margins = if use_margins { "yes" } else { "no" };
+        self.set_property_str("sub-use-margins", margins)?;
+        self.set_property_str("sub-ass-force-margins", margins)?;
         self.set_property_str(
             "sub-ass-override",
             if ass_override { "force" } else { "no" },
         )
+    }
+
+    pub fn set_video_eq(
+        &self,
+        brightness: i32,
+        contrast: i32,
+        gamma: i32,
+        saturation: i32,
+    ) -> Result<(), PlayerError> {
+        self.set_property_str("brightness", &brightness.clamp(-100, 100).to_string())?;
+        self.set_property_str("contrast", &contrast.clamp(-100, 100).to_string())?;
+        self.set_property_str("gamma", &gamma.clamp(-100, 100).to_string())?;
+        self.set_property_str("saturation", &saturation.clamp(-100, 100).to_string())
+    }
+
+    pub fn frame_step(&self, forward: bool) -> Result<(), PlayerError> {
+        self.command(&[if forward {
+            "frame-step"
+        } else {
+            "frame-back-step"
+        }])
     }
 
     pub fn set_subtitle_pos(&self, pos: u32) -> Result<(), PlayerError> {
@@ -817,10 +849,23 @@ impl Player {
     }
 
     pub fn screenshot_to_file(&self, path: &Path) -> Result<(), PlayerError> {
+        self.screenshot_to_file_mode(path, true)
+    }
+
+    pub fn screenshot_to_file_mode(
+        &self,
+        path: &Path,
+        include_subtitles: bool,
+    ) -> Result<(), PlayerError> {
         let s = path
             .to_str()
             .ok_or_else(|| PlayerError::Mpv("non-UTF-8 screenshot path".into()))?;
-        self.command(&["screenshot-to-file", s, "subtitles"])
+        let flags = if include_subtitles {
+            "subtitles"
+        } else {
+            "video"
+        };
+        self.command(&["screenshot-to-file", s, flags])
     }
 
     fn mark_seek(&self) {

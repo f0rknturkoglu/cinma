@@ -56,9 +56,11 @@ final class ScrubBarView: NSView {
     var onSeek: ((Double) -> Void)?
     /// `(seconds, xInSelf)` when hovering; `(nil, 0)` when mouse exits.
     var onHover: ((Double?, CGFloat) -> Void)?
+    var onChapterCrossed: (() -> Void)?
 
     private var isDragging = false
     private var dragPosition: Double = 0
+    private var lastDragChapterIdx: Int?
     private var hoverFraction: Double?
     private var tracking: NSTrackingArea?
 
@@ -95,6 +97,7 @@ final class ScrubBarView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         isDragging = true
+        lastDragChapterIdx = nil
         updateDrag(with: event)
     }
 
@@ -106,6 +109,7 @@ final class ScrubBarView: NSView {
     override func mouseUp(with event: NSEvent) {
         updateDrag(with: event)
         isDragging = false
+        lastDragChapterIdx = nil
         onSeek?(dragPosition)
         needsDisplay = true
     }
@@ -130,6 +134,13 @@ final class ScrubBarView: NSView {
     private func updateDrag(with event: NSEvent) {
         let (frac, _) = fractionFor(event)
         dragPosition = frac * max(duration, 0)
+        if !chapters.isEmpty {
+            let idx = chapters.lastIndex(where: { $0.startS <= dragPosition })
+            if let last = lastDragChapterIdx, last != idx {
+                onChapterCrossed?()
+            }
+            lastDragChapterIdx = idx
+        }
         needsDisplay = true
     }
 

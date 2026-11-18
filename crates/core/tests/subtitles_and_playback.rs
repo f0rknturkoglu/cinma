@@ -447,3 +447,45 @@ fn wave4_lightweight_settings_persist_and_subtitle_provider_toggles_work() {
         .unwrap();
     assert!(empty_subs.is_empty());
 }
+
+#[test]
+fn surpass_wave1_preferences_and_commands_persist() {
+    let dir = tempfile::tempdir().unwrap();
+    let core: Arc<Core> = Core::open(dir.path()).unwrap();
+
+    let sub = SubtitleSettings {
+        sub_hdr_peak_nits: 220,
+        sub_use_margins: false,
+        ..Default::default()
+    };
+    core.set_subtitle_settings(&sub).unwrap();
+    assert_eq!(core.subtitle_settings().unwrap(), sub);
+
+    let prefs = PlayerPreferences {
+        hold_to_boost_enabled: false,
+        hold_boost_speed_pct: 250,
+        eq_brightness: 8,
+        eq_contrast: 4,
+        eq_gamma: 14,
+        eq_saturation: -5,
+        screenshot_include_subtitles: false,
+        trackpad_gestures_enabled: false,
+        haptic_feedback_enabled: false,
+        external_player_preset: "iina".into(),
+        split_continue_watching: true,
+        ..Default::default()
+    };
+    core.set_player_preferences(&prefs).unwrap();
+    assert_eq!(core.player_preferences().unwrap(), prefs);
+
+    assert_eq!(
+        core.resolve_key(cinma_core::CommandContext::Player, ".")
+            .unwrap(),
+        Some("player.frame_step")
+    );
+    assert_eq!(
+        core.resolve_key(cinma_core::CommandContext::Player, ",")
+            .unwrap(),
+        Some("player.frame_back_step")
+    );
+}

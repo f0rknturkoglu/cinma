@@ -2,6 +2,36 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+private final class ShellDropView: NSView {
+    private static let videoExtensions: Set<String> = [
+        "mkv", "mp4", "m4v", "mov", "avi", "webm", "ts", "m2ts", "wmv", "flv", "mpg", "mpeg",
+    ]
+    var onDropVideo: ((URL) -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        firstVideoURL(from: sender.draggingPasteboard) != nil ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let url = firstVideoURL(from: sender.draggingPasteboard) else { return false }
+        onDropVideo?(url)
+        return true
+    }
+
+    private func firstVideoURL(from pasteboard: NSPasteboard) -> URL? {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.first { Self.videoExtensions.contains($0.pathExtension.lowercased()) }
+    }
+}
+
 /// Main application shell: floating Liquid Glass top navigation pill, search
 /// bar, profile menu, tab container, and pushed detail screen (mockup M0).
 @MainActor
@@ -74,7 +104,8 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func loadView() {
-        let root = NSView()
+        let root = ShellDropView()
+        root.onDropVideo = { [weak self] url in self?.onPlay(.file(url)) }
         root.wantsLayer = true
         root.layer?.backgroundColor = CinemaTheme.background.cgColor
 

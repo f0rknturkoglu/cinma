@@ -1008,6 +1008,8 @@ pub struct SubtitleSettingsFfi {
     pub ass_scale_with_window: bool,
     pub enable_opensubtitles: bool,
     pub enable_addon_subtitles: bool,
+    pub sub_hdr_peak_nits: u32,
+    pub sub_use_margins: bool,
 }
 
 impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
@@ -1038,6 +1040,8 @@ impl From<cinma_core::SubtitleSettings> for SubtitleSettingsFfi {
             ass_scale_with_window: s.ass_scale_with_window,
             enable_opensubtitles: s.enable_opensubtitles,
             enable_addon_subtitles: s.enable_addon_subtitles,
+            sub_hdr_peak_nits: s.sub_hdr_peak_nits,
+            sub_use_margins: s.sub_use_margins,
         }
     }
 }
@@ -1070,6 +1074,8 @@ impl From<SubtitleSettingsFfi> for cinma_core::SubtitleSettings {
             ass_scale_with_window: s.ass_scale_with_window,
             enable_opensubtitles: s.enable_opensubtitles,
             enable_addon_subtitles: s.enable_addon_subtitles,
+            sub_hdr_peak_nits: s.sub_hdr_peak_nits,
+            sub_use_margins: s.sub_use_margins,
         }
     }
 }
@@ -1155,6 +1161,17 @@ pub struct PlayerPreferencesFfi {
     pub confirm_stremio_deeplink: bool,
     pub pause_scrobble_on_pause: bool,
     pub mal_count_rewatches: bool,
+    pub hold_to_boost_enabled: bool,
+    pub hold_boost_speed_pct: u32,
+    pub eq_brightness: i32,
+    pub eq_contrast: i32,
+    pub eq_gamma: i32,
+    pub eq_saturation: i32,
+    pub screenshot_include_subtitles: bool,
+    pub trackpad_gestures_enabled: bool,
+    pub haptic_feedback_enabled: bool,
+    pub external_player_preset: String,
+    pub split_continue_watching: bool,
 }
 
 impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
@@ -1239,6 +1256,17 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             confirm_stremio_deeplink: p.confirm_stremio_deeplink,
             pause_scrobble_on_pause: p.pause_scrobble_on_pause,
             mal_count_rewatches: p.mal_count_rewatches,
+            hold_to_boost_enabled: p.hold_to_boost_enabled,
+            hold_boost_speed_pct: p.hold_boost_speed_pct,
+            eq_brightness: p.eq_brightness,
+            eq_contrast: p.eq_contrast,
+            eq_gamma: p.eq_gamma,
+            eq_saturation: p.eq_saturation,
+            screenshot_include_subtitles: p.screenshot_include_subtitles,
+            trackpad_gestures_enabled: p.trackpad_gestures_enabled,
+            haptic_feedback_enabled: p.haptic_feedback_enabled,
+            external_player_preset: p.external_player_preset,
+            split_continue_watching: p.split_continue_watching,
         }
     }
 }
@@ -1325,6 +1353,17 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             confirm_stremio_deeplink: p.confirm_stremio_deeplink,
             pause_scrobble_on_pause: p.pause_scrobble_on_pause,
             mal_count_rewatches: p.mal_count_rewatches,
+            hold_to_boost_enabled: p.hold_to_boost_enabled,
+            hold_boost_speed_pct: p.hold_boost_speed_pct,
+            eq_brightness: p.eq_brightness,
+            eq_contrast: p.eq_contrast,
+            eq_gamma: p.eq_gamma,
+            eq_saturation: p.eq_saturation,
+            screenshot_include_subtitles: p.screenshot_include_subtitles,
+            trackpad_gestures_enabled: p.trackpad_gestures_enabled,
+            haptic_feedback_enabled: p.haptic_feedback_enabled,
+            external_player_preset: p.external_player_preset,
+            split_continue_watching: p.split_continue_watching,
         }
     }
 }
@@ -3269,6 +3308,8 @@ impl PlaybackSession {
         secondary_pos: u32,
         scale_pct: u32,
         ass_scale_with_window: bool,
+        hdr_peak_nits: u32,
+        use_margins: bool,
     ) -> Result<(), CinmaError> {
         Ok(self
             .inner
@@ -3289,7 +3330,31 @@ impl PlaybackSession {
                 secondary_pos,
                 scale_pct,
                 ass_scale_with_window,
+                hdr_peak_nits,
+                use_margins,
             )
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn set_video_eq(
+        &self,
+        brightness: i32,
+        contrast: i32,
+        gamma: i32,
+        saturation: i32,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .set_video_eq(brightness, contrast, gamma, saturation)
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn frame_step(&self, forward: bool) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .frame_step(forward)
             .map_err(CoreError::from)?)
     }
 
@@ -3398,6 +3463,18 @@ impl PlaybackSession {
             .inner
             .player()
             .screenshot_to_file(&PathBuf::from(path))
+            .map_err(CoreError::from)?)
+    }
+
+    pub fn screenshot_to_file_mode(
+        &self,
+        path: String,
+        include_subtitles: bool,
+    ) -> Result<(), CinmaError> {
+        Ok(self
+            .inner
+            .player()
+            .screenshot_to_file_mode(&PathBuf::from(path), include_subtitles)
             .map_err(CoreError::from)?)
     }
 

@@ -16,11 +16,47 @@ final class PlaybackEventSink: PlaybackObserver {
 }
 
 private final class PlayerRootView: NSView {
+    private static let videoExtensions: Set<String> = [
+        "mkv", "mp4", "m4v", "mov", "avi", "webm", "ts", "m2ts", "wmv", "flv", "mpg", "mpeg",
+    ]
+    private static let subtitleExtensions: Set<String> = ["srt", "ass", "ssa", "vtt"]
+
     var onKey: ((NSEvent) -> Bool)?
+    var onKeyUp: ((NSEvent) -> Bool)?
     var onMouseActivity: (() -> Void)?
+    var onHoldPressDown: ((NSPoint) -> Void)?
+    var onHoldPressUp: (() -> Void)?
+    var onScrollGesture: ((NSEvent) -> Void)?
+    var onDropFile: ((URL) -> Void)?
     private var tracking: NSTrackingArea?
 
     override var acceptsFirstResponder: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        firstSupportedURL(from: sender.draggingPasteboard) != nil ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let url = firstSupportedURL(from: sender.draggingPasteboard) else { return false }
+        onDropFile?(url)
+        return true
+    }
+
+    private func firstSupportedURL(from pasteboard: NSPasteboard) -> URL? {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.first {
+            let ext = $0.pathExtension.lowercased()
+            return Self.videoExtensions.contains(ext) || Self.subtitleExtensions.contains(ext)
+        }
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -42,11 +78,28 @@ private final class PlayerRootView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         onMouseActivity?()
+        let pt = convert(event.locationInWindow, from: nil)
+        onHoldPressDown?(pt)
         super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        onHoldPressUp?()
+        super.mouseUp(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        onMouseActivity?()
+        onScrollGesture?(event)
+        super.scrollWheel(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
         if onKey?(event) != true { super.keyDown(with: event) }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        if onKeyUp?(event) != true { super.keyUp(with: event) }
     }
 }
 
@@ -163,6 +216,14 @@ final class PlayerViewController: NSViewController {
     private var isScreenLocked = false
     private var autoPlayedEpisodesCount: UInt32 = 0
     private var p2pChipTask: Task<Void, Never>?
+    private var moreButton: NSButton?
+    private var sleepEndOfEpisode = false
+    private var holdBoostTask: Task<Void, Never>?
+    private var holdBoostActive = false
+    private var holdBoostKeyWaiting: String?
+    private var speedBeforeHoldBoost: Double = 1.0
+    private var scrollAccumX: CGFloat = 0
+    private var scrollAccumY: CGFloat = 0
 
     private static let clockFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -211,7 +272,21 @@ final class PlayerViewController: NSViewController {
         root.wantsLayer = true
         root.layer?.backgroundColor = NSColor.black.cgColor
         root.onKey = { [weak self] event in self?.handleKey(event) ?? false }
+        root.onKeyUp = { [weak self] event in self?.handleKeyUp(event) ?? false }
         root.onMouseActivity = { [weak self] in self?.showHudAndResetTimer() }
+        root.onHoldPressDown = { [weak self] point in
+            guard let self, !self.isScreenLocked, !self.isPointOnHud(point) else { return }
+            self.beginHoldBoostCandidate(triggerKey: nil)
+        }
+        root.onHoldPressUp = { [weak self] in
+            _ = self?.endHoldBoost(triggerKey: nil)
+        }
+        root.onScrollGesture = { [weak self] event in
+            self?.handleScrollGesture(event)
+        }
+        root.onDropFile = { [weak self] url in
+            self?.handleDroppedFile(url)
+        }
 
         videoView.wantsLayer = true
         videoView.layer?.backgroundColor = NSColor.black.cgColor
@@ -381,6 +456,9 @@ final class PlayerViewController: NSViewController {
             guard let self, !self.isScreenLocked else { return }
             self.handleScrubHover(seconds: secs, localX: localX)
         }
+        scrubBar.onChapterCrossed = { [weak self] in
+            self?.performHaptic(.alignment)
+        }
 
         let back10 = makeIconButton("gobackward.10", tooltip: String(localized: "Seek back 10s"), action: #selector(seekBack10))
         let fwd10 = makeIconButton("goforward.10", tooltip: String(localized: "Seek forward 10s"), action: #selector(seekForward10))
@@ -433,6 +511,7 @@ final class PlayerViewController: NSViewController {
         let statsBtn = makeIconButton("info.circle", tooltip: String(localized: "Playback Stats (I)"), action: #selector(toggleStats))
         let shotBtn = makeIconButton("camera", tooltip: String(localized: "Screenshot (S)"), action: #selector(takeScreenshot))
         let moreBtn = makeIconButton("ellipsis.circle", tooltip: String(localized: "Video, A/B Loop & Sleep Timer"), action: #selector(showMoreMenu(_:)))
+        self.moreButton = moreBtn
         lockButton.isBordered = false
         lockButton.image = NSImage(systemSymbolName: "lock.open", accessibilityDescription: String(localized: "Lock Screen (L)"))
         lockButton.toolTip = String(localized: "Lock Screen (L)")
@@ -677,6 +756,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func handlePauseOnSystemEvent(isMinimize: Bool) {
+        _ = endHoldBoost(triggerKey: nil)
         guard !closing, let session, !paused else { return }
         guard let prefs = try? core.playerPreferences() else { return }
         let shouldPause = isMinimize ? prefs.pauseMinimized : prefs.pauseUnfocused
@@ -779,7 +859,18 @@ final class PlayerViewController: NSViewController {
                 externalPlayerPath: "",
                 confirmStremioDeeplink: true,
                 pauseScrobbleOnPause: true,
-                malCountRewatches: false
+                malCountRewatches: false,
+                holdToBoostEnabled: true,
+                holdBoostSpeedPct: 200,
+                eqBrightness: 0,
+                eqContrast: 0,
+                eqGamma: 0,
+                eqSaturation: 0,
+                screenshotIncludeSubtitles: true,
+                trackpadGesturesEnabled: true,
+                hapticFeedbackEnabled: true,
+                externalPlayerPreset: "auto",
+                splitContinueWatching: false
             )
             let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface, macEdrEnabled: prefs.macEdrEnabled)
             do {
@@ -936,7 +1027,11 @@ final class PlayerViewController: NSViewController {
                 showStatus(String(localized: "Playback error: \(msg)"), autoHideAfter: 4.5)
                 attemptStreamRecovery()
             case .eof:
-                if !loadingNextEpisode, nextPlan != nil, !nextDismissed {
+                if sleepEndOfEpisode {
+                    sleepEndOfEpisode = false
+                    showStatus(String(localized: "Sleep timer finished"))
+                    close()
+                } else if !loadingNextEpisode, nextPlan != nil, !nextDismissed {
                     autoAdvanceToNextEpisode()
                 }
             case .stopped:
@@ -968,6 +1063,12 @@ final class PlayerViewController: NSViewController {
             try? session.setCropMode(mode: prefs.cropMode)
             try? session.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
             try? session.setToneMapping(mode: prefs.hdrToneMapping)
+            try? session.setVideoEq(
+                brightness: prefs.eqBrightness,
+                contrast: prefs.eqContrast,
+                gamma: prefs.eqGamma,
+                saturation: prefs.eqSaturation
+            )
             scrubBar.showChapterMarkers = prefs.seekBarChapters
             lockButton.isHidden = !prefs.screenLockEnabled
             view.window?.level = prefs.playerAlwaysOnTop ? .floating : .normal
@@ -1021,7 +1122,9 @@ final class PlayerViewController: NSViewController {
             alignX: s.srtAlignX,
             secondaryPos: s.secondaryPos,
             scalePct: s.subScalePct,
-            assScaleWithWindow: s.assScaleWithWindow
+            assScaleWithWindow: s.assScaleWithWindow,
+            hdrPeakNits: s.subHdrPeakNits,
+            useMargins: s.subUseMargins
         )
     }
 
@@ -1259,7 +1362,7 @@ final class PlayerViewController: NSViewController {
             nextPlan = plan
         }
 
-        if !nextDismissed && (remaining <= leadS || progress >= 0.92 || inOutro), let plan = nextPlan {
+        if !sleepEndOfEpisode, !nextDismissed, (remaining <= leadS || progress >= 0.92 || inOutro), let plan = nextPlan {
             showNextEpisodeCard(plan)
         }
     }
@@ -1596,7 +1699,9 @@ final class PlayerViewController: NSViewController {
             subScalePct: 100,
             assScaleWithWindow: true,
             enableOpensubtitles: true,
-            enableAddonSubtitles: true
+            enableAddonSubtitles: true,
+            subHdrPeakNits: 0,
+            subUseMargins: true
         )
         let root = SubtitleManagerPopoverView(
             candidates: onlineSubtitles,
@@ -1751,8 +1856,14 @@ final class PlayerViewController: NSViewController {
         ].compactMap { $0 }
         panel.allowsOtherFileTypes = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        loadLocalSubtitle(url: url)
+    }
+
+    private func loadLocalSubtitle(url: URL) {
         if let prepared = try? core.prepareLocalSubtitle(path: url.path) {
             try? session?.addSubtitle(path: prepared.localPath, title: url.lastPathComponent, lang: nil, select: true)
+            subtitlesEnabled = true
+            sessionSubEnabled = true
             tracks = (try? session?.tracks()) ?? []
             showStatus(String(localized: "Loaded \(url.lastPathComponent) (\(prepared.detectedEncoding))"))
         }
@@ -1938,6 +2049,10 @@ final class PlayerViewController: NSViewController {
         abItem.target = self
         menu.addItem(abItem)
 
+        let eqItem = NSMenuItem(title: String(localized: "Video EQ & Color…"), action: #selector(showVideoEqPopoverFromMenu), keyEquivalent: "")
+        eqItem.target = self
+        menu.addItem(eqItem)
+
         let prefs = try? core.playerPreferences()
         let onTopItem = NSMenuItem(title: String(localized: "Always on Top"), action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
         onTopItem.target = self
@@ -2011,7 +2126,13 @@ final class PlayerViewController: NSViewController {
 
         // Sleep timer submenu
         let sleepMenu = NSMenu()
-        var sleepOptions: [(String, Int)] = [(String(localized: "Off"), 0), ("15m", 15), ("30m", 30), ("60m", 60)]
+        var sleepOptions: [(String, Int)] = [
+            (String(localized: "Off"), 0),
+            (String(localized: "End of Episode"), -1),
+            ("15m", 15),
+            ("30m", 30),
+            ("60m", 60),
+        ]
         let customMins = Int(prefs?.customSleepMinutes ?? 45)
         if customMins > 0 && ![15, 30, 60].contains(customMins) {
             sleepOptions.append((String(localized: "Custom (\(customMins)m)"), customMins))
@@ -2020,6 +2141,9 @@ final class PlayerViewController: NSViewController {
             let item = NSMenuItem(title: label, action: #selector(setSleepTimerMinutes(_:)), keyEquivalent: "")
             item.target = self
             item.tag = mins
+            if mins == -1 && sleepEndOfEpisode {
+                item.state = .on
+            }
             sleepMenu.addItem(item)
         }
         let sleepHolder = NSMenuItem(title: String(localized: "Sleep Timer"), action: nil, keyEquivalent: "")
@@ -2082,6 +2206,14 @@ final class PlayerViewController: NSViewController {
         sleepTimerTask?.cancel()
         sleepTimerTask = nil
         let mins = sender.tag
+        if mins == -1 {
+            sleepEndOfEpisode = true
+            nextCountdownTask?.cancel()
+            nextCard.isHidden = true
+            showStatus(String(localized: "Sleep timer: stop after this episode"))
+            return
+        }
+        sleepEndOfEpisode = false
         guard mins > 0 else {
             showStatus(String(localized: "Sleep timer off"))
             return
@@ -2092,6 +2224,28 @@ final class PlayerViewController: NSViewController {
             guard let self, !Task.isCancelled, !self.closing else { return }
             self.close()
         }
+    }
+
+    @objc private func showVideoEqPopoverFromMenu() {
+        guard let anchor = moreButton else { return }
+        let prefs = try? core.playerPreferences()
+        let root = VideoEqPopoverView(
+            brightness: prefs?.eqBrightness ?? 0,
+            contrast: prefs?.eqContrast ?? 0,
+            gamma: prefs?.eqGamma ?? 0,
+            saturation: prefs?.eqSaturation ?? 0
+        ) { [weak self] b, c, g, s in
+            guard let self else { return }
+            if var updated = try? self.core.playerPreferences() {
+                updated.eqBrightness = b
+                updated.eqContrast = c
+                updated.eqGamma = g
+                updated.eqSaturation = s
+                try? self.core.setPlayerPreferences(prefs: updated)
+            }
+            try? self.session?.setVideoEq(brightness: b, contrast: c, gamma: g, saturation: s)
+        }
+        presentFloatingPopover(root, relativeTo: anchor)
     }
 
     // MARK: - Actions & Keyboard Shortcuts
@@ -2129,7 +2283,8 @@ final class PlayerViewController: NSViewController {
         let formatter = ISO8601DateFormatter()
         let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let out = desktop.appendingPathComponent("Cinma-\(stamp).png")
-        try? session.screenshotToFile(path: out.path)
+        let includeSubs = (try? core.playerPreferences())?.screenshotIncludeSubtitles ?? true
+        try? session.screenshotToFileMode(path: out.path, includeSubtitles: includeSubs)
         showStatus(String(localized: "Saved screenshot: \(out.lastPathComponent)"))
     }
 
@@ -2137,10 +2292,12 @@ final class PlayerViewController: NSViewController {
         if abLoopA == nil {
             abLoopA = position
             try? session?.setAbLoopA(seconds: position)
+            performHaptic(.alignment)
             showStatus(String(localized: "A/B loop: A = \(Self.format(position))"))
         } else if abLoopB == nil {
             abLoopB = position
             try? session?.setAbLoopB(seconds: position)
+            performHaptic(.alignment)
             showStatus(String(localized: "A/B loop: A = \(Self.format(abLoopA ?? 0)), B = \(Self.format(position))"))
         } else {
             abLoopA = nil
@@ -2239,8 +2396,17 @@ final class PlayerViewController: NSViewController {
             }
             return false
         }
+        if event.isARepeat && command == "player.toggle_pause" {
+            return true
+        }
         switch command {
-        case "player.toggle_pause": togglePause()
+        case "player.toggle_pause":
+            if (try? core.playerPreferences())?.holdToBoostEnabled ?? true {
+                holdBoostKeyWaiting = combo
+                beginHoldBoostCandidate(triggerKey: combo)
+            } else {
+                togglePause()
+            }
         case "player.seek_back": seekBack10()
         case "player.seek_forward": seekForward10()
         case "player.close":
@@ -2260,21 +2426,157 @@ final class PlayerViewController: NSViewController {
         case "player.ab_loop": cycleAbLoop()
         case "player.speed_up": setSpeed(speed + 0.25)
         case "player.speed_down": setSpeed(speed - 0.25)
-        case "player.volume_up":
-            let maxVol = Double((try? core.playerPreferences())?.volumeBoostMax ?? 150)
-            volume = min(maxVol, volume + 10)
-            try? session?.setVolumeMax(maxPct: UInt32(maxVol))
-            try? session?.setVolume(volume: volume)
-            showVolumeHudIfEnabled()
-        case "player.volume_down":
-            volume = max(0, volume - 10)
-            try? session?.setVolume(volume: volume)
-            showVolumeHudIfEnabled()
+        case "player.frame_step": try? session?.frameStep(forward: true)
+        case "player.frame_back_step": try? session?.frameStep(forward: false)
+        case "player.volume_up": adjustVolume(by: 10)
+        case "player.volume_down": adjustVolume(by: -10)
         case "player.mute": toggleMute()
         case "player.next_episode": playNextEpisodeManually()
         default: return false
         }
         return true
+    }
+
+    private func handleKeyUp(_ event: NSEvent) -> Bool {
+        guard let expected = holdBoostKeyWaiting,
+              let combo = KeyCombo.from(event),
+              combo == expected
+        else { return false }
+        let boosted = endHoldBoost(triggerKey: combo)
+        if !boosted && !isScreenLocked {
+            togglePause()
+        }
+        return true
+    }
+
+    private func adjustVolume(by delta: Double) {
+        let maxVol = Double((try? core.playerPreferences())?.volumeBoostMax ?? 150)
+        let prev = volume
+        volume = min(maxVol, max(0, prev + delta))
+        if (prev < 100 && volume >= 100) || (prev > 100 && volume <= 100) {
+            performHaptic(.levelChange)
+        }
+        try? session?.setVolumeMax(maxPct: UInt32(maxVol))
+        try? session?.setVolume(volume: volume)
+        showVolumeHudIfEnabled()
+    }
+
+    private func isPointOnHud(_ point: NSPoint) -> Bool {
+        if popoverBackdrop != nil { return true }
+        let interactiveViews: [NSView] = [titlePill, bar, skipButton, nextCard, unlockPill, clockPill, statsCard]
+        return interactiveViews.contains { !$0.isHidden && $0.frame.contains(point) }
+    }
+
+    private func beginHoldBoostCandidate(triggerKey: String?) {
+        holdBoostTask?.cancel()
+        guard !isScreenLocked, !closing, !holdBoostActive else { return }
+        let prefs = try? core.playerPreferences()
+        guard prefs?.holdToBoostEnabled ?? true else { return }
+        let boostPct = prefs?.holdBoostSpeedPct ?? 200
+        holdBoostTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(260))
+            guard let self, !Task.isCancelled, !self.closing, !self.isScreenLocked else { return }
+            self.speedBeforeHoldBoost = self.speed
+            self.holdBoostActive = true
+            let boostSpeed = Double(max(125, min(300, boostPct))) / 100.0
+            self.setSpeed(boostSpeed)
+            self.performHaptic(.alignment)
+            self.showStatus("⏩ \(String(format: "%.2g×", boostSpeed))", autoHideAfter: 0)
+        }
+    }
+
+    private func endHoldBoost(triggerKey: String?) -> Bool {
+        holdBoostTask?.cancel()
+        holdBoostTask = nil
+        if triggerKey == nil || holdBoostKeyWaiting == triggerKey {
+            holdBoostKeyWaiting = nil
+        }
+        guard holdBoostActive else { return false }
+        holdBoostActive = false
+        setSpeed(speedBeforeHoldBoost)
+        showStatus("", autoHideAfter: 0)
+        return true
+    }
+
+    private func handleScrollGesture(_ event: NSEvent) {
+        if event.phase == .ended || event.phase == .cancelled {
+            scrollAccumX = 0
+            scrollAccumY = 0
+            return
+        }
+        guard !isScreenLocked, !closing, popoverBackdrop == nil else { return }
+        let prefs = try? core.playerPreferences()
+        guard prefs?.trackpadGesturesEnabled ?? true else { return }
+
+        let dx = event.scrollingDeltaX
+        let dy = event.scrollingDeltaY
+        if event.hasPreciseScrollingDeltas, abs(dx) > abs(dy) * 1.35 {
+            let signedDx = event.isDirectionInvertedFromDevice ? dx : -dx
+            scrollAccumX += signedDx
+            let threshold: CGFloat = 24
+            if abs(scrollAccumX) >= threshold {
+                let steps = Int(scrollAccumX / threshold)
+                scrollAccumX -= CGFloat(steps) * threshold
+                let exact = prefs?.exactSeek ?? true
+                try? session?.seekRelativeMode(seconds: Double(steps) * 2.0, exact: exact)
+                saveProgressIfNeeded(force: false)
+            }
+        } else if abs(dy) > 0.1 {
+            if event.hasPreciseScrollingDeltas {
+                let signedDy = event.isDirectionInvertedFromDevice ? -dy : dy
+                scrollAccumY += signedDy
+                let threshold: CGFloat = 14
+                if abs(scrollAccumY) >= threshold {
+                    let steps = Int(scrollAccumY / threshold)
+                    scrollAccumY -= CGFloat(steps) * threshold
+                    adjustVolume(by: Double(steps) * 3.0)
+                }
+            } else {
+                adjustVolume(by: (dy > 0 ? 1 : -1) * 5.0)
+            }
+        }
+    }
+
+    private func handleDroppedFile(_ url: URL) {
+        guard !closing, !isScreenLocked else { return }
+        let ext = url.pathExtension.lowercased()
+        if ["srt", "ass", "ssa", "vtt"].contains(ext) {
+            loadLocalSubtitle(url: url)
+            return
+        }
+        request = .file(url)
+        thumbCache?.clear()
+        thumbCache = ThumbnailPreviewCache(localURL: url)
+        duration = 0
+        position = 0
+        appliedAutoTracks = false
+        abLoopA = nil
+        abLoopB = nil
+        scrubBar.abLoopA = nil
+        scrubBar.abLoopB = nil
+        chapters = []
+        scrubBar.chapters = []
+        nextPlan = nil
+        nextCard.isHidden = true
+        nextDismissed = false
+        sleepEndOfEpisode = false
+        refreshTitles()
+        showStatus(String(localized: "Loading \(url.lastPathComponent)…"), autoHideAfter: 0)
+        let session = session
+        Task { [weak self] in
+            do {
+                try session?.playUrl(url: url.path)
+            } catch {
+                await MainActor.run {
+                    self?.showStatus(FriendlyError.explain(error), autoHideAfter: 4.5)
+                }
+            }
+        }
+    }
+
+    private func performHaptic(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .generic) {
+        guard (try? core.playerPreferences())?.hapticFeedbackEnabled ?? true else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .default)
     }
 
     @objc private func toggleScreenLock() {
@@ -2609,6 +2911,11 @@ final class PlayerViewController: NSViewController {
         p2pChipTask?.cancel()
         p2pChipTask = nil
         sleepTimerTask?.cancel()
+        holdBoostTask?.cancel()
+        holdBoostTask = nil
+        holdBoostActive = false
+        holdBoostKeyWaiting = nil
+        sleepEndOfEpisode = false
         nextCountdownTask?.cancel()
         cancelStallWatchdog()
         view.window?.level = .normal

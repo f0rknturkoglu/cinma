@@ -1016,7 +1016,23 @@ final class TitleDetailViewController: NSViewController {
         guard let urlStr = sender.identifier?.rawValue,
               let url = URL(string: urlStr)
         else { return }
-        let customPath = (try? core.playerPreferences())?.externalPlayerPath
+        let prefs = try? core.playerPreferences()
+        let preset = prefs?.externalPlayerPreset ?? "auto"
+        let encoded = urlStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlStr
+        if let schemeUrl: URL = {
+            switch preset {
+            case "iina": return URL(string: "iina://weblink?url=\(encoded)")
+            case "infuse": return URL(string: "infuse://x-callback-url/play?url=\(encoded)")
+            case "vlc": return URL(string: "vlc://\(urlStr)")
+            default: return nil
+            }
+        }() {
+            if NSWorkspace.shared.open(schemeUrl) {
+                streamStatusLabel.stringValue = String(localized: "Opened stream in \(preset.uppercased())")
+                return
+            }
+        }
+        let customPath = prefs?.externalPlayerPath
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let candidates = [
             customPath,

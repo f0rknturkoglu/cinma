@@ -179,7 +179,9 @@ final class HomeBrowserViewController: NSViewController {
     private var windowObservers: [NSObjectProtocol] = []
 
     private let continueRail = CatalogRailView(title: String(localized: "Continue Watching"))
+    private let continueSeriesRail = CatalogRailView(title: String(localized: "Continue Watching — Series"))
     private var continueHeight: NSLayoutConstraint?
+    private var continueSeriesHeight: NSLayoutConstraint?
     private var moviesRailHeight: NSLayoutConstraint?
     private var seriesRailHeight: NSLayoutConstraint?
     private let trendingMoviesRail = CatalogRailView(title: String(localized: "Trending Movies"))
@@ -485,6 +487,15 @@ final class HomeBrowserViewController: NSViewController {
         continueRail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
         contentStack.setCustomSpacing(-44, after: heroContainer)
 
+        continueSeriesRail.translatesAutoresizingMaskIntoConstraints = false
+        continueSeriesRail.isHidden = true
+        continueSeriesRail.onSelectContinue = { [weak self] entry in self?.onContinue(entry) }
+        let cwSeriesHeight = continueSeriesRail.heightAnchor.constraint(equalToConstant: 0)
+        cwSeriesHeight.isActive = true
+        continueSeriesHeight = cwSeriesHeight
+        contentStack.addArrangedSubview(continueSeriesRail)
+        continueSeriesRail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
         for (idx, rail) in [trendingMoviesRail, trendingSeriesRail].enumerated() {
             rail.translatesAutoresizingMaskIntoConstraints = false
             let h = rail.heightAnchor.constraint(equalToConstant: 344)
@@ -521,10 +532,24 @@ final class HomeBrowserViewController: NSViewController {
     }
 
     private func loadCachedFromSqlite() {
-        let cw = (try? core.continueWatching(limit: 12)) ?? []
-        continueRail.update(content: .continueWatching(cw))
-        continueRail.isHidden = cw.isEmpty
-        continueHeight?.constant = cw.isEmpty ? 0 : 238
+        let cw = (try? core.continueWatching(limit: 20)) ?? []
+        let splitCw = (try? core.playerPreferences())?.splitContinueWatching ?? false
+        if splitCw {
+            let cwMovies = cw.filter { $0.mediaType == "movie" }
+            let cwSeries = cw.filter { $0.mediaType != "movie" }
+            continueRail.update(title: String(localized: "Continue Watching — Movies"), content: .continueWatching(cwMovies))
+            continueRail.isHidden = cwMovies.isEmpty
+            continueHeight?.constant = cwMovies.isEmpty ? 0 : 238
+            continueSeriesRail.update(title: String(localized: "Continue Watching — Series"), content: .continueWatching(cwSeries))
+            continueSeriesRail.isHidden = cwSeries.isEmpty
+            continueSeriesHeight?.constant = cwSeries.isEmpty ? 0 : 238
+        } else {
+            continueRail.update(title: String(localized: "Continue Watching"), content: .continueWatching(Array(cw.prefix(12))))
+            continueRail.isHidden = cw.isEmpty
+            continueHeight?.constant = cw.isEmpty ? 0 : 238
+            continueSeriesRail.isHidden = true
+            continueSeriesHeight?.constant = 0
+        }
 
         let cachedMovies = (try? core.cachedTrending(mediaType: "movie")) ?? []
         let cachedSeries = (try? core.cachedTrending(mediaType: "series")) ?? []
@@ -591,6 +616,13 @@ final class HomeBrowserViewController: NSViewController {
             contentStack.insertArrangedSubview(continueRail, at: safeIdx)
             continueRail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
             contentStack.setCustomSpacing(cwAtTop ? -44 : 28, after: heroContainer)
+        }
+        let targetSeriesIdx = min((contentStack.arrangedSubviews.firstIndex(of: continueRail) ?? 0) + 1, contentStack.arrangedSubviews.count)
+        if contentStack.arrangedSubviews.firstIndex(of: continueSeriesRail) != targetSeriesIdx {
+            contentStack.removeArrangedSubview(continueSeriesRail)
+            let safeIdx = min(targetSeriesIdx, contentStack.arrangedSubviews.count)
+            contentStack.insertArrangedSubview(continueSeriesRail, at: safeIdx)
+            continueSeriesRail.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
         }
     }
 

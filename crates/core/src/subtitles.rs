@@ -62,6 +62,10 @@ pub struct SubtitleSettings {
     pub enable_opensubtitles: bool,
     /// Query installed Stremio subtitle addons when performing online subtitle searches.
     pub enable_addon_subtitles: bool,
+    /// Cap subtitle peak luminance in HDR/EDR mode (`0` = `"auto"`, `50..=1000` nits).
+    pub sub_hdr_peak_nits: u32,
+    /// Allow rendering subtitles inside letterbox black margins (`sub-use-margins` + `sub-ass-force-margins`).
+    pub sub_use_margins: bool,
 }
 
 impl Default for SubtitleSettings {
@@ -92,6 +96,8 @@ impl Default for SubtitleSettings {
             ass_scale_with_window: true,
             enable_opensubtitles: true,
             enable_addon_subtitles: true,
+            sub_hdr_peak_nits: 0,
+            sub_use_margins: true,
         }
     }
 }
@@ -253,6 +259,28 @@ pub struct PlayerPreferences {
     pub pause_scrobble_on_pause: bool,
     /// Count rewatches when syncing progress with MyAnimeList / AniList.
     pub mal_count_rewatches: bool,
+    /// Hold Space or mouse press to temporarily boost playback speed.
+    pub hold_to_boost_enabled: bool,
+    /// Temporary speed percentage (`150..=300`) when hold-to-boost is active.
+    pub hold_boost_speed_pct: u32,
+    /// mpv Video EQ brightness adjustment (`-100..=100`).
+    pub eq_brightness: i32,
+    /// mpv Video EQ contrast adjustment (`-100..=100`).
+    pub eq_contrast: i32,
+    /// mpv Video EQ gamma adjustment (`-100..=100`).
+    pub eq_gamma: i32,
+    /// mpv Video EQ saturation adjustment (`-100..=100`).
+    pub eq_saturation: i32,
+    /// Include active subtitles when capturing a player screenshot.
+    pub screenshot_include_subtitles: bool,
+    /// Enable Mac trackpad two-finger scroll gestures for volume & seeking.
+    pub trackpad_gestures_enabled: bool,
+    /// Trigger subtle MacBook Force Touch haptic feedback on player detents.
+    pub haptic_feedback_enabled: bool,
+    /// External player preset (`"auto"` | `"iina"` | `"infuse"` | `"vlc"` | `"custom"`).
+    pub external_player_preset: String,
+    /// Split Home Continue Watching into separate Movies and Series rails.
+    pub split_continue_watching: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -337,6 +365,17 @@ impl Default for PlayerPreferences {
             confirm_stremio_deeplink: true,
             pause_scrobble_on_pause: true,
             mal_count_rewatches: false,
+            hold_to_boost_enabled: true,
+            hold_boost_speed_pct: 200,
+            eq_brightness: 0,
+            eq_contrast: 0,
+            eq_gamma: 0,
+            eq_saturation: 0,
+            screenshot_include_subtitles: true,
+            trackpad_gestures_enabled: true,
+            haptic_feedback_enabled: true,
+            external_player_preset: "auto".to_owned(),
+            split_continue_watching: false,
         }
     }
 }

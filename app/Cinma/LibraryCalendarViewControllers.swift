@@ -2,11 +2,18 @@ import AppKit
 
 /// Library grid (`Kütüphane`) scoped to the active profile.
 @MainActor
-final class LibraryViewController: NSViewController, NSCollectionViewDataSource, NSCollectionViewDelegate {
+final class LibraryViewController: NSViewController, NSCollectionViewDataSource, NSCollectionViewDelegate, NSSearchFieldDelegate {
     private let core: CinmaCore
     private let onOpenDetail: (MetaPreviewInfo) -> Void
     var onOpenHome: (() -> Void)?
 
+    private let filterField = NSSearchField()
+    private let typeSegment = NSSegmentedControl(labels: [
+        String(localized: "All"),
+        String(localized: "Movies"),
+        String(localized: "Series"),
+    ], trackingMode: .selectOne, target: nil, action: nil)
+    private let sortPopup = NSPopUpButton()
     private let collectionView = KeyboardCollectionView()
     private let emptyStack = NSStackView()
     private let emptyLabel = NSTextField(wrappingLabelWithString: String(localized: "Your library is empty. Add movies or shows from Home or Discover."))
@@ -17,6 +24,7 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
         target: self,
         action: #selector(exploreHomeClicked)
     )
+    private var allItems: [MetaPreviewInfo] = []
     private var items: [MetaPreviewInfo] = []
     private var posterStyle = PosterStyleContext()
 
@@ -37,7 +45,31 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
         let titleLabel = NSTextField(labelWithString: String(localized: "Library"))
         titleLabel.font = .systemFont(ofSize: 32, weight: .heavy)
         titleLabel.textColor = CinemaTheme.textPrimary
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        filterField.placeholderString = String(localized: "Filter library…")
+        filterField.delegate = self
+        filterField.target = self
+        filterField.action = #selector(libraryFilterChanged)
+        filterField.translatesAutoresizingMaskIntoConstraints = false
+        filterField.widthAnchor.constraint(equalToConstant: 210).isActive = true
+
+        typeSegment.selectedSegment = 0
+        typeSegment.target = self
+        typeSegment.action = #selector(libraryFilterChanged)
+
+        sortPopup.target = self
+        sortPopup.action = #selector(libraryFilterChanged)
+        sortPopup.addItems(withTitles: [
+            String(localized: "Recent"),
+            String(localized: "Title A → Z"),
+            String(localized: "Title Z → A"),
+        ])
+
+        let headerRow = NSStackView(views: [titleLabel, NSView(), typeSegment, sortPopup, filterField])
+        headerRow.orientation = .horizontal
+        headerRow.alignment = .centerY
+        headerRow.spacing = 12
+        headerRow.translatesAutoresizingMaskIntoConstraints = false
 
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = PosterCardItem.itemSize
@@ -72,15 +104,16 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
         emptyStack.addArrangedSubview(exploreButton)
         emptyStack.translatesAutoresizingMaskIntoConstraints = false
 
-        root.addSubview(titleLabel)
+        root.addSubview(headerRow)
         root.addSubview(scroll)
         root.addSubview(emptyStack)
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: root.topAnchor, constant: 84),
-            titleLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 64),
+            headerRow.topAnchor.constraint(equalTo: root.topAnchor, constant: 80),
+            headerRow.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 64),
+            headerRow.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -64),
 
-            scroll.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 14),
+            scroll.topAnchor.constraint(equalTo: headerRow.bottomAnchor, constant: 14),
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
@@ -103,7 +136,7 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
             layout.itemSize = posterStyle.itemSize
         }
         let rows = (try? core.libraryItems()) ?? []
-        items = rows.map {
+        allItems = rows.map {
             MetaPreviewInfo(
                 id: $0.metaId,
                 mediaType: $0.mediaType,
@@ -119,7 +152,43 @@ final class LibraryViewController: NSViewController, NSCollectionViewDataSource,
                 runtime: nil
             )
         }
+        applyLibraryFilterAndSort()
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        applyLibraryFilterAndSort()
+    }
+
+    @objc private func libraryFilterChanged() {
+        applyLibraryFilterAndSort()
+    }
+
+    private func applyLibraryFilterAndSort() {
+        let query = filterField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let selectedType = typeSegment.selectedSegment
+        var filtered = allItems.filter { item in
+            if selectedType == 1 && item.mediaType != "movie" { return false }
+            if selectedType == 2 && item.mediaType != "series" { return false }
+            if !query.isEmpty && !item.name.lowercased().contains(query) { return false }
+            return true
+        }
+        switch sortPopup.indexOfSelectedItem {
+        case 1:
+            filtered.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case 2:
+            filtered.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedDescending }
+        default:
+            break
+        }
+        items = filtered
         emptyStack.isHidden = !items.isEmpty
+        if !allItems.isEmpty && items.isEmpty {
+            emptyLabel.stringValue = String(localized: "No matching titles in your library.")
+            exploreButton.isHidden = true
+        } else {
+            emptyLabel.stringValue = String(localized: "Your library is empty. Add movies or shows from Home or Discover.")
+            exploreButton.isHidden = false
+        }
         collectionView.reloadData()
     }
 

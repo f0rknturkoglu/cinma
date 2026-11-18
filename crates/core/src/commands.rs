@@ -75,6 +75,8 @@ pub const COMMANDS: &[CommandSpec] = &[
     player("player.toggle_pause", "space"),
     player("player.seek_back", "left"),
     player("player.seek_forward", "right"),
+    player("player.frame_step", "."),
+    player("player.frame_back_step", ","),
     player("player.close", "escape"),
     player("player.fullscreen", "f"),
     player("player.toggle_subtitles", "v"),

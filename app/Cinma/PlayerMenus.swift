@@ -449,6 +449,33 @@ struct SubtitleManagerPopoverView: View {
                 .controlSize(.small)
                 .onChange(of: draftSettings.assScaleWithWindow) { _, _ in onUpdateStyle(draftSettings) }
 
+            HStack {
+                Text(String(localized: "HDR Brightness"))
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Slider(
+                    value: Binding(
+                        get: { Double(draftSettings.subHdrPeakNits) },
+                        set: {
+                            let v = UInt32($0.rounded())
+                            draftSettings.subHdrPeakNits = v < 100 ? 0 : v
+                            onUpdateStyle(draftSettings)
+                        }
+                    ),
+                    in: 75...400,
+                    step: 25
+                )
+                .frame(width: 165)
+                Text(draftSettings.subHdrPeakNits == 0 ? String(localized: "Auto") : "\(draftSettings.subHdrPeakNits)")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 44, alignment: .trailing)
+            }
+
+            Toggle(String(localized: "Place Subtitles in Black Bars (Margins)"), isOn: $draftSettings.subUseMargins)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .onChange(of: draftSettings.subUseMargins) { _, _ in onUpdateStyle(draftSettings) }
+
             Toggle(String(localized: "Lift Above Controls"), isOn: $draftSettings.liftAboveControls)
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -692,6 +719,74 @@ struct StreamDetailsPopoverView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.system(.callout, design: .monospaced).weight(.semibold))
+        }
+    }
+}
+
+/// Live Video EQ popover (`brightness`, `contrast`, `gamma`, `saturation`) + Dark Scene preset.
+struct VideoEqPopoverView: View {
+    @State var brightness: Int32
+    @State var contrast: Int32
+    @State var gamma: Int32
+    @State var saturation: Int32
+    let onUpdate: (Int32, Int32, Int32, Int32) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(.orange)
+                Text(String(localized: "Video EQ"))
+                    .font(.headline)
+                Spacer()
+                Button(String(localized: "Dark Scene Boost")) {
+                    brightness = 6
+                    contrast = 4
+                    gamma = 14
+                    saturation = 0
+                    onUpdate(brightness, contrast, gamma, saturation)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                Button(String(localized: "Reset")) {
+                    brightness = 0
+                    contrast = 0
+                    gamma = 0
+                    saturation = 0
+                    onUpdate(0, 0, 0, 0)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            eqRow(String(localized: "Brightness"), value: $brightness)
+            eqRow(String(localized: "Contrast"), value: $contrast)
+            eqRow(String(localized: "Gamma"), value: $gamma)
+            eqRow(String(localized: "Saturation"), value: $saturation)
+        }
+        .padding(14)
+        .frame(width: 370)
+        .preferredColorScheme(.dark)
+    }
+
+    private func eqRow(_ title: String, value: Binding<Int32>) -> some View {
+        HStack {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .frame(width: 78, alignment: .leading)
+            Slider(
+                value: Binding(
+                    get: { Double(value.wrappedValue) },
+                    set: {
+                        value.wrappedValue = Int32($0.rounded())
+                        onUpdate(brightness, contrast, gamma, saturation)
+                    }
+                ),
+                in: -50...50,
+                step: 1
+            )
+            Text(String(format: "%+d", value.wrappedValue))
+                .font(.system(.caption, design: .monospaced))
+                .frame(width: 38, alignment: .trailing)
         }
     }
 }

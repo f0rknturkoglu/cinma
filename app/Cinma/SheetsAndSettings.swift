@@ -521,7 +521,9 @@ struct SettingsView: View {
         subScalePct: 100,
         assScaleWithWindow: true,
         enableOpensubtitles: true,
-        enableAddonSubtitles: true
+        enableAddonSubtitles: true,
+        subHdrPeakNits: 0,
+        subUseMargins: true
     )
     @State private var playerPrefs = PlayerPreferencesFfi(
         exactSeek: true,
@@ -602,7 +604,18 @@ struct SettingsView: View {
         externalPlayerPath: "",
         confirmStremioDeeplink: true,
         pauseScrobbleOnPause: true,
-        malCountRewatches: false
+        malCountRewatches: false,
+        holdToBoostEnabled: true,
+        holdBoostSpeedPct: 200,
+        eqBrightness: 0,
+        eqContrast: 0,
+        eqGamma: 0,
+        eqSaturation: 0,
+        screenshotIncludeSubtitles: true,
+        trackpadGesturesEnabled: true,
+        hapticFeedbackEnabled: true,
+        externalPlayerPreset: "auto",
+        splitContinueWatching: false
     )
     @State private var subLangsText = "tur, eng"
     @State private var audioLangsText = "eng, jpn, tur"
@@ -617,35 +630,73 @@ struct SettingsView: View {
     @State private var recordingCommandId: String?
     @State private var keyMonitor: Any?
     @State private var status = ""
+    @State private var settingsQuery = ""
 
     private enum SettingsTab: String, CaseIterable {
         case general, playback, subtitles, downloads, shortcuts, backup
+
+        var title: String {
+            switch self {
+            case .general: return String(localized: "General")
+            case .playback: return String(localized: "Playback")
+            case .subtitles: return String(localized: "Subtitles")
+            case .downloads: return String(localized: "Downloads")
+            case .shortcuts: return String(localized: "Shortcuts")
+            case .backup: return String(localized: "Backup")
+            }
+        }
     }
     @State private var selectedTab: SettingsTab = .general
 
     var body: some View {
         VStack(spacing: 0) {
-            TabView(selection: $selectedTab) {
-                generalTab
-                    .tabItem { Label(String(localized: "General"), systemImage: "gearshape") }
-                    .tag(SettingsTab.general)
-                playbackTab
-                    .tabItem { Label(String(localized: "Playback"), systemImage: "play.rectangle") }
-                    .tag(SettingsTab.playback)
-                subtitlesTab
-                    .tabItem { Label(String(localized: "Subtitles"), systemImage: "captions.bubble") }
-                    .tag(SettingsTab.subtitles)
-                downloadsTab
-                    .tabItem { Label(String(localized: "Downloads"), systemImage: "arrow.down.circle") }
-                    .tag(SettingsTab.downloads)
-                shortcutsTab
-                    .tabItem { Label(String(localized: "Shortcuts"), systemImage: "keyboard") }
-                    .tag(SettingsTab.shortcuts)
-                backupTab
-                    .tabItem { Label(String(localized: "Backup"), systemImage: "externaldrive") }
-                    .tag(SettingsTab.backup)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField(String(localized: "Search settings…"), text: $settingsQuery)
+                    .textFieldStyle(.plain)
+                if !settingsQuery.isEmpty {
+                    Button {
+                        settingsQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 16)
             .padding(.top, 12)
+            .padding(.bottom, 6)
+
+            if settingsQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                TabView(selection: $selectedTab) {
+                    generalTab
+                        .tabItem { Label(String(localized: "General"), systemImage: "gearshape") }
+                        .tag(SettingsTab.general)
+                    playbackTab
+                        .tabItem { Label(String(localized: "Playback"), systemImage: "play.rectangle") }
+                        .tag(SettingsTab.playback)
+                    subtitlesTab
+                        .tabItem { Label(String(localized: "Subtitles"), systemImage: "captions.bubble") }
+                        .tag(SettingsTab.subtitles)
+                    downloadsTab
+                        .tabItem { Label(String(localized: "Downloads"), systemImage: "arrow.down.circle") }
+                        .tag(SettingsTab.downloads)
+                    shortcutsTab
+                        .tabItem { Label(String(localized: "Shortcuts"), systemImage: "keyboard") }
+                        .tag(SettingsTab.shortcuts)
+                    backupTab
+                        .tabItem { Label(String(localized: "Backup"), systemImage: "externaldrive") }
+                        .tag(SettingsTab.backup)
+                }
+                .padding(.top, 4)
+            } else {
+                settingsSearchResultsView
+            }
 
             if !status.isEmpty {
                 Divider()
@@ -813,6 +864,8 @@ struct SettingsView: View {
                     .onChange(of: playerPrefs.cwAtTop) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Hide Nearly Finished Items in Continue Watching"), isOn: $playerPrefs.cwHideCaughtUp)
                     .onChange(of: playerPrefs.cwHideCaughtUp) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Split Continue Watching into Movies & Series"), isOn: $playerPrefs.splitContinueWatching)
+                    .onChange(of: playerPrefs.splitContinueWatching) { _, _ in savePlayerPrefs() }
                 Stepper("\(String(localized: "Addon Catalog Rails on Home")): \(playerPrefs.maxAddonRails)", value: $playerPrefs.maxAddonRails, in: 0...15, step: 1)
                     .onChange(of: playerPrefs.maxAddonRails) { _, _ in savePlayerPrefs() }
                 Stepper("\(String(localized: "Poster Card Scale")): \(playerPrefs.posterScalePct)%", value: $playerPrefs.posterScalePct, in: 80...125, step: 5)
@@ -951,6 +1004,7 @@ struct SettingsView: View {
             }
 
             Section(String(localized: "SRT Appearance")) {
+                SubtitleLivePreviewCard(settings: subSettings)
                 HStack {
                     Text(String(localized: "SRT Custom Font"))
                     Spacer()
@@ -1023,6 +1077,17 @@ struct SettingsView: View {
                     .onChange(of: subSettings.assScaleWithWindow) { _, _ in saveSubSettings() }
                 Toggle(String(localized: "Override ASS/SSA Script Styling"), isOn: $subSettings.assOverride)
                     .onChange(of: subSettings.assOverride) { _, _ in saveSubSettings() }
+                Toggle(String(localized: "Place Subtitles in Black Bars (Margins)"), isOn: $subSettings.subUseMargins)
+                    .onChange(of: subSettings.subUseMargins) { _, _ in saveSubSettings() }
+                Picker(String(localized: "HDR Subtitle Peak"), selection: $subSettings.subHdrPeakNits) {
+                    Text(String(localized: "Auto")).tag(UInt32(0))
+                    Text("150 nits").tag(UInt32(150))
+                    Text("200 nits").tag(UInt32(200))
+                    Text("250 nits").tag(UInt32(250))
+                    Text("300 nits").tag(UInt32(300))
+                    Text("400 nits").tag(UInt32(400))
+                }
+                .onChange(of: subSettings.subHdrPeakNits) { _, _ in saveSubSettings() }
             }
         }
         .formStyle(.grouped)
@@ -1081,14 +1146,41 @@ struct SettingsView: View {
                 Toggle(String(localized: "Show \"Open in External Player\" Button on Direct Streams"), isOn: $playerPrefs.externalPlayerEnabled)
                     .onChange(of: playerPrefs.externalPlayerEnabled) { _, _ in savePlayerPrefs() }
                 if playerPrefs.externalPlayerEnabled {
-                    HStack {
-                        Text(String(localized: "External Player Binary Path"))
-                        Spacer()
-                        TextField("/opt/homebrew/bin/mpv", text: $externalPlayerPathText)
-                            .frame(width: 220)
-                            .onSubmit { savePlayerPrefs() }
+                    Picker(String(localized: "External Player Mode"), selection: $playerPrefs.externalPlayerPreset) {
+                        Text(String(localized: "Auto Detect")).tag("auto")
+                        Text("IINA (iina://)").tag("iina")
+                        Text("Infuse (infuse://)").tag("infuse")
+                        Text("VLC (vlc://)").tag("vlc")
+                        Text(String(localized: "Custom Binary Path")).tag("custom")
+                    }
+                    .onChange(of: playerPrefs.externalPlayerPreset) { _, _ in savePlayerPrefs() }
+                    if playerPrefs.externalPlayerPreset == "auto" || playerPrefs.externalPlayerPreset == "custom" {
+                        HStack {
+                            Text(String(localized: "External Player Binary Path"))
+                            Spacer()
+                            TextField("/opt/homebrew/bin/mpv", text: $externalPlayerPathText)
+                                .frame(width: 220)
+                                .onSubmit { savePlayerPrefs() }
+                        }
                     }
                 }
+                Toggle(String(localized: "Hold Space / Mouse for Speed Boost"), isOn: $playerPrefs.holdToBoostEnabled)
+                    .onChange(of: playerPrefs.holdToBoostEnabled) { _, _ in savePlayerPrefs() }
+                if playerPrefs.holdToBoostEnabled {
+                    Picker(String(localized: "Hold Boost Speed"), selection: $playerPrefs.holdBoostSpeedPct) {
+                        Text("1.5×").tag(UInt32(150))
+                        Text("2.0×").tag(UInt32(200))
+                        Text("2.5×").tag(UInt32(250))
+                        Text("3.0×").tag(UInt32(300))
+                    }
+                    .onChange(of: playerPrefs.holdBoostSpeedPct) { _, _ in savePlayerPrefs() }
+                }
+                Toggle(String(localized: "Trackpad Two-Finger Seek & Volume Gestures"), isOn: $playerPrefs.trackpadGesturesEnabled)
+                    .onChange(of: playerPrefs.trackpadGesturesEnabled) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Force Touch Haptic Feedback"), isOn: $playerPrefs.hapticFeedbackEnabled)
+                    .onChange(of: playerPrefs.hapticFeedbackEnabled) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Include Subtitles in Screenshots"), isOn: $playerPrefs.screenshotIncludeSubtitles)
+                    .onChange(of: playerPrefs.screenshotIncludeSubtitles) { _, _ in savePlayerPrefs() }
             }
 
             Section(String(localized: "Video & Audio")) {
@@ -1595,6 +1687,82 @@ struct SettingsView: View {
         }
     }
 
+    private struct SettingsSearchItem: Identifiable {
+        let id: String
+        let title: String
+        let section: String
+        let tab: SettingsTab
+        let keywords: String
+    }
+
+    private var searchableSettings: [SettingsSearchItem] {
+        [
+            SettingsSearchItem(id: "tmdb", title: String(localized: "Metadata (TMDB & Language)"), section: String(localized: "Metadata"), tab: .general, keywords: "tmdb api key language tr en"),
+            SettingsSearchItem(id: "ui_lang", title: String(localized: "App Interface Language"), section: String(localized: "Metadata"), tab: .general, keywords: "language turkish english tr en"),
+            SettingsSearchItem(id: "cw_split", title: String(localized: "Split Continue Watching into Movies & Series"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "continue watching movies series split home"),
+            SettingsSearchItem(id: "cw_top", title: String(localized: "Show Continue Watching Above Trending"), section: String(localized: "Home, Posters & Calendar"), tab: .general, keywords: "continue watching home order"),
+            SettingsSearchItem(id: "spoilers", title: String(localized: "Hide Episode Spoilers (Blur Unwatched)"), section: String(localized: "Catalog & Episode Browsing"), tab: .general, keywords: "spoiler blur unwatched episode"),
+            SettingsSearchItem(id: "theme", title: String(localized: "Accent Color"), section: String(localized: "Theme, Glass & Navigation"), tab: .general, keywords: "theme accent amber crimson cyan glass"),
+            SettingsSearchItem(id: "hold_boost", title: String(localized: "Hold Space / Mouse for Speed Boost"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "hold 2x speed boost space mouse"),
+            SettingsSearchItem(id: "trackpad", title: String(localized: "Trackpad Two-Finger Seek & Volume Gestures"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "trackpad scroll swipe gesture volume seek"),
+            SettingsSearchItem(id: "haptic", title: String(localized: "Force Touch Haptic Feedback"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "haptic vibrate force touch feedback"),
+            SettingsSearchItem(id: "screenshot_sub", title: String(localized: "Include Subtitles in Screenshots"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "screenshot png subtitle include"),
+            SettingsSearchItem(id: "ext_player", title: String(localized: "External Player Mode"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "external player iina infuse vlc mpv url scheme"),
+            SettingsSearchItem(id: "hdr", title: String(localized: "Enable macOS EDR HDR Output"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "hdr edr tone mapping bt.2390 peak"),
+            SettingsSearchItem(id: "hwdec", title: String(localized: "Hardware Decoding"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "hwdec videotoolbox decoder mpv"),
+            SettingsSearchItem(id: "audio_norm", title: String(localized: "Audio Normalization (Dynaudnorm)"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "audio normalize stereo downmix volume boost"),
+            SettingsSearchItem(id: "skip", title: String(localized: "Auto-Skip Intro"), section: String(localized: "Automation & Streams"), tab: .playback, keywords: "intro outro recap skip autoplay next episode"),
+            SettingsSearchItem(id: "sub_langs", title: String(localized: "Preferred Languages"), section: String(localized: "Languages & Search"), tab: .subtitles, keywords: "subtitle audio language dual"),
+            SettingsSearchItem(id: "sub_style", title: String(localized: "SRT Appearance"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "font size color outline background opacity position bold"),
+            SettingsSearchItem(id: "sub_hdr_peak", title: String(localized: "HDR Subtitle Peak"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "hdr subtitle brightness nits peak"),
+            SettingsSearchItem(id: "sub_margins", title: String(localized: "Place Subtitles in Black Bars (Margins)"), section: String(localized: "SRT Appearance"), tab: .subtitles, keywords: "letterbox margin black bar subtitle placement"),
+            SettingsSearchItem(id: "vpn", title: String(localized: "VPN Interface Binding"), section: String(localized: "Torrent & VPN"), tab: .downloads, keywords: "vpn interface utun kill switch torrent speed cache"),
+            SettingsSearchItem(id: "shortcuts", title: String(localized: "Keyboard Shortcuts"), section: String(localized: "Shortcuts"), tab: .shortcuts, keywords: "keyboard shortcut keybinding hotkey frame step"),
+            SettingsSearchItem(id: "backup", title: String(localized: "Backup & Sync"), section: String(localized: "Backup"), tab: .backup, keywords: "export import json backup restore"),
+        ]
+    }
+
+    private var settingsSearchResultsView: some View {
+        let q = settingsQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let matches = searchableSettings.filter {
+            $0.title.lowercased().contains(q)
+                || $0.section.lowercased().contains(q)
+                || $0.tab.title.lowercased().contains(q)
+                || $0.keywords.lowercased().contains(q)
+        }
+        return List {
+            if matches.isEmpty {
+                Text(String(localized: "No matching settings found."))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+            } else {
+                ForEach(matches) { item in
+                    Button {
+                        selectedTab = item.tab
+                        settingsQuery = ""
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                    .font(.body.weight(.medium))
+                                Text("\(item.tab.title) › \(item.section)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .listStyle(.inset)
+    }
+
     private func commitBinding(_ id: String) {
         let combo = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
@@ -1604,5 +1772,82 @@ struct SettingsView: View {
         } catch {
             status = FriendlyError.explain(error)
         }
+    }
+}
+
+private struct SubtitleLivePreviewCard: View {
+    let settings: SubtitleSettingsFfi
+
+    var body: some View {
+        let fontSize = CGFloat(max(11, min(30, Double(settings.srtFontSize) * 0.42)))
+        let textColor = Color(hex: settings.srtColor ?? "#FFFFFF").opacity(Double(settings.srtOpacity) / 100.0)
+        let boxOpacity = Double(settings.srtBoxOpacity) / 100.0
+        let align: HorizontalAlignment = switch settings.srtAlignX.lowercased() {
+        case "left": .leading
+        case "right": .trailing
+        default: .center
+        }
+        let textAlign: TextAlignment = switch settings.srtAlignX.lowercased() {
+        case "left": .leading
+        case "right": .trailing
+        default: .center
+        }
+        let font: Font = if let custom = settings.srtFont, !custom.isEmpty {
+            .custom(custom, size: fontSize).weight(settings.srtBold ? .bold : .medium)
+        } else {
+            .system(size: fontSize, weight: settings.srtBold ? .bold : .medium)
+        }
+
+        ZStack(alignment: Alignment(horizontal: align, vertical: settings.srtPos < 50 ? .top : .bottom)) {
+            LinearGradient(
+                colors: [Color(red: 0.08, green: 0.10, blue: 0.15), Color(red: 0.16, green: 0.12, blue: 0.10)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Text(String(localized: "Live subtitle preview line.\nSample bilingual text rendering."))
+                .font(font)
+                .multilineTextAlignment(textAlign)
+                .foregroundStyle(textColor)
+                .padding(.horizontal, boxOpacity > 0 ? 8 : 0)
+                .padding(.vertical, boxOpacity > 0 ? 4 : 0)
+                .background(boxOpacity > 0 ? Color.black.opacity(boxOpacity) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                .shadow(color: .black.opacity(0.9), radius: CGFloat(settings.srtBorderSize) * 0.45, x: 0, y: 1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+        }
+        .frame(height: 92)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            HStack(spacing: 6) {
+                if settings.subUseMargins {
+                    Text(String(localized: "Margins"))
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                if settings.subHdrPeakNits > 0 {
+                    Text("\(settings.subHdrPeakNits) nits")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+            }
+            .padding(6),
+            alignment: .topTrailing
+        )
+    }
+}
+
+private extension Color {
+    init(hex: String) {
+        let clean = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: clean).scanHexInt64(&int)
+        let r = Double((int >> 16) & 0xFF) / 255.0
+        let g = Double((int >> 8) & 0xFF) / 255.0
+        let b = Double(int & 0xFF) / 255.0
+        self = Color(red: r, green: g, blue: b)
     }
 }
