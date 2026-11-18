@@ -174,8 +174,13 @@ pub fn parse_deep_link(url: &str) -> Option<Invocation> {
 }
 
 impl Core {
-    /// Effective binding per command (user override or default).
+    /// Effective binding per command (user override or default), cached in RAM.
     pub fn key_bindings(&self) -> Result<Vec<(CommandSpec, Option<String>)>, CoreError> {
+        if let Ok(guard) = self.key_bindings_cache.lock()
+            && let Some(cached) = guard.as_ref()
+        {
+            return Ok(cached.clone());
+        }
         let overrides: HashMap<String, String> = self
             .db
             .lock()
@@ -183,7 +188,7 @@ impl Core {
             .app_settings_with_prefix("keybinding.")?
             .into_iter()
             .collect();
-        Ok(COMMANDS
+        let resolved: Vec<(CommandSpec, Option<String>)> = COMMANDS
             .iter()
             .map(|spec| {
                 let key = match overrides.get(&binding_key(spec.id)) {
@@ -193,7 +198,11 @@ impl Core {
                 };
                 (*spec, key)
             })
-            .collect())
+            .collect();
+        if let Ok(mut guard) = self.key_bindings_cache.lock() {
+            *guard = Some(resolved.clone());
+        }
+        Ok(resolved)
     }
 
     /// The command bound to `combo` in `context` (player falls back to global).
@@ -246,6 +255,9 @@ impl Core {
             .lock()
             .map_err(|_| CoreError::Poisoned)?
             .set_app_setting(&binding_key(id), combo.as_deref().unwrap_or(""))?;
+        if let Ok(mut guard) = self.key_bindings_cache.lock() {
+            *guard = None;
+        }
         self.emit(CoreEvent::KeyBindingsChanged);
         Ok(())
     }
@@ -255,6 +267,9 @@ impl Core {
             .lock()
             .map_err(|_| CoreError::Poisoned)?
             .delete_app_setting(&binding_key(id))?;
+        if let Ok(mut guard) = self.key_bindings_cache.lock() {
+            *guard = None;
+        }
         self.emit(CoreEvent::KeyBindingsChanged);
         Ok(())
     }

@@ -2779,6 +2779,15 @@ impl CinmaCore {
             .collect())
     }
 
+    pub fn iptv_all_epg_now_next(&self) -> Result<Vec<IptvEpgInfo>, CinmaError> {
+        Ok(self
+            .inner
+            .iptv_all_epg_now_next()?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     pub async fn update_discord_presence(
         &self,
         title: String,

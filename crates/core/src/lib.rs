@@ -119,11 +119,20 @@ pub enum CoreError {
 
 const ACTIVE_PROFILE_KEY: &str = "profile.active";
 
+type CachedSubtitleCues = (
+    PathBuf,
+    u64,
+    Option<std::time::SystemTime>,
+    Arc<Vec<cinma_subtitles::SubtitleCue>>,
+);
+type CachedKeyBindings = Vec<(CommandSpec, Option<String>)>;
+
 pub struct Core {
     data_dir: PathBuf,
     db: Arc<Mutex<Database>>,
     runtime: OnceLock<tokio::runtime::Runtime>,
     http: Mutex<Option<AddonClient>>,
+    shared_http: Mutex<Option<reqwest::Client>>,
     tmdb: Mutex<Option<TmdbClient>>,
     tmdb_key_override: Mutex<Option<Option<String>>>,
     torrents: Mutex<Option<Arc<RqbitEngine>>>,
@@ -142,6 +151,8 @@ pub struct Core {
     me: Weak<Core>,
     tracking_sync: Mutex<integrations::TrackingSyncState>,
     local_api_cancel: Mutex<Option<cinma_blobstore::CancellationToken>>,
+    key_bindings_cache: Mutex<Option<CachedKeyBindings>>,
+    subtitle_cue_cache: Mutex<Option<CachedSubtitleCues>>,
 }
 
 impl Core {
@@ -155,6 +166,7 @@ impl Core {
             db: Arc::new(Mutex::new(db)),
             runtime: OnceLock::new(),
             http: Mutex::new(None),
+            shared_http: Mutex::new(None),
             tmdb: Mutex::new(None),
             tmdb_key_override: Mutex::new(None),
             torrents: Mutex::new(None),
@@ -172,6 +184,8 @@ impl Core {
             me: me.clone(),
             tracking_sync: Mutex::new(integrations::TrackingSyncState::default()),
             local_api_cancel: Mutex::new(None),
+            key_bindings_cache: Mutex::new(None),
+            subtitle_cue_cache: Mutex::new(None),
         });
         // Deliver watch events queued before the last quit (no-op when the
         // feature is off or the outbox is empty: no runtime is started then).
@@ -249,6 +263,19 @@ impl Core {
             .map(|p| u64::from(p.addon_timeout_s))
             .unwrap_or(15);
         let client = AddonClient::with_timeout(timeout_s)?;
+        *slot = Some(client.clone());
+        Ok(client)
+    }
+
+    pub(crate) fn shared_http(&self) -> Result<reqwest::Client, CoreError> {
+        let mut slot = self.shared_http.lock().map_err(|_| CoreError::Poisoned)?;
+        if let Some(client) = slot.as_ref() {
+            return Ok(client.clone());
+        }
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| CoreError::Invalid(e.to_string()))?;
         *slot = Some(client.clone());
         Ok(client)
     }

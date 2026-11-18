@@ -403,20 +403,31 @@ impl Core {
             .collect())
     }
 
-    /// Upcoming episodes for all series in the active profile's library.
+    /// Upcoming episodes for all series in the active profile's library (bounded parallel fetch).
     pub async fn calendar_entries(self: &Arc<Self>) -> Result<Vec<UpcomingEpisode>, CoreError> {
+        const MAX_CONCURRENT: usize = 6;
         let items: Vec<_> = self
             .library_items()?
             .into_iter()
             .filter(|i| i.media_type == "series")
             .collect();
+        let mut iter = items.into_iter();
+        let mut set = tokio::task::JoinSet::new();
+        for item in iter.by_ref().take(MAX_CONCURRENT) {
+            let core = Arc::clone(self);
+            set.spawn(async move { core.rich_meta("series".into(), item.meta_id).await });
+        }
         let mut upcoming = Vec::new();
-        for item in items {
-            if let Ok(rich) = self.rich_meta("series".into(), item.meta_id).await
+        while let Some(res) = set.join_next().await {
+            if let Ok(Ok(rich)) = res
                 && let Some(ep) = rich.next_episode
                 && !ep.air_date.is_empty()
             {
                 upcoming.push(ep);
+            }
+            if let Some(next) = iter.next() {
+                let core = Arc::clone(self);
+                set.spawn(async move { core.rich_meta("series".into(), next.meta_id).await });
             }
         }
         upcoming.sort_by(|a, b| a.air_date.cmp(&b.air_date));

@@ -931,6 +931,17 @@ impl Core {
             .current_and_next_epg(&epg_channel_id, now_unix())?)
     }
 
+    pub fn iptv_all_epg_now_next(&self) -> Result<Vec<IptvEpgRow>, CoreError> {
+        if !self.feature_enabled(Feature::Iptv)? {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .db
+            .lock()
+            .map_err(|_| CoreError::Poisoned)?
+            .current_and_next_epg_all(now_unix())?)
+    }
+
     // =========================================================================
     // 10. Discord Rich Presence (`Feature::Discord`)
     // =========================================================================
@@ -1213,5 +1224,60 @@ mod p1_debrid_ranker_tests {
             ranked.ranked[1].stream.info_hash.as_deref(),
             Some(cached_big)
         );
+    }
+
+    #[test]
+    fn p2_batch_epg_returns_max_two_upcoming_rows_per_channel() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::open(dir.path()).unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(core.set_feature_enabled(Feature::Iptv, true))
+            .unwrap();
+        let now = now_unix();
+        {
+            let db = core.db.lock().unwrap();
+            db.upsert_iptv_epg(
+                &[
+                    cinma_db::IptvEpgRow {
+                        channel_id: "ch1".into(),
+                        start_ts: now - 100,
+                        stop_ts: now + 100,
+                        title: "CH1 Now".into(),
+                        description: None,
+                    },
+                    cinma_db::IptvEpgRow {
+                        channel_id: "ch1".into(),
+                        start_ts: now + 100,
+                        stop_ts: now + 200,
+                        title: "CH1 Next".into(),
+                        description: None,
+                    },
+                    cinma_db::IptvEpgRow {
+                        channel_id: "ch1".into(),
+                        start_ts: now + 200,
+                        stop_ts: now + 300,
+                        title: "CH1 Later".into(),
+                        description: None,
+                    },
+                    cinma_db::IptvEpgRow {
+                        channel_id: "ch2".into(),
+                        start_ts: now - 50,
+                        stop_ts: now + 50,
+                        title: "CH2 Now".into(),
+                        description: None,
+                    },
+                ],
+                now - 3600,
+            )
+            .unwrap();
+        }
+        let rows = core.iptv_all_epg_now_next().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].title, "CH1 Now");
+        assert_eq!(rows[1].title, "CH1 Next");
+        assert_eq!(rows[2].title, "CH2 Now");
     }
 }

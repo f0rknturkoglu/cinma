@@ -16,8 +16,10 @@ final class LiveTvViewController: NSViewController, NSSearchFieldDelegate {
     private let scrollView = NSScrollView()
 
     private var allChannels: [IptvChannelInfo] = []
+    private var epgByChannel: [String: [IptvEpgInfo]] = [:]
     private var selectedGroup: String?
     private var queryText: String = ""
+    private var filterDebounceTask: Task<Void, Never>?
 
     init(core: CinmaCore, onPlayChannel: @escaping (PlayRequest) -> Void) {
         self.core = core
@@ -124,6 +126,8 @@ final class LiveTvViewController: NSViewController, NSSearchFieldDelegate {
 
     func reload() {
         allChannels = (try? core.listIptvChannels(group: nil, query: nil)) ?? []
+        let epgRows = (try? core.iptvAllEpgNowNext()) ?? []
+        epgByChannel = Dictionary(grouping: epgRows, by: \.channelId)
         rebuildGroups()
         renderChannels()
     }
@@ -142,7 +146,7 @@ final class LiveTvViewController: NSViewController, NSSearchFieldDelegate {
         )
         allBtn.identifier = nil
         groupStack.addArrangedSubview(allBtn)
-        for g in groups.prefix(20) {
+        for g in groups.prefix(40) {
             let b = CinemaTheme.makePillButton(
                 title: g,
                 primary: selectedGroup == g,
@@ -162,7 +166,12 @@ final class LiveTvViewController: NSViewController, NSSearchFieldDelegate {
 
     func controlTextDidChange(_ obj: Notification) {
         queryText = searchField.stringValue
-        renderChannels()
+        filterDebounceTask?.cancel()
+        filterDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            self?.renderChannels()
+        }
     }
 
     private func renderChannels() {
@@ -183,8 +192,13 @@ final class LiveTvViewController: NSViewController, NSSearchFieldDelegate {
         }
         statusLabel.stringValue = String(localized: "\(filtered.count) channels")
 
-        for ch in filtered.prefix(200) {
-            let row = CinemaTheme.makeGlassView(kind: .regular, cornerRadius: 14)
+        for ch in filtered.prefix(300) {
+            let row = NSView()
+            row.wantsLayer = true
+            row.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.055).cgColor
+            row.layer?.cornerRadius = 14
+            row.layer?.borderWidth = 1
+            row.layer?.borderColor = NSColor.white.withAlphaComponent(0.08).cgColor
             row.translatesAutoresizingMaskIntoConstraints = false
 
             let title = NSTextField(labelWithString: ch.name)
@@ -194,7 +208,7 @@ final class LiveTvViewController: NSViewController, NSSearchFieldDelegate {
             var subParts: [String] = []
             if let g = ch.groupTitle { subParts.append(g) }
             if let epgId = ch.epgChannelId,
-               let epg = (try? core.iptvEpgNowNext(epgChannelId: epgId)),
+               let epg = epgByChannel[epgId],
                let now = epg.first
             {
                 subParts.append("\(String(localized: "Now")): \(now.title)")
@@ -275,6 +289,8 @@ final class LiveTvViewController: NSViewController, NSSearchFieldDelegate {
             for url in epgUrls {
                 total += (try? await core.refreshXmltv(url: url)) ?? 0
             }
+            let epgRows = (try? core.iptvAllEpgNowNext()) ?? []
+            epgByChannel = Dictionary(grouping: epgRows, by: \.channelId)
             statusLabel.stringValue = String(localized: "Updated \(total) EPG programmes")
             renderChannels()
         }

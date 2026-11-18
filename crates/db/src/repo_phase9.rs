@@ -300,4 +300,38 @@ impl Database {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+
+    pub fn current_and_next_epg_all(&self, now_ts: i64) -> Result<Vec<IptvEpgRow>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT channel_id, start_ts, stop_ts, title, description
+             FROM iptv_epg
+             WHERE stop_ts >= ?1
+             ORDER BY channel_id ASC, start_ts ASC",
+        )?;
+        let rows = stmt
+            .query_map(params![now_ts], |r| {
+                Ok(IptvEpgRow {
+                    channel_id: r.get(0)?,
+                    start_ts: r.get(1)?,
+                    stop_ts: r.get(2)?,
+                    title: r.get(3)?,
+                    description: r.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut out = Vec::new();
+        let mut cur_ch = String::new();
+        let mut count_for_ch = 0u8;
+        for row in rows {
+            if row.channel_id != cur_ch {
+                cur_ch = row.channel_id.clone();
+                count_for_ch = 0;
+            }
+            if count_for_ch < 2 {
+                out.push(row);
+                count_for_ch += 1;
+            }
+        }
+        Ok(out)
+    }
 }

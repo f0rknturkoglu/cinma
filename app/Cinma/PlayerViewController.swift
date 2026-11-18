@@ -239,6 +239,11 @@ final class PlayerViewController: NSViewController {
     private var liveTextTask: Task<Void, Never>?
     private var blackoutWindows: [NSWindow] = []
     private var isInPiP = false
+    private var cachedPrefs: PlayerPreferencesFfi?
+    private var pendingStyleSettings: SubtitleSettingsFfi?
+    private var stylePersistTask: Task<Void, Never>?
+    private var pendingEqPrefs: (Int32, Int32, Int32, Int32)?
+    private var eqPersistTask: Task<Void, Never>?
 
     private static let clockFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -260,6 +265,40 @@ final class PlayerViewController: NSViewController {
     private var metadata: PlaybackMetadata? {
         if case .stream(_, let meta) = request { return meta }
         return nil
+    }
+
+    private func currentPrefs(reload: Bool = false) -> PlayerPreferencesFfi? {
+        if reload || cachedPrefs == nil {
+            cachedPrefs = try? core.playerPreferences()
+        }
+        return cachedPrefs
+    }
+
+    private func updatePrefs(_ mutate: (inout PlayerPreferencesFfi) -> Void) {
+        guard var prefs = currentPrefs(reload: true) else { return }
+        mutate(&prefs)
+        cachedPrefs = prefs
+        try? core.setPlayerPreferences(prefs: prefs)
+    }
+
+    private func flushPendingPersistedSettings() {
+        stylePersistTask?.cancel()
+        stylePersistTask = nil
+        if let pending = pendingStyleSettings {
+            pendingStyleSettings = nil
+            try? core.setSubtitleSettings(settings: pending)
+        }
+        eqPersistTask?.cancel()
+        eqPersistTask = nil
+        if let eq = pendingEqPrefs {
+            pendingEqPrefs = nil
+            updatePrefs { prefs in
+                prefs.eqBrightness = eq.0
+                prefs.eqContrast = eq.1
+                prefs.eqGamma = eq.2
+                prefs.eqSaturation = eq.3
+            }
+        }
     }
 
     private var activeStreamRaw: String? {
@@ -695,7 +734,7 @@ final class PlayerViewController: NSViewController {
     private func refreshTitles() {
         switch request {
         case .stream(let s, let meta):
-            let seriesFirst = (try? core.playerPreferences())?.playerTitleSeriesFirst ?? true
+            let seriesFirst = currentPrefs()?.playerTitleSeriesFirst ?? true
             let seriesName = meta?.title ?? s.addonName
             let episodeSub = meta?.subtitle ?? ""
             if !seriesFirst && !episodeSub.isEmpty {
@@ -1104,7 +1143,7 @@ final class PlayerViewController: NSViewController {
         if let settings = try? core.subtitleSettings() {
             applySubtitleStyle(settings, session: session)
         }
-        if let prefs = try? core.playerPreferences() {
+        if let prefs = currentPrefs(reload: true) {
             let paths = (try? core.resolveShaderPaths(preset: prefs.shaderPreset)) ?? []
             try? session.setGlslShaders(paths: paths)
             try? session.setHdrTargetPeak(nits: prefs.hdrTargetPeak)
@@ -1395,7 +1434,7 @@ final class PlayerViewController: NSViewController {
               duration > 30
         else { return }
 
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         let leadS = Double(max(10, min(90, prefs?.nextEpisodeLeadS ?? 35)))
         let remaining = max(0, duration - position)
         let progress = position / duration
@@ -1433,7 +1472,7 @@ final class PlayerViewController: NSViewController {
         setNextCardVisible(true)
         showHudAndCancelTimer()
 
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         guard prefs?.autoplayNext != false else {
             nextCountdownLabel.stringValue = ""
             return
@@ -1452,7 +1491,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func autoAdvanceToNextEpisode() {
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         let limit = prefs?.stillWatchingAfterEpisodes ?? 0
         if limit > 0, autoPlayedEpisodesCount >= limit {
             autoPlayedEpisodesCount = 0
@@ -1627,7 +1666,7 @@ final class PlayerViewController: NSViewController {
             skipButton.isHidden = true
             return
         }
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         let autoSkip: Bool = switch seg.kind {
         case "outro": prefs?.autoSkipOutro ?? false
         case "recap": prefs?.autoSkipRecap ?? false
@@ -1672,7 +1711,7 @@ final class PlayerViewController: NSViewController {
 
     private func armStallWatchdog() {
         cancelStallWatchdog()
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         guard prefs?.autoNextStreamOnStall ?? true else { return }
         let timeoutS = Int(max(5, min(30, prefs?.stallTimeoutS ?? 12)))
         stallRecoveryTask = Task { [weak self] in
@@ -1885,8 +1924,17 @@ final class PlayerViewController: NSViewController {
             },
             onUpdateStyle: { [weak self] updated in
                 guard let self else { return }
-                try? self.core.setSubtitleSettings(settings: updated)
                 self.applySubtitleStyle(updated, session: self.session)
+                self.pendingStyleSettings = updated
+                self.stylePersistTask?.cancel()
+                self.stylePersistTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(250))
+                    guard let self, !Task.isCancelled else { return }
+                    if let pending = self.pendingStyleSettings {
+                        self.pendingStyleSettings = nil
+                        try? self.core.setSubtitleSettings(settings: pending)
+                    }
+                }
             }
         )
         presentFloatingPopover(root, relativeTo: sender)
@@ -1937,6 +1985,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func dismissFloatingPopover() {
+        flushPendingPersistedSettings()
         popoverCard?.removeFromSuperview()
         popoverBackdrop?.removeFromSuperview()
         popoverCard = nil
@@ -2060,7 +2109,7 @@ final class PlayerViewController: NSViewController {
         menu.addItem(reset)
 
         menu.addItem(.separator())
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         let normItem = NSMenuItem(title: String(localized: "Audio Normalization (Dynaudnorm)"), action: #selector(toggleAudioNormalize), keyEquivalent: "")
         normItem.target = self
         normItem.state = (prefs?.audioNormalize ?? false) ? .on : .off
@@ -2099,6 +2148,7 @@ final class PlayerViewController: NSViewController {
     @objc private func toggleAudioNormalize() {
         guard var prefs = try? core.playerPreferences() else { return }
         prefs.audioNormalize.toggle()
+        cachedPrefs = prefs
         try? core.setPlayerPreferences(prefs: prefs)
         try? session?.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
         showStatus(prefs.audioNormalize ? String(localized: "Audio normalization on") : String(localized: "Audio normalization off"))
@@ -2107,6 +2157,7 @@ final class PlayerViewController: NSViewController {
     @objc private func toggleDownmixStereo() {
         guard var prefs = try? core.playerPreferences() else { return }
         prefs.downmixStereo.toggle()
+        cachedPrefs = prefs
         try? core.setPlayerPreferences(prefs: prefs)
         try? session?.setAudioProcessing(normalize: prefs.audioNormalize, downmixStereo: prefs.downmixStereo)
         showStatus(prefs.downmixStereo ? String(localized: "Stereo downmix on") : String(localized: "Stereo downmix off"))
@@ -2247,7 +2298,7 @@ final class PlayerViewController: NSViewController {
             menu.addItem(skipHolder)
         }
 
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         let onTopItem = NSMenuItem(title: String(localized: "Always on Top"), action: #selector(toggleAlwaysOnTop), keyEquivalent: "")
         onTopItem.target = self
         onTopItem.state = (prefs?.playerAlwaysOnTop ?? false) ? .on : .off
@@ -2355,6 +2406,7 @@ final class PlayerViewController: NSViewController {
     @objc private func toggleAlwaysOnTop() {
         guard var prefs = try? core.playerPreferences() else { return }
         prefs.playerAlwaysOnTop.toggle()
+        cachedPrefs = prefs
         try? core.setPlayerPreferences(prefs: prefs)
         view.window?.level = prefs.playerAlwaysOnTop ? .floating : .normal
         showStatus(prefs.playerAlwaysOnTop ? String(localized: "Always on top enabled") : String(localized: "Always on top disabled"))
@@ -2364,7 +2416,8 @@ final class PlayerViewController: NSViewController {
         guard let mode = sender.representedObject as? String else { return }
         if var prefs = try? core.playerPreferences() {
             prefs.hdrToneMapping = mode
-            try? core.setPlayerPreferences(prefs: prefs)
+            cachedPrefs = prefs
+        try? core.setPlayerPreferences(prefs: prefs)
         }
         try? session?.setToneMapping(mode: mode)
         showStatus("\(String(localized: "Tone Mapping")): \(sender.title)")
@@ -2374,7 +2427,8 @@ final class PlayerViewController: NSViewController {
         guard let mode = sender.representedObject as? String else { return }
         if var prefs = try? core.playerPreferences() {
             prefs.cropMode = mode
-            try? core.setPlayerPreferences(prefs: prefs)
+            cachedPrefs = prefs
+        try? core.setPlayerPreferences(prefs: prefs)
         }
         try? session?.setCropMode(mode: mode)
         showStatus("\(String(localized: "Aspect")): \(sender.title)")
@@ -2384,7 +2438,8 @@ final class PlayerViewController: NSViewController {
         guard let preset = sender.representedObject as? String else { return }
         if var prefs = try? core.playerPreferences() {
             prefs.shaderPreset = preset
-            try? core.setPlayerPreferences(prefs: prefs)
+            cachedPrefs = prefs
+        try? core.setPlayerPreferences(prefs: prefs)
         }
         let paths = (try? core.resolveShaderPaths(preset: preset)) ?? []
         try? session?.setGlslShaders(paths: paths)
@@ -2395,7 +2450,8 @@ final class PlayerViewController: NSViewController {
         let nits = (sender.representedObject as? NSNumber)?.uint32Value
         if var prefs = try? core.playerPreferences() {
             prefs.hdrTargetPeak = nits
-            try? core.setPlayerPreferences(prefs: prefs)
+            cachedPrefs = prefs
+        try? core.setPlayerPreferences(prefs: prefs)
         }
         try? session?.setHdrTargetPeak(nits: nits)
         showStatus(nits.map { "HDR peak: \($0) nits" } ?? "HDR peak: Auto")
@@ -2427,7 +2483,7 @@ final class PlayerViewController: NSViewController {
 
     @objc private func showVideoEqPopoverFromMenu() {
         guard let anchor = moreButton else { return }
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         let root = VideoEqPopoverView(
             brightness: prefs?.eqBrightness ?? 0,
             contrast: prefs?.eqContrast ?? 0,
@@ -2435,14 +2491,22 @@ final class PlayerViewController: NSViewController {
             saturation: prefs?.eqSaturation ?? 0
         ) { [weak self] b, c, g, s in
             guard let self else { return }
-            if var updated = try? self.core.playerPreferences() {
-                updated.eqBrightness = b
-                updated.eqContrast = c
-                updated.eqGamma = g
-                updated.eqSaturation = s
-                try? self.core.setPlayerPreferences(prefs: updated)
-            }
             try? self.session?.setVideoEq(brightness: b, contrast: c, gamma: g, saturation: s)
+            self.pendingEqPrefs = (b, c, g, s)
+            self.eqPersistTask?.cancel()
+            self.eqPersistTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(250))
+                guard let self, !Task.isCancelled else { return }
+                if let eq = self.pendingEqPrefs {
+                    self.pendingEqPrefs = nil
+                    self.updatePrefs { prefs in
+                        prefs.eqBrightness = eq.0
+                        prefs.eqContrast = eq.1
+                        prefs.eqGamma = eq.2
+                        prefs.eqSaturation = eq.3
+                    }
+                }
+            }
         }
         presentFloatingPopover(root, relativeTo: anchor)
     }
@@ -2482,7 +2546,7 @@ final class PlayerViewController: NSViewController {
         let formatter = ISO8601DateFormatter()
         let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let out = desktop.appendingPathComponent("Cinma-\(stamp).png")
-        let includeSubs = (try? core.playerPreferences())?.screenshotIncludeSubtitles ?? true
+        let includeSubs = currentPrefs()?.screenshotIncludeSubtitles ?? true
         try? session.screenshotToFileMode(path: out.path, includeSubtitles: includeSubs)
         showStatus(String(localized: "Saved screenshot: \(out.lastPathComponent)"))
     }
@@ -2532,7 +2596,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func showVolumeHudIfEnabled() {
-        guard (try? core.playerPreferences())?.volumeHud ?? true else { return }
+        guard currentPrefs()?.volumeHud ?? true else { return }
         let msg = muted
             ? String(localized: "Muted")
             : String(localized: "Volume: \(Int(volume.rounded()))%")
@@ -2607,7 +2671,7 @@ final class PlayerViewController: NSViewController {
         }
         switch command {
         case "player.toggle_pause":
-            if (try? core.playerPreferences())?.holdToBoostEnabled ?? true {
+            if currentPrefs()?.holdToBoostEnabled ?? true {
                 holdBoostKeyWaiting = combo
                 beginHoldBoostCandidate(triggerKey: combo)
             } else {
@@ -2632,14 +2696,18 @@ final class PlayerViewController: NSViewController {
         case "player.ab_loop": cycleAbLoop()
         case "player.speed_up": setSpeed(speed + 0.25)
         case "player.speed_down": setSpeed(speed - 0.25)
-        case "player.frame_step": try? session?.frameStep(forward: true)
-        case "player.frame_back_step": try? session?.frameStep(forward: false)
+        case "player.frame_step":
+            removeLiveTextOverlay()
+            try? session?.frameStep(forward: true)
+        case "player.frame_back_step":
+            removeLiveTextOverlay()
+            try? session?.frameStep(forward: false)
         case "player.sub_seek_prev": try? session?.subSeek(offset: -1)
         case "player.sub_seek_next": try? session?.subSeek(offset: 1)
         case "player.search_dialogue": showDialogueSearchPopover()
         case "player.live_text": toggleLiveTextOverlay()
         case "player.screen_lock":
-            if (try? core.playerPreferences())?.screenLockEnabled ?? true {
+            if currentPrefs()?.screenLockEnabled ?? true {
                 toggleScreenLock()
             }
         case "player.volume_up": adjustVolume(by: 10)
@@ -2664,7 +2732,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func adjustVolume(by delta: Double) {
-        let maxVol = Double((try? core.playerPreferences())?.volumeBoostMax ?? 150)
+        let maxVol = Double(currentPrefs()?.volumeBoostMax ?? 150)
         let prev = volume
         volume = min(maxVol, max(0, prev + delta))
         if (prev < 100 && volume >= 100) || (prev > 100 && volume <= 100) {
@@ -2684,7 +2752,7 @@ final class PlayerViewController: NSViewController {
     private func beginHoldBoostCandidate(triggerKey: String?) {
         holdBoostTask?.cancel()
         guard !isScreenLocked, !closing, !holdBoostActive else { return }
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         guard prefs?.holdToBoostEnabled ?? true else { return }
         let boostPct = prefs?.holdBoostSpeedPct ?? 200
         holdBoostTask = Task { [weak self] in
@@ -2719,7 +2787,7 @@ final class PlayerViewController: NSViewController {
             return
         }
         guard !isScreenLocked, !closing, popoverBackdrop == nil else { return }
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         guard prefs?.trackpadGesturesEnabled ?? true else { return }
 
         let dx = event.scrollingDeltaX
@@ -2790,7 +2858,7 @@ final class PlayerViewController: NSViewController {
     }
 
     private func performHaptic(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .generic) {
-        guard (try? core.playerPreferences())?.hapticFeedbackEnabled ?? true else { return }
+        guard currentPrefs()?.hapticFeedbackEnabled ?? true else { return }
         NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .default)
     }
 
@@ -2799,6 +2867,7 @@ final class PlayerViewController: NSViewController {
         let root = DialogueSearchPopoverView(
             core: core,
             subtitlePath: activeSubtitleFilePath,
+            subDelay: subDelay,
             onSeek: { [weak self] secs in
                 self?.seekAbsolute(secs)
             },
@@ -2815,6 +2884,7 @@ final class PlayerViewController: NSViewController {
     @objc private func toggleBlackoutOtherScreens() {
         guard var prefs = try? core.playerPreferences() else { return }
         prefs.blackoutOtherScreens.toggle()
+        cachedPrefs = prefs
         try? core.setPlayerPreferences(prefs: prefs)
         syncMonitorBlackout()
         showStatus(prefs.blackoutOtherScreens
@@ -2827,7 +2897,7 @@ final class PlayerViewController: NSViewController {
         guard !closing,
               let window = view.window,
               window.styleMask.contains(.fullScreen),
-              (try? core.playerPreferences())?.blackoutOtherScreens == true
+              currentPrefs()?.blackoutOtherScreens == true
         else { return }
         for screen in NSScreen.screens where screen != window.screen {
             let win = NSWindow(
@@ -2858,7 +2928,7 @@ final class PlayerViewController: NSViewController {
               let window = view.window,
               !window.isMiniaturized,
               !window.occlusionState.contains(.visible),
-              (try? core.playerPreferences())?.autoPipOnOcclusion == true
+              currentPrefs()?.autoPipOnOcclusion == true
         else { return }
         clearBlackoutWindows()
         enterPiPClicked()
@@ -2900,41 +2970,63 @@ final class PlayerViewController: NSViewController {
             removeLiveTextOverlay()
             return
         }
-        guard !closing, !isScreenLocked, ImageAnalyzer.isSupported else {
+        guard !closing, !isScreenLocked, ImageAnalyzer.isSupported, let session else {
             showStatus(String(localized: "Live Text unavailable on this frame"))
             return
         }
         if !paused {
-            try? session?.togglePause()
-        }
-        guard let frame = try? session?.captureRawFrame(),
-              let cgImage = Self.makeCGImage(from: frame)
-        else {
-            showStatus(String(localized: "Could not capture paused frame for Live Text"))
-            return
+            try? session.setPaused(paused: true)
         }
         liveTextTask?.cancel()
         showStatus(String(localized: "Scanning text in frame…"), autoHideAfter: 0)
         liveTextTask = Task { [weak self] in
+            let cgImage: CGImage? = await Task.detached(priority: .userInitiated) {
+                guard let frame = try? session.captureRawFrame() else { return nil }
+                return Self.makeCGImage(from: frame)
+            }.value
+            guard let self, !Task.isCancelled, !self.closing else { return }
+            guard let cgImage else {
+                self.showStatus(String(localized: "Could not capture paused frame for Live Text"))
+                return
+            }
             let analyzer = ImageAnalyzer()
             let analysis = try? await analyzer.analyze(
                 cgImage,
                 orientation: .up,
                 configuration: ImageAnalyzer.Configuration([.text])
             )
-            guard let self, !Task.isCancelled, !self.closing else { return }
+            guard !Task.isCancelled, !self.closing else { return }
             guard let analysis, analysis.hasResults(for: .text) else {
                 self.showStatus(String(localized: "No text detected in paused frame"))
                 return
             }
-            let overlay = ImageAnalysisOverlayView(frame: self.videoView.bounds)
-            overlay.autoresizingMask = [.width, .height]
+            let targetRect = Self.aspectFitRect(
+                content: CGSize(width: cgImage.width, height: cgImage.height),
+                in: self.videoView.bounds
+            )
+            let overlay = ImageAnalysisOverlayView(frame: targetRect)
+            overlay.autoresizingMask = [.width, .height, .minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
             overlay.analysis = analysis
             overlay.preferredInteractionTypes = .textSelection
             self.videoView.addSubview(overlay)
             self.liveTextOverlay = overlay
             self.showStatus(String(localized: "Live Text ready — drag to select text (Press T to clear)"))
         }
+    }
+
+    private static func aspectFitRect(content: CGSize, in bounds: CGRect) -> CGRect {
+        guard content.width > 0, content.height > 0, bounds.width > 0, bounds.height > 0 else {
+            return bounds
+        }
+        let scale = min(bounds.width / content.width, bounds.height / content.height)
+        let w = content.width * scale
+        let h = content.height * scale
+        return CGRect(
+            x: bounds.midX - w * 0.5,
+            y: bounds.midY - h * 0.5,
+            width: w,
+            height: h
+        )
     }
 
     private func removeLiveTextOverlay() {
@@ -2944,7 +3036,7 @@ final class PlayerViewController: NSViewController {
         liveTextOverlay = nil
     }
 
-    private static func makeCGImage(from frame: RawFrameFfi) -> CGImage? {
+    nonisolated private static func makeCGImage(from frame: RawFrameFfi) -> CGImage? {
         let w = Int(frame.width)
         let h = Int(frame.height)
         let stride = Int(frame.stride)
@@ -2996,7 +3088,7 @@ final class PlayerViewController: NSViewController {
 
     @objc private func requestClose() {
         guard !closing else { return }
-        let shouldConfirm = (try? core.playerPreferences())?.confirmOnLeave ?? false
+        let shouldConfirm = currentPrefs()?.confirmOnLeave ?? false
         guard shouldConfirm, !paused, duration > 0 else {
             close()
             return
@@ -3025,9 +3117,10 @@ final class PlayerViewController: NSViewController {
     @objc private func seekBack10() {
         guard !isScreenLocked else { return }
         autoPlayedEpisodesCount = 0
-        let prefs = try? core.playerPreferences()
-        let exact = prefs?.exactSeek ?? true
-        let step = Double(max(3, min(60, prefs?.seekBackStepS ?? 10)))
+        removeLiveTextOverlay()
+        let p = currentPrefs()
+        let exact = p?.exactSeek ?? true
+        let step = Double(max(3, min(60, p?.seekBackStepS ?? 10)))
         try? session?.seekRelativeMode(seconds: -step, exact: exact)
         saveProgressIfNeeded(force: true)
     }
@@ -3035,14 +3128,16 @@ final class PlayerViewController: NSViewController {
     @objc private func seekForward10() {
         guard !isScreenLocked else { return }
         autoPlayedEpisodesCount = 0
-        let prefs = try? core.playerPreferences()
-        let exact = prefs?.exactSeek ?? true
-        let step = Double(max(3, min(60, prefs?.seekForwardStepS ?? 10)))
+        removeLiveTextOverlay()
+        let p = currentPrefs()
+        let exact = p?.exactSeek ?? true
+        let step = Double(max(3, min(60, p?.seekForwardStepS ?? 10)))
         try? session?.seekRelativeMode(seconds: step, exact: exact)
         saveProgressIfNeeded(force: true)
     }
 
     private func seekAbsolute(_ seconds: Double) {
+        removeLiveTextOverlay()
         position = seconds
         scrubBar.position = seconds
         try? session?.seekAbsolute(seconds: seconds)
@@ -3116,7 +3211,7 @@ final class PlayerViewController: NSViewController {
 
     func gamepadSeek(seconds: Double) {
         guard !isScreenLocked else { return }
-        let exact = (try? core.playerPreferences())?.exactSeek ?? true
+        let exact = currentPrefs()?.exactSeek ?? true
         try? session?.seekRelativeMode(seconds: seconds, exact: exact)
         saveProgressIfNeeded(force: true)
         showHudAndResetTimer()
@@ -3179,7 +3274,7 @@ final class PlayerViewController: NSViewController {
             return
         }
         unlockPill.isHidden = true
-        let showClock = (try? core.playerPreferences())?.fullscreenClock ?? true
+        let showClock = currentPrefs()?.fullscreenClock ?? true
         if nowVisible { updateClockPill() }
         if !showClock { clockPill.isHidden = true }
         let pills = showClock ? [titlePill, bar, clockPill] : [titlePill, bar]
@@ -3293,7 +3388,7 @@ final class PlayerViewController: NSViewController {
             clockPill.isHidden = true
             return
         }
-        let prefs = try? core.playerPreferences()
+        let prefs = currentPrefs()
         guard prefs?.fullscreenClock ?? true else {
             clockPill.isHidden = true
             return
@@ -3313,8 +3408,15 @@ final class PlayerViewController: NSViewController {
     private func refreshP2pSpeedChip() {
         p2pChipTask?.cancel()
         p2pChipTask = nil
-        let showChip = (try? core.playerPreferences())?.showP2pSpeedChip ?? true
-        guard showChip else {
+        let showChip = currentPrefs()?.showP2pSpeedChip ?? true
+        let isTorrentCandidate: Bool = {
+            switch request {
+            case .stream(let s, _): return s.infoHash != nil
+            case .download: return true
+            case .file, .trailer: return false
+            }
+        }()
+        guard showChip, isTorrentCandidate else {
             p2pSpeedLabel.isHidden = true
             return
         }
@@ -3331,6 +3433,9 @@ final class PlayerViewController: NSViewController {
                     self.p2pSpeedLabel.isHidden = false
                 } else {
                     self.p2pSpeedLabel.isHidden = true
+                    if let st = self.session?.streamStats(), st.sourceUrl != nil {
+                        break
+                    }
                 }
                 try? await Task.sleep(for: .milliseconds(1500))
             }
@@ -3361,6 +3466,7 @@ final class PlayerViewController: NSViewController {
     @objc private func close() {
         guard !closing else { return }
         closing = true
+        flushPendingPersistedSettings()
         closeRequestedAt = .now
         hudHideTask?.cancel()
         statusClearTask?.cancel()

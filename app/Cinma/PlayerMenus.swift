@@ -795,12 +795,15 @@ struct VideoEqPopoverView: View {
 struct DialogueSearchPopoverView: View {
     let core: CinmaCore
     let subtitlePath: String?
+    var subDelay: Double = 0
     let onSeek: (Double) -> Void
     let onSubSeek: (Int32) -> Void
     let onDismiss: () -> Void
 
     @State private var query = ""
     @State private var hits: [SubtitleCueFfi] = []
+    @State private var searchTask: Task<Void, Never>?
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -822,11 +825,18 @@ struct DialogueSearchPopoverView: View {
                         .foregroundStyle(.secondary)
                     TextField(String(localized: "Find spoken line in active subtitle…"), text: $query)
                         .textFieldStyle(.plain)
+                        .focused($searchFocused)
+                        .onAppear { searchFocused = true }
                         .onChange(of: query) { _, newValue in
+                            searchTask?.cancel()
                             let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
                             if q.isEmpty {
                                 hits = []
-                            } else {
+                                return
+                            }
+                            searchTask = Task {
+                                try? await Task.sleep(for: .milliseconds(150))
+                                guard !Task.isCancelled else { return }
                                 hits = (try? core.searchSubtitleCues(path: subtitlePath, query: q, limit: 60)) ?? []
                             }
                         }
@@ -848,7 +858,7 @@ struct DialogueSearchPopoverView: View {
                         LazyVStack(alignment: .leading, spacing: 4) {
                             ForEach(Array(hits.enumerated()), id: \.offset) { _, cue in
                                 Button {
-                                    onSeek(cue.startS)
+                                    onSeek(max(0, cue.startS - subDelay))
                                     onDismiss()
                                 } label: {
                                     HStack(alignment: .top, spacing: 8) {

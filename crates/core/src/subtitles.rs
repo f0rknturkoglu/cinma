@@ -524,8 +524,41 @@ impl Core {
         query: &str,
         limit: usize,
     ) -> Result<Vec<cinma_subtitles::SubtitleCue>, CoreError> {
-        cinma_subtitles::search_subtitle_cues(path, query, limit)
-            .map_err(|e| CoreError::Invalid(e.to_string()))
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let meta = std::fs::metadata(path)?;
+        let len = meta.len();
+        let mtime = meta.modified().ok();
+        let cached = self.subtitle_cue_cache.lock().ok().and_then(|g| {
+            g.as_ref().and_then(|(p, l, t, cues)| {
+                if p == path && *l == len && *t == mtime {
+                    Some(Arc::clone(cues))
+                } else {
+                    None
+                }
+            })
+        });
+        let cues = match cached {
+            Some(cues) => cues,
+            None => {
+                let parsed = Arc::new(
+                    cinma_subtitles::parse_subtitle_cues(path)
+                        .map_err(|e| CoreError::Invalid(e.to_string()))?,
+                );
+                if let Ok(mut guard) = self.subtitle_cue_cache.lock() {
+                    *guard = Some((path.to_path_buf(), len, mtime, Arc::clone(&parsed)));
+                }
+                parsed
+            }
+        };
+        Ok(cues
+            .iter()
+            .filter(|c| c.text.to_lowercase().contains(&q))
+            .take(limit.clamp(1, 200))
+            .cloned()
+            .collect())
     }
 
     pub(crate) fn load_profile_json<T: serde::de::DeserializeOwned + Default>(
@@ -707,13 +740,11 @@ impl Core {
                     .and_then(|p| p.rsplit_once('.'))
                     .map(|(_, e)| e.to_owned())
                     .filter(|e| !e.eq_ignore_ascii_case("gz"));
+                let client = self.shared_http()?;
                 self.spawn(async move {
-                    let client = reqwest::Client::builder()
-                        .timeout(std::time::Duration::from_secs(20))
-                        .build()
-                        .map_err(|e| CoreError::Invalid(e.to_string()))?;
                     let resp = client
                         .get(&url)
+                        .timeout(std::time::Duration::from_secs(20))
                         .send()
                         .await
                         .map_err(|e| CoreError::Invalid(e.to_string()))?;

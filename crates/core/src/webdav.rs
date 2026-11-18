@@ -121,14 +121,12 @@ impl Core {
         let method = reqwest::Method::from_bytes(b"PROPFIND")
             .map_err(|e| CoreError::Invalid(e.to_string()))?;
         let url_clone = target_url.clone();
+        let client = self.shared_http()?;
         let body_text = self
             .spawn(async move {
-                let client = reqwest::Client::builder()
-                    .timeout(Duration::from_secs(15))
-                    .build()
-                    .map_err(|e| CoreError::Invalid(e.to_string()))?;
                 let mut req = client
                     .request(method, &url_clone)
+                    .timeout(Duration::from_secs(15))
                     .header("Depth", "1")
                     .header("Content-Type", "application/xml")
                     .body(xml_body);

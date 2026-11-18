@@ -128,16 +128,14 @@ impl Core {
     /// when explicitly triggered by the user (§5.7).
     pub async fn install_or_update_ytdlp(self: &Arc<Self>) -> Result<String, CoreError> {
         let dest = self.managed_ytdlp_path();
+        let client = self.shared_http()?;
         self.spawn(async move {
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
-                .build()
-                .map_err(|e| CoreError::Invalid(e.to_string()))?;
             let resp = client
                 .get(YTDLP_MACOS_URL)
+                .timeout(std::time::Duration::from_secs(120))
                 .send()
                 .await
                 .map_err(|e| CoreError::Invalid(e.to_string()))?;

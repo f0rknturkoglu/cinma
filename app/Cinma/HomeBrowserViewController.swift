@@ -614,12 +614,13 @@ final class HomeBrowserViewController: NSViewController {
         let prefs = try? core.playerPreferences()
         syncContinueRailPosition(cwAtTop: prefs?.cwAtTop ?? true)
         let style = PosterStyleContext.load(from: core)
+        let visContext = CatalogVisibilityContext.load(from: core)
         let railH = style.itemSize.height + 42
         moviesRailHeight?.constant = railH
         seriesRailHeight?.constant = railH
 
-        let visMovies = CatalogVisibilityFilter.apply(movies, core: core)
-        let visSeries = CatalogVisibilityFilter.apply(series, core: core)
+        let visMovies = CatalogVisibilityFilter.apply(movies, context: visContext)
+        let visSeries = CatalogVisibilityFilter.apply(series, context: visContext)
         let hasTmdb = (try? core.hasTmdbKey()) ?? false
         let src = hasTmdb ? "TMDB" : String(localized: "Addon Catalog")
         trendingMoviesRail.update(source: src, content: .posters(visMovies), style: style)
@@ -669,9 +670,12 @@ final class HomeBrowserViewController: NSViewController {
 
     private func loadAddonCatalogRails() {
         let core = core
+        let style = PosterStyleContext.load(from: core)
+        let visContext = CatalogVisibilityContext.load(from: core)
+        let maxRails = Int(min(15, (try? core.playerPreferences())?.maxAddonRails ?? 6))
         let collector = CatalogBatchCollector { [weak self] batch in
             Task { @MainActor [weak self] in
-                self?.appendAddonRail(batch)
+                self?.appendAddonRail(batch, maxRails: maxRails, style: style, visContext: visContext)
             }
         }
         for stack in [pinnedRailsStack, dynamicRailsStack] {
@@ -682,28 +686,42 @@ final class HomeBrowserViewController: NSViewController {
         }
         let pinned = (try? core.pinnedShelves()) ?? []
         Task {
-            for shelf in pinned {
-                if let page = try? await core.catalog(
-                    addonId: shelf.addonId,
-                    mediaType: shelf.mediaType,
-                    catalogId: shelf.catalogId,
-                    query: CatalogQueryInput(search: nil, genre: shelf.genre, skip: nil)
-                ) {
-                    let visItems = CatalogVisibilityFilter.apply(page.items, core: core)
+            if !pinned.isEmpty {
+                let pages = await withTaskGroup(of: (Int, PinnedShelfFfi, [MetaPreviewInfo])?.self) { group in
+                    for (idx, shelf) in pinned.enumerated() {
+                        group.addTask {
+                            guard let page = try? await core.catalog(
+                                addonId: shelf.addonId,
+                                mediaType: shelf.mediaType,
+                                catalogId: shelf.catalogId,
+                                query: CatalogQueryInput(search: nil, genre: shelf.genre, skip: nil)
+                            ) else { return nil }
+                            return (idx, shelf, page.items)
+                        }
+                    }
+                    var collected: [(Int, PinnedShelfFfi, [MetaPreviewInfo])] = []
+                    for await res in group {
+                        if let res { collected.append(res) }
+                    }
+                    return collected.sorted { $0.0 < $1.0 }
+                }
+                for (_, shelf, rawItems) in pages {
+                    let visItems = CatalogVisibilityFilter.apply(rawItems, context: visContext)
                     if !visItems.isEmpty {
                         await MainActor.run { [weak self] in
-                            self?.appendPinnedShelfRail(shelf, items: visItems)
+                            self?.appendPinnedShelfRail(shelf, items: visItems, style: style)
                         }
                     }
                 }
             }
-            _ = try? await core.browseCatalogs(mediaType: nil, observer: collector)
+            if maxRails > 0 {
+                _ = try? await core.browseCatalogs(mediaType: nil, observer: collector)
+            }
             ImagePipeline.releaseMallocPressure()
         }
     }
 
-    private func appendPinnedShelfRail(_ shelf: PinnedShelfFfi, items: [MetaPreviewInfo]) {
-        let style = PosterStyleContext.load(from: core)
+    private func appendPinnedShelfRail(_ shelf: PinnedShelfFfi, items: [MetaPreviewInfo], style: PosterStyleContext) {
         let rail = CatalogRailView(title: "📌 \(shelf.title)", source: String(localized: "Pinned Shelf"))
         rail.translatesAutoresizingMaskIntoConstraints = false
         rail.heightAnchor.constraint(equalToConstant: style.itemSize.height + 42).isActive = true
@@ -718,11 +736,10 @@ final class HomeBrowserViewController: NSViewController {
         rail.widthAnchor.constraint(equalTo: pinnedRailsStack.widthAnchor).isActive = true
     }
 
-    private func appendAddonRail(_ batch: CatalogBatchInfo) {
-        let visItems = CatalogVisibilityFilter.apply(batch.items, core: core)
-        let maxRails = Int(min(15, (try? core.playerPreferences())?.maxAddonRails ?? 6))
-        guard batch.error == nil, !visItems.isEmpty, dynamicRailsStack.arrangedSubviews.count < maxRails else { return }
-        let style = PosterStyleContext.load(from: core)
+    private func appendAddonRail(_ batch: CatalogBatchInfo, maxRails: Int, style: PosterStyleContext, visContext: CatalogVisibilityContext) {
+        guard batch.error == nil, dynamicRailsStack.arrangedSubviews.count < maxRails else { return }
+        let visItems = CatalogVisibilityFilter.apply(batch.items, context: visContext)
+        guard !visItems.isEmpty else { return }
         let rail = CatalogRailView(title: batch.catalogName, source: batch.addonName)
         rail.translatesAutoresizingMaskIntoConstraints = false
         rail.heightAnchor.constraint(equalToConstant: style.itemSize.height + 42).isActive = true
@@ -853,21 +870,48 @@ final class CatalogBatchCollector: CatalogBatchObserver {
     }
 }
 
+struct CatalogVisibilityContext {
+    let hideWatched: Bool
+    let hideUnreleased: Bool
+    let watchedIds: Set<String>
+    let currentYear: Int
+
+    static func load(from core: CinmaCore) -> CatalogVisibilityContext {
+        let prefs = try? core.playerPreferences()
+        let hideWatched = prefs?.hideWatchedInCatalogs ?? false
+        let hideUnreleased = prefs?.hideUnreleased ?? false
+        let watched = hideWatched ? Set((try? core.watchedMetaIds()) ?? []) : []
+        return CatalogVisibilityContext(
+            hideWatched: hideWatched,
+            hideUnreleased: hideUnreleased,
+            watchedIds: watched,
+            currentYear: Calendar.current.component(.year, from: Date())
+        )
+    }
+}
+
 enum CatalogVisibilityFilter {
+    private static let yearRegex = try? NSRegularExpression(pattern: #"\b(19|20)\d{2}\b"#)
+
     static func apply(_ items: [MetaPreviewInfo], core: CinmaCore) -> [MetaPreviewInfo] {
-        guard let prefs = try? core.playerPreferences() else { return items }
-        guard prefs.hideWatchedInCatalogs || prefs.hideUnreleased else { return items }
-        let watched = prefs.hideWatchedInCatalogs ? Set((try? core.watchedMetaIds()) ?? []) : []
-        let currentYear = Calendar.current.component(.year, from: Date())
+        apply(items, context: CatalogVisibilityContext.load(from: core))
+    }
+
+    static func apply(_ items: [MetaPreviewInfo], context: CatalogVisibilityContext) -> [MetaPreviewInfo] {
+        guard context.hideWatched || context.hideUnreleased else { return items }
         return items.filter { item in
-            if prefs.hideWatchedInCatalogs && watched.contains(item.id) { return false }
-            if prefs.hideUnreleased, let year = extractYear(item.releaseInfo), year > currentYear { return false }
+            if context.hideWatched && context.watchedIds.contains(item.id) { return false }
+            if context.hideUnreleased, let year = extractLatestYear(item.releaseInfo), year > context.currentYear {
+                return false
+            }
             return true
         }
     }
 
-    private static func extractYear(_ text: String?) -> Int? {
-        guard let text, let range = text.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression) else { return nil }
-        return Int(text[range])
+    private static func extractLatestYear(_ text: String?) -> Int? {
+        guard let text, let regex = yearRegex else { return nil }
+        let ns = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        return matches.compactMap { Int(ns.substring(with: $0.range)) }.max()
     }
 }
