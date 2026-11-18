@@ -627,7 +627,8 @@ struct SettingsView: View {
         downloadScheduleEnabled: false,
         downloadScheduleStartHour: 1,
         downloadScheduleEndHour: 7,
-        localApiSocketEnabled: false
+        localApiSocketEnabled: false,
+        gamepadSupportEnabled: true
     )
     @State private var subLangsText = "tur, eng"
     @State private var audioLangsText = "eng, jpn, tur"
@@ -1201,6 +1202,8 @@ struct SettingsView: View {
                     .onChange(of: playerPrefs.blackoutOtherScreens) { _, _ in savePlayerPrefs() }
                 Toggle(String(localized: "Auto Mini Player (PiP) When Space/Window Hidden"), isOn: $playerPrefs.autoPipOnOcclusion)
                     .onChange(of: playerPrefs.autoPipOnOcclusion) { _, _ in savePlayerPrefs() }
+                Toggle(String(localized: "Enable Gamepad / Controller Navigation"), isOn: $playerPrefs.gamepadSupportEnabled)
+                    .onChange(of: playerPrefs.gamepadSupportEnabled) { _, _ in savePlayerPrefs() }
             }
 
             Section(String(localized: "Video & Audio")) {
@@ -1641,6 +1644,7 @@ struct SettingsView: View {
         playerPrefs.externalPlayerPath = externalPlayerPathText.trimmingCharacters(in: .whitespacesAndNewlines)
         try? core.setPlayerPreferences(prefs: playerPrefs)
         CinemaTheme.syncThemePreferences(from: playerPrefs)
+        GamepadController.shared.syncEnabled(playerPrefs.gamepadSupportEnabled)
         NotificationCenter.default.post(name: .cinmaNavTabsChanged, object: nil)
     }
 
@@ -1831,6 +1835,7 @@ struct SettingsView: View {
             SettingsSearchItem(id: "audio_route_pause", title: String(localized: "Pause When Audio Output Changes (Headphone Disconnect)"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "audio headphone airpods disconnect pause output device"),
             SettingsSearchItem(id: "blackout", title: String(localized: "Black Out Other Monitors in Fullscreen"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "blackout dim other monitors displays fullscreen"),
             SettingsSearchItem(id: "auto_pip", title: String(localized: "Auto Mini Player (PiP) When Space/Window Hidden"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "auto pip picture in picture space hidden occlusion"),
+            SettingsSearchItem(id: "gamepad", title: String(localized: "Enable Gamepad / Controller Navigation"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "gamepad controller dualsense xbox joystick navigation"),
             SettingsSearchItem(id: "screenshot_sub", title: String(localized: "Include Subtitles in Screenshots"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "screenshot png subtitle include"),
             SettingsSearchItem(id: "ext_player", title: String(localized: "External Player Mode"), section: String(localized: "Playback Behavior"), tab: .playback, keywords: "external player iina infuse vlc mpv url scheme"),
             SettingsSearchItem(id: "hdr", title: String(localized: "Enable macOS EDR HDR Output"), section: String(localized: "Video & Audio"), tab: .playback, keywords: "hdr edr tone mapping bt.2390 peak"),

@@ -122,6 +122,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 knownIncompleteDownloads.insert(row.id)
             }
             syncDownloadScheduleEnforcement(core: core)
+            GamepadController.shared.activePlayer = { [weak self] in
+                (self?.window?.contentViewController as? PlayerViewController) ?? self?.pipPlayerVC
+            }
+            GamepadController.shared.activeShell = { [weak self] in
+                guard self?.window?.contentViewController is MainShellViewController else { return nil }
+                return self?.shell
+            }
+            GamepadController.shared.onStatus = { [weak self] msg in
+                self?.shell?.showStatus(msg)
+            }
+            GamepadController.shared.configure(core: core)
             rebuildMenu()
             showBrowse()
             NotificationCenter.default.addObserver(

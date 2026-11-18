@@ -1184,6 +1184,7 @@ pub struct PlayerPreferencesFfi {
     pub download_schedule_start_hour: u8,
     pub download_schedule_end_hour: u8,
     pub local_api_socket_enabled: bool,
+    pub gamepad_support_enabled: bool,
 }
 
 impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
@@ -1291,6 +1292,7 @@ impl From<cinma_core::PlayerPreferences> for PlayerPreferencesFfi {
             download_schedule_start_hour: p.download_schedule_start_hour,
             download_schedule_end_hour: p.download_schedule_end_hour,
             local_api_socket_enabled: p.local_api_socket_enabled,
+            gamepad_support_enabled: p.gamepad_support_enabled,
         }
     }
 }
@@ -1400,6 +1402,7 @@ impl From<PlayerPreferencesFfi> for cinma_core::PlayerPreferences {
             download_schedule_start_hour: p.download_schedule_start_hour,
             download_schedule_end_hour: p.download_schedule_end_hour,
             local_api_socket_enabled: p.local_api_socket_enabled,
+            gamepad_support_enabled: p.gamepad_support_enabled,
         }
     }
 }

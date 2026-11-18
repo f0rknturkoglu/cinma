@@ -906,7 +906,8 @@ final class PlayerViewController: NSViewController {
                 downloadScheduleEnabled: false,
                 downloadScheduleStartHour: 1,
                 downloadScheduleEndHour: 7,
-                localApiSocketEnabled: false
+                localApiSocketEnabled: false,
+                gamepadSupportEnabled: true
             )
             let isHdr = await HDRProbe.detectIsHdr(for: request, forceHdr: prefs.forceHdrSurface, macEdrEnabled: prefs.macEdrEnabled)
             do {
@@ -2985,6 +2986,71 @@ final class PlayerViewController: NSViewController {
 
     func togglePauseFromPiP() { togglePause() }
     func closeFromPiP() { close() }
+
+    // MARK: - Gamepad Control Helpers
+
+    func gamepadTogglePause() {
+        togglePause()
+        showHudAndResetTimer()
+    }
+
+    func gamepadBackOrClose() {
+        if popoverBackdrop != nil {
+            dismissFloatingPopover()
+        } else if view.window?.styleMask.contains(.fullScreen) == true {
+            toggleFullscreen()
+        } else {
+            requestClose()
+        }
+    }
+
+    func gamepadSkipOrHud() {
+        if !skipButton.isHidden {
+            skipCurrentSegment()
+        } else {
+            showHudAndResetTimer()
+        }
+    }
+
+    func gamepadCycleSubtitle() {
+        cycleTrack(type: "sub", isSub: true)
+        showHudAndResetTimer()
+    }
+
+    func gamepadSeekStep(forward: Bool) {
+        if forward { seekForward10() } else { seekBack10() }
+        showHudAndResetTimer()
+    }
+
+    func gamepadSeek(seconds: Double) {
+        guard !isScreenLocked else { return }
+        let exact = (try? core.playerPreferences())?.exactSeek ?? true
+        try? session?.seekRelativeMode(seconds: seconds, exact: exact)
+        saveProgressIfNeeded(force: true)
+        showHudAndResetTimer()
+    }
+
+    func gamepadAdjustVolume(delta: Double) {
+        adjustVolume(by: delta)
+    }
+
+    func gamepadStepChapter(forward: Bool) {
+        guard !isScreenLocked, !chapters.isEmpty else { return }
+        let target: ChapterInfo? = if forward {
+            chapters.first(where: { $0.startS > position + 1.0 })
+        } else {
+            chapters.last(where: { $0.startS < max(0, position - 3.0) })
+        }
+        if let target {
+            seekAbsolute(target.startS)
+            showStatus(target.title)
+        }
+        showHudAndResetTimer()
+    }
+
+    func gamepadShowHud() {
+        showHudAndResetTimer()
+    }
 
     @objc private func enterPiPClicked() {
         showHudAndCancelTimer()

@@ -15,6 +15,7 @@ INFOPLIST_FILE = Config/Info.plist           // URL schemes (stremio://), merged
 INFOPLIST_KEY_NSPrincipalClass = NSApplication
 INFOPLIST_KEY_CFBundleDisplayName = Cinma
 INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.entertainment
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
 
 // Personal app: ad-hoc signed, not sandboxed (see docs/adr/0002).
 CODE_SIGN_IDENTITY = -

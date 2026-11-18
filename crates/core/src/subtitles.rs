@@ -305,6 +305,8 @@ pub struct PlayerPreferences {
     pub download_schedule_end_hour: u8,
     /// Opt-in local Unix domain socket JSON-RPC server (`<data_dir>/cinma.sock`, #N25).
     pub local_api_socket_enabled: bool,
+    /// Enable macOS GameController framework navigation & playback shortcuts when a gamepad connects.
+    pub gamepad_support_enabled: bool,
 }
 
 impl Default for PlayerPreferences {
@@ -412,6 +414,7 @@ impl Default for PlayerPreferences {
             download_schedule_start_hour: 1,
             download_schedule_end_hour: 7,
             local_api_socket_enabled: false,
+            gamepad_support_enabled: true,
         }
     }
 }

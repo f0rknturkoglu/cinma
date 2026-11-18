@@ -457,6 +457,29 @@ final class MainShellViewController: NSViewController, NSTextFieldDelegate {
         switchToTab(.downloads)
     }
 
+    @discardableResult
+    func gamepadBack() -> Bool {
+        if detailVC != nil {
+            popDetailIfNeeded()
+            switchToTab(activeTab)
+            return true
+        }
+        return false
+    }
+
+    func gamepadStepTab(delta: Int) {
+        let visibleTabs = tabButtons.filter { !$0.isHidden }.compactMap { Tab(rawValue: $0.tag) }
+        guard !visibleTabs.isEmpty else { return }
+        if detailVC != nil { popDetailIfNeeded() }
+        let currentIdx = visibleTabs.firstIndex(of: activeTab) ?? 0
+        let nextIdx = (currentIdx + delta + visibleTabs.count) % visibleTabs.count
+        switchToTab(visibleTabs[nextIdx])
+    }
+
+    func gamepadFocusSearch() {
+        view.window?.makeFirstResponder(searchField)
+    }
+
     private func refreshProfileBadge() {
         let profiles = (try? core.profiles()) ?? []
         let activeId = (try? core.activeProfileId()) ?? 1

@@ -2898,6 +2898,22 @@
         }
       }
     },
+    "Controller": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Controller"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kumanda"
+          }
+        }
+      }
+    },
     "Copied %@": {
       "localizations": {
         "tr": {
@@ -3501,6 +3517,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Zümrüt"
+          }
+        }
+      }
+    },
+    "Enable Gamepad / Controller Navigation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Gamepad / Controller Navigation"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oyun Kumandası (Gamepad) Gezinmesini Etkinleştir"
           }
         }
       }
@@ -4171,6 +4203,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tam Ekran (F)"
+          }
+        }
+      }
+    },
+    "Gamepad connected: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gamepad connected: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oyun kumandası bağlandı: %@"
+          }
+        }
+      }
+    },
+    "Gamepad disconnected: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gamepad disconnected: %@"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oyun kumandası bağlantısı kesildi: %@"
           }
         }
       }
