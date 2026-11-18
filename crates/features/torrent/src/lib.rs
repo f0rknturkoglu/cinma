@@ -304,21 +304,35 @@ impl RqbitEngine {
         }
     }
 
+    /// Applies new settings. Rate limits change live on the running session,
+    /// so playback and downloads continue. Only a different network
+    /// interface (VPN binding / kill switch) needs a new session; that one
+    /// change interrupts active torrents, by design.
     pub async fn update_policy(&self, policy: TorrentPolicy) {
-        let reset_session = {
+        let (rebind, limits_changed) = {
             let mut g = self.policy.lock().await;
-            let changed = g.bind_device_name != policy.bind_device_name
-                || g.vpn_kill_switch != policy.vpn_kill_switch
-                || g.upload_bps != policy.upload_bps
+            let rebind = g.bind_device_name != policy.bind_device_name
+                || g.vpn_kill_switch != policy.vpn_kill_switch;
+            let limits_changed = effective_upload_bps(&g) != effective_upload_bps(&policy)
                 || g.download_bps != policy.download_bps;
-            *g = policy;
-            changed
+            *g = policy.clone();
+            (rebind, limits_changed)
         };
-        if reset_session {
+        if rebind {
+            self.release_streams().await;
             let old = self.session.lock().await.take();
             if let Some(session) = old {
                 session.stop().await;
             }
+            return;
+        }
+        if limits_changed && let Some(session) = self.session.lock().await.clone() {
+            session
+                .ratelimits
+                .set_upload_bps(effective_upload_bps(&policy).and_then(NonZeroU32::new));
+            session
+                .ratelimits
+                .set_download_bps(policy.download_bps.and_then(NonZeroU32::new));
         }
     }
 
@@ -349,10 +363,7 @@ impl RqbitEngine {
         if policy.fastresume {
             let _ = std::fs::create_dir_all(&session_dir);
         }
-        let upload_bps = match policy.seeding {
-            SeedingPolicy::Off => policy.upload_bps.or(Some(1024)), // minimal protocol chatter only
-            _ => policy.upload_bps,
-        };
+        let upload_bps = effective_upload_bps(&policy);
         let options = SessionOptions {
             fastresume: policy.fastresume,
             persistence: policy.fastresume.then_some(SessionPersistenceConfig::Json {
@@ -741,6 +752,14 @@ impl TorrentEngine for RqbitEngine {
 
     fn release_all(&self) -> BoxFuture<'_, ()> {
         Box::pin(self.release())
+    }
+}
+
+/// Upload cap actually applied: with seeding off, only minimal protocol chatter.
+fn effective_upload_bps(policy: &TorrentPolicy) -> Option<u32> {
+    match policy.seeding {
+        SeedingPolicy::Off => policy.upload_bps.or(Some(1024)),
+        _ => policy.upload_bps,
     }
 }
 

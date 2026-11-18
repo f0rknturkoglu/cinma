@@ -744,3 +744,57 @@ fn downloading_a_torrent_that_is_streaming_writes_it_once() {
         seeder.stop().await;
     });
 }
+
+#[test]
+fn changing_rate_limits_keeps_a_stream_playing() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let seed_dir = dir.path().join("seed");
+    std::fs::create_dir_all(&seed_dir).unwrap();
+    let data = content();
+    let (seeder, info_hash, addr) = runtime.block_on(start_seeder(&seed_dir, &data));
+    let engine = RqbitEngine::with_policy(
+        TorrentConfig {
+            root: dir.path().join("leech"),
+            extra_peers: vec![addr],
+            local_only: true,
+        },
+        runtime.handle().clone(),
+        app_policy(),
+    );
+    let source = open_and_read_head(&runtime, &engine, &info_hash);
+
+    // The user changes upload/download limits in Settings mid-playback.
+    runtime.block_on(engine.update_policy(cinma_torrent::TorrentPolicy {
+        upload_bps: Some(64 * 1024),
+        download_bps: Some(4 * 1024 * 1024),
+        ..app_policy()
+    }));
+
+    // The same source keeps reading to the end: the session was not restarted.
+    let expected = data.clone();
+    let reader_source = Arc::clone(&source);
+    std::thread::spawn(move || {
+        let mut r = reader_source.open_reader().unwrap();
+        let cancel = CancellationToken::new();
+        let mut got = Vec::with_capacity(expected.len());
+        let mut buf = vec![0u8; 256 * 1024];
+        while got.len() < expected.len() {
+            let n = r.read_at(got.len() as u64, &mut buf, &cancel).unwrap();
+            assert!(n > 0);
+            got.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(got, expected);
+    })
+    .join()
+    .unwrap();
+    drop(source);
+    runtime.block_on(async {
+        engine.release_all().await;
+        seeder.stop().await;
+    });
+}
